@@ -272,7 +272,7 @@
       "is_manifold": false, "is_watertight": false,
       "is_orientation_consistent": true, "is_solid": false,
       "triangles": 6, "vertices": 8, "components": 1,
-      "findings": { "boundary-edge": 8 }
+      "findings": { "boundary-edge": 8, "non-convex-polygon-fan": 1 }
     },
     {
       "_why": "An indexed mesh with two pairs of coincident vertices. Unwelded it is two disconnected triangles; welding merges 6 vertices into 4 and makes them share an edge, leaving 4 boundary edges around the quad.",

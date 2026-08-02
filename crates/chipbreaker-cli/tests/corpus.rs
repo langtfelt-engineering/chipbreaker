@@ -475,6 +475,7 @@ fn kind_from_name(name: &str) -> chipbreaker_core::mesh::validate::FindingKind {
         "self-intersection" => K::SelfIntersection,
         "inverted-orientation" => K::InvertedOrientation,
         "unused-vertex" => K::UnusedVertex,
+        "non-convex-polygon-fan" => K::NonConvexPolygonFan,
         other => panic!("unknown finding kind in expectations: `{other}`"),
     }
 }

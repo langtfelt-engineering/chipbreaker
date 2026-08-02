@@ -69,6 +69,14 @@ pub enum FindingKind {
     /// A vertex referenced by no triangle. Harmless, but usually a sign the file
     /// was assembled oddly.
     UnusedVertex,
+    /// A non-convex OBJ face was fan-triangulated from its first vertex, which
+    /// is only correct when the face is star-shaped from that vertex.
+    ///
+    /// Reported rather than rejected because the fan may still be right — an
+    /// L-shape is non-convex and fans correctly from every one of its vertices —
+    /// but the user needs to know the assumption was made. Ear clipping is the
+    /// fix if this turns out to matter on real data.
+    NonConvexPolygonFan,
 }
 
 impl FindingKind {
@@ -84,6 +92,7 @@ impl FindingKind {
             Self::SelfIntersection => "self-intersection",
             Self::InvertedOrientation => "inverted-orientation",
             Self::UnusedVertex => "unused-vertex",
+            Self::NonConvexPolygonFan => "non-convex-polygon-fan",
         }
     }
 
@@ -608,6 +617,25 @@ pub fn validate(mesh: &TriMesh) -> MeshReport {
             Vec::new(),
             unused.clone(),
             format!("{} vertices are referenced by no triangle", unused.len()),
+        ));
+    }
+
+    // --- Load-time assumptions worth surfacing -----------------------------
+    // The loader recorded that it fan-triangulated a non-convex face. That is an
+    // assumption about the geometry, not a property of the topology, so it
+    // cannot be rediscovered from the mesh — it has to be carried through the
+    // metadata and reported here, where people actually look.
+    if mesh.meta().non_convex_polygons > 0 {
+        findings.push(Finding::new(
+            FindingKind::NonConvexPolygonFan,
+            Vec::new(),
+            Vec::new(),
+            format!(
+                "{} non-convex face(s) were fan-triangulated from their first \
+                 vertex; that is only correct if each is star-shaped from that \
+                 vertex, and the resulting triangles may lie outside the face",
+                mesh.meta().non_convex_polygons
+            ),
         ));
     }
 

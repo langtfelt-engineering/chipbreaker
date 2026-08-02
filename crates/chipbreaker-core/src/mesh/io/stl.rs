@@ -133,6 +133,7 @@ pub fn read_binary(bytes: &[u8], unit: Unit) -> Result<TriMesh, ParseError> {
         source_format: FORMAT_BINARY.to_owned(),
         source_unit: unit,
         polygons_triangulated: 0,
+        non_convex_polygons: 0,
         ignored_records: declared as u32,
     };
     TriMesh::new(vertices, triangles, meta).map_err(|e| mesh_error(FORMAT_BINARY, e))
@@ -244,6 +245,7 @@ pub fn read_ascii(text: &str, unit: Unit) -> Result<TriMesh, ParseError> {
         source_format: FORMAT_ASCII.to_owned(),
         source_unit: unit,
         polygons_triangulated: 0,
+        non_convex_polygons: 0,
         ignored_records: u32::from(!saw_endsolid),
     };
     TriMesh::new(vertices, triangles, meta).map_err(|e| mesh_error(FORMAT_ASCII, e))

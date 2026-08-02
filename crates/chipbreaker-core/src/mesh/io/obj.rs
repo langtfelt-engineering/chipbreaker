@@ -20,12 +20,76 @@
 //! reported so the user can tell whether it applies to their file, and a proper
 //! ear-clipping triangulation is the fix if it ever matters.
 
-use crate::math::Vec3;
+use crate::math::{Vec2, Vec3};
 use crate::mesh::io::ParseError;
 use crate::mesh::units::Unit;
 use crate::mesh::{MeshMeta, TriMesh};
+use crate::predicates::{Orientation, orient2d};
 
 const FORMAT: &str = "obj";
+
+/// True if a polygon is convex, decided exactly.
+///
+/// Fan triangulation from the first vertex is correct exactly when the polygon
+/// is **star-shaped from that vertex**. Convexity is a cheap sufficient
+/// condition — a convex polygon is star-shaped from every vertex — and erring
+/// toward flagging is the right direction: a false positive costs a validation
+/// finding on a face that happened to fan correctly, a false negative costs
+/// silently wrong geometry.
+///
+/// The polygon is projected onto the coordinate plane its Newell normal is most
+/// aligned with, which is the projection that cannot collapse it, and the turn
+/// direction at each corner is then decided by exact [`orient2d`]. Collinear
+/// corners are permitted: three points in a row on a straight edge do not make a
+/// polygon non-convex.
+fn is_convex(points: &[Vec3]) -> bool {
+    if points.len() < 4 {
+        // A triangle is convex, and is not fan-triangulated anyway.
+        return true;
+    }
+    // Newell's method: robust for polygons that are only approximately planar,
+    // which OBJ faces frequently are.
+    let mut normal = Vec3::ZERO;
+    for i in 0..points.len() {
+        let a = points[i];
+        let b = points[(i + 1) % points.len()];
+        normal += Vec3::new(
+            (a.y - b.y) * (a.z + b.z),
+            (a.z - b.z) * (a.x + b.x),
+            (a.x - b.x) * (a.y + b.y),
+        );
+    }
+    let n = normal.abs();
+    let drop_axis = if n.x >= n.y && n.x >= n.z {
+        0
+    } else if n.y >= n.z {
+        1
+    } else {
+        2
+    };
+    let project = |v: Vec3| match drop_axis {
+        0 => Vec2::new(v.y, v.z),
+        1 => Vec2::new(v.z, v.x),
+        _ => Vec2::new(v.x, v.y),
+    };
+
+    let mut seen = Orientation::Zero;
+    for i in 0..points.len() {
+        let a = project(points[i]);
+        let b = project(points[(i + 1) % points.len()]);
+        let c = project(points[(i + 2) % points.len()]);
+        let turn = orient2d(a, b, c);
+        if turn == Orientation::Zero {
+            continue;
+        }
+        if seen == Orientation::Zero {
+            seen = turn;
+        } else if seen != turn {
+            return false;
+        }
+    }
+    true
+}
 
 /// Resolves an OBJ face index to a zero-based vertex index.
 ///
@@ -83,6 +147,7 @@ pub fn read(text: &str, unit: Unit) -> Result<TriMesh, ParseError> {
     let mut triangles: Vec<[u32; 3]> = Vec::new();
     let mut ignored = 0u32;
     let mut polygons = 0u32;
+    let mut non_convex = 0u32;
 
     for (index, raw) in text.lines().enumerate() {
         let line = index + 1;
@@ -136,6 +201,17 @@ pub fn read(text: &str, unit: Unit) -> Result<TriMesh, ParseError> {
                     .map(|c| resolve(c, vertices.len(), line))
                     .collect();
                 let resolved = resolved?;
+                if resolved.len() > 3 {
+                    let loop_points: Vec<Vec3> =
+                        resolved.iter().map(|i| vertices[*i as usize]).collect();
+                    if !is_convex(&loop_points) {
+                        // Recorded rather than rejected: the fan may still be
+                        // correct if the face happens to be star-shaped from its
+                        // first vertex. `validate` turns this into a finding, so
+                        // the user is told rather than left to wonder.
+                        non_convex += 1;
+                    }
+                }
                 // Fan from the first vertex, in declaration order.
                 for k in 1..resolved.len() - 1 {
                     triangles.push([resolved[0], resolved[k], resolved[k + 1]]);
@@ -149,6 +225,7 @@ pub fn read(text: &str, unit: Unit) -> Result<TriMesh, ParseError> {
         source_format: FORMAT.to_owned(),
         source_unit: unit,
         polygons_triangulated: polygons,
+        non_convex_polygons: non_convex,
         ignored_records: ignored,
     };
     TriMesh::new(vertices, triangles, meta).map_err(|e| ParseError::general(FORMAT, e.to_string()))
@@ -285,12 +362,108 @@ mod tests {
                       v 2 3 0\nv 0 3 0\nv -1 2 0\nv -1 1 0\n\
                       f 1 2 3 4 5 6 7 8\n";
         let c = read(convex, Unit::Millimetre).expect("reads");
+        // And the loader says which is which, so `validate` can warn.
+        assert_eq!(m.meta().non_convex_polygons, 1, "the U must be flagged");
+        assert_eq!(
+            c.meta().non_convex_polygons,
+            0,
+            "the convex one must not be"
+        );
         // Shoelace area of that octagon is exactly 10.
         assert!(
             (c.surface_area() - 10.0).abs() < 1e-12,
             "{}",
             c.surface_area()
         );
+    }
+
+    #[test]
+    fn convexity_is_decided_exactly_and_in_every_orientation() {
+        let p = |x: f64, y: f64| Vec3::new(x, y, 0.0);
+        // A square: convex, either winding.
+        assert!(is_convex(&[
+            p(0.0, 0.0),
+            p(1.0, 0.0),
+            p(1.0, 1.0),
+            p(0.0, 1.0)
+        ]));
+        assert!(is_convex(&[
+            p(0.0, 1.0),
+            p(1.0, 1.0),
+            p(1.0, 0.0),
+            p(0.0, 0.0)
+        ]));
+        // A collinear point on one edge is not a corner, so still convex.
+        assert!(is_convex(&[
+            p(0.0, 0.0),
+            p(0.5, 0.0),
+            p(1.0, 0.0),
+            p(1.0, 1.0),
+            p(0.0, 1.0)
+        ]));
+        // An L: genuinely non-convex, even though it happens to fan correctly.
+        // Flagging it is the conservative direction.
+        assert!(!is_convex(&[
+            p(0.0, 0.0),
+            p(2.0, 0.0),
+            p(2.0, 1.0),
+            p(1.0, 1.0),
+            p(1.0, 2.0),
+            p(0.0, 2.0)
+        ]));
+        // Triangles are never fanned and are trivially convex.
+        assert!(is_convex(&[p(0.0, 0.0), p(1.0, 0.0), p(0.0, 1.0)]));
+
+        // The answer must not depend on which plane the face lies in; Newell's
+        // normal chooses the projection.
+        for axis in 0..3 {
+            let q = |x: f64, y: f64| match axis {
+                0 => Vec3::new(7.0, x, y),
+                1 => Vec3::new(y, 7.0, x),
+                _ => Vec3::new(x, y, 7.0),
+            };
+            assert!(
+                is_convex(&[q(0.0, 0.0), q(1.0, 0.0), q(1.0, 1.0), q(0.0, 1.0)]),
+                "axis {axis}"
+            );
+            assert!(
+                !is_convex(&[
+                    q(0.0, 0.0),
+                    q(2.0, 0.0),
+                    q(2.0, 1.0),
+                    q(1.0, 1.0),
+                    q(1.0, 2.0),
+                    q(0.0, 2.0)
+                ]),
+                "axis {axis}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_non_convex_fan_becomes_a_validation_finding() {
+        // A count in the metadata that nobody reads is not a warning; it has to
+        // reach the report people actually look at.
+        use crate::mesh::validate::{FindingKind, validate};
+        let text = "v 0 0 0\nv 3 0 0\nv 3 3 0\nv 2 3 0\n\
+                    v 2 1 0\nv 1 1 0\nv 1 3 0\nv 0 3 0\n\
+                    f 1 2 3 4 5 6 7 8\n";
+        let m = read(text, Unit::Millimetre).expect("reads");
+        let report = validate(&m);
+        assert_eq!(report.count_of(FindingKind::NonConvexPolygonFan), 1);
+        let finding = report
+            .findings
+            .iter()
+            .find(|f| f.kind == FindingKind::NonConvexPolygonFan)
+            .expect("present");
+        assert!(finding.detail.contains("star-shaped"), "{}", finding.detail);
+
+        // A convex face of the same size produces no such finding.
+        let convex = "v 0 0 0\nv 2 0 0\nv 3 1 0\nv 3 2 0\n\
+                      v 2 3 0\nv 0 3 0\nv -1 2 0\nv -1 1 0\n\
+                      f 1 2 3 4 5 6 7 8\n";
+        let c = read(convex, Unit::Millimetre).expect("reads");
+        assert_eq!(validate(&c).count_of(FindingKind::NonConvexPolygonFan), 0);
     }
 
     #[test]

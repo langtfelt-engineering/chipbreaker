@@ -25,11 +25,27 @@
 //! Read only. Write support is deferred to U20, where the packaging work
 //! happens; nothing before then needs to emit 3MF.
 //!
-//! Component transforms and the build item hierarchy are not applied: every
-//! `<mesh>` in the file is merged into one triangle mesh. That is correct for
-//! the single-object files CAD and slicer tools export, and the count of objects
-//! merged is reported so a multi-object assembly is visible rather than silently
-//! flattened.
+//! # Component transforms are rejected, not ignored
+//!
+//! 3MF assemblies place objects with a `transform` attribute on `<component>`
+//! and `<item>` elements. This reader does not apply them — and therefore
+//! **refuses any file that carries a non-identity one**.
+//!
+//! That is a deliberate escalation from "merge and report a count". Ignoring a
+//! placement transform does not degrade the output, it produces geometry that is
+//! *wrong* and *looks plausible*: every component stacked at the origin, still
+//! closed, still manifold, still passing every validation check, and simulating
+//! a fixture that does not exist. A count in a report is not a defence, because
+//! nobody reads counts.
+//!
+//! U15 loads fixtures — vises, clamps, tombstones — which are precisely the
+//! things exported as multi-component assemblies. This must fail loudly before
+//! then rather than quietly after.
+//!
+//! Identity transforms are accepted, since applying them is a no-op, and meshes
+//! are then merged. That is correct for the single-object files CAD and slicer
+//! tools export, which is the overwhelming majority. The merged count is still
+//! reported.
 
 use std::io::{Cursor, Read};
 
@@ -120,6 +136,63 @@ fn attribute(
     Ok(None)
 }
 
+/// The twelve values of a 3MF transform, in the order the format writes them.
+///
+/// 3MF stores a 4x3 matrix row-major, standing for
+///
+/// ```text
+/// | m00 m01 m02 0 |
+/// | m10 m11 m12 0 |
+/// | m20 m21 m22 0 |
+/// | m30 m31 m32 1 |
+/// ```
+///
+/// so the identity is `1 0 0 0 1 0 0 0 1 0 0 0` and the last row is the
+/// translation.
+const IDENTITY_TRANSFORM: [f64; 12] = [
+    1.0, 0.0, 0.0, //
+    0.0, 1.0, 0.0, //
+    0.0, 0.0, 1.0, //
+    0.0, 0.0, 0.0,
+];
+
+/// Checks a `transform` attribute, rejecting any that is not the identity.
+///
+/// Compared exactly. A transform that is *almost* the identity is still a
+/// transform somebody wrote on purpose, and guessing that they did not mean it
+/// is exactly the class of silent wrongness this function exists to prevent.
+fn check_transform(raw: &str, element: &str) -> Result<(), ParseError> {
+    let values: Vec<&str> = raw.split_whitespace().collect();
+    if values.len() != 12 {
+        return Err(ParseError::general(
+            FORMAT,
+            format!(
+                "<{element}> has a `transform` with {} values; 3MF transforms have 12",
+                values.len()
+            ),
+        ));
+    }
+    let mut parsed = [0.0f64; 12];
+    for (slot, text) in parsed.iter_mut().zip(&values) {
+        *slot = number(text, "transform component")?;
+    }
+    if parsed == IDENTITY_TRANSFORM {
+        return Ok(());
+    }
+    Err(ParseError::general(
+        FORMAT,
+        format!(
+            "<{element}> carries a non-identity `transform` ({raw}). Component \
+             placement is not implemented, and applying no transform would put \
+             every component at the origin — geometry that is wrong but still \
+             closed, still manifold, and still passes every validation check. \
+             Refusing rather than producing a plausible-looking wrong answer. \
+             Export the assembly as a single object, or apply the transforms \
+             upstream."
+        ),
+    ))
+}
+
 fn number(raw: &str, what: &str) -> Result<f64, ParseError> {
     raw.trim()
         .parse::<f64>()
@@ -186,6 +259,7 @@ pub fn read(bytes: &[u8], expected: Option<Unit>) -> Result<TriMesh, ParseError>
     // needs its indices rebased as they are merged.
     let mut mesh_base = 0u32;
     let mut meshes = 0u32;
+    let mut components = 0u32;
 
     loop {
         let event = reader
@@ -210,6 +284,19 @@ pub fn read(bytes: &[u8], expected: Option<Unit>) -> Result<TriMesh, ParseError>
                             ParseError::general(FORMAT, "vertex count exceeds the u32 index space")
                         })?;
                         meshes += 1;
+                    }
+                    // Placement transforms are refused rather than ignored; see
+                    // the module documentation for why a count is not enough.
+                    b"component" => {
+                        if let Some(raw) = attribute(e, "transform")? {
+                            check_transform(&raw, "component")?;
+                        }
+                        components += 1;
+                    }
+                    b"item" => {
+                        if let Some(raw) = attribute(e, "transform")? {
+                            check_transform(&raw, "item")?;
+                        }
                     }
                     b"vertex" => {
                         let mut xyz = [0.0f64; 3];
@@ -272,9 +359,12 @@ pub fn read(bytes: &[u8], expected: Option<Unit>) -> Result<TriMesh, ParseError>
         source_format: FORMAT.to_owned(),
         source_unit: unit,
         polygons_triangulated: 0,
-        // Objects beyond the first are merged rather than kept apart; reporting
-        // the count makes a multi-object assembly visible.
-        ignored_records: meshes.saturating_sub(1),
+        non_convex_polygons: 0,
+        // Objects beyond the first are merged rather than kept apart. Every
+        // component reference has been checked for a placement transform, so
+        // merging is geometrically correct here; the count is reported so an
+        // assembly is still visible.
+        ignored_records: meshes.saturating_sub(1) + components,
     };
     TriMesh::new(scaled, triangles, meta).map_err(|e| ParseError::general(FORMAT, e.to_string()))
 }
@@ -447,6 +537,85 @@ mod tests {
         );
         let e = read(&bytes, None).expect_err("must reject");
         assert!(e.to_string().contains("references vertex"), "{e}");
+    }
+
+    #[test]
+    fn a_non_identity_component_transform_is_refused() {
+        // The failure this prevents is the nastiest kind: ignoring the transform
+        // stacks every component at the origin, and the result is still closed,
+        // still manifold, and passes every validation check. It looks like a
+        // part. U15 loads fixtures, which are exactly the things exported as
+        // assemblies, so this has to fail loudly well before then.
+        let cube = shapes::cube(10.0);
+        let inner = model_of(&cube, "millimeter");
+        let body = inner
+            .split_once("<resources>")
+            .and_then(|(_, rest)| rest.split_once("</resources>"))
+            .map(|(x, _)| x.to_owned())
+            .expect("object markup");
+
+        for (element, xml) in [
+            (
+                "component",
+                format!(
+                    "<model unit=\"millimeter\"><resources>{body}\
+                     <object id=\"2\"><components>\
+                     <component objectid=\"1\" transform=\"1 0 0 0 1 0 0 0 1 50 0 0\"/>\
+                     </components></object></resources>\
+                     <build><item objectid=\"2\"/></build></model>"
+                ),
+            ),
+            (
+                "item",
+                format!(
+                    "<model unit=\"millimeter\"><resources>{body}</resources>\
+                     <build><item objectid=\"1\" transform=\"2 0 0 0 2 0 0 0 2 0 0 0\"/></build>\
+                     </model>"
+                ),
+            ),
+        ] {
+            let e = read(&container(&xml, "3D/3dmodel.model"), None).expect_err(&format!(
+                "{element}: a non-identity transform must be refused, not merged"
+            ));
+            let text = e.to_string();
+            assert!(text.contains("non-identity"), "{element}: {text}");
+            assert!(text.contains(element), "{element}: {text}");
+            // The message must say what to do about it, not merely complain.
+            assert!(
+                text.contains("single object") || text.contains("upstream"),
+                "{element}: {text}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_identity_transform_is_accepted_because_applying_it_is_a_no_op() {
+        let cube = shapes::cube(10.0);
+        let inner = model_of(&cube, "millimeter");
+        let body = inner
+            .split_once("<resources>")
+            .and_then(|(_, rest)| rest.split_once("</resources>"))
+            .map(|(x, _)| x.to_owned())
+            .expect("object markup");
+        let xml = format!(
+            "<model unit=\"millimeter\"><resources>{body}</resources>\
+             <build><item objectid=\"1\" transform=\"1 0 0 0 1 0 0 0 1 0 0 0\"/></build></model>"
+        );
+        let m = read(&container(&xml, "3D/3dmodel.model"), None).expect("identity is fine");
+        assert_eq!(m.triangle_count(), 12);
+    }
+
+    #[test]
+    fn a_malformed_transform_is_an_error_rather_than_being_skipped() {
+        let xml = "<model unit=\"millimeter\"><resources/>\
+                   <build><item objectid=\"1\" transform=\"1 0 0\"/></build></model>";
+        let e = read(&container(xml, "3D/3dmodel.model"), None).expect_err("must reject");
+        assert!(e.to_string().contains("12"), "{e}");
+
+        let xml = "<model unit=\"millimeter\"><resources/>\
+                   <build><item objectid=\"1\" transform=\"1 0 0 0 1 0 0 0 1 0 0 x\"/></build></model>";
+        let e = read(&container(xml, "3D/3dmodel.model"), None).expect_err("must reject");
+        assert!(e.to_string().contains("not a number"), "{e}");
     }
 
     #[test]

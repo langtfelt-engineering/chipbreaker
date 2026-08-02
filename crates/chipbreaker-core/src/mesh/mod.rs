@@ -61,6 +61,13 @@ pub struct MeshMeta {
     pub source_unit: Unit,
     /// Non-triangular faces encountered and fan-triangulated (OBJ only).
     pub polygons_triangulated: u32,
+    /// Of those, how many were **not convex**, so the fan from their first
+    /// vertex may have produced triangles outside the face (OBJ only).
+    ///
+    /// Surfaced by [`validate`] as a
+    /// [`validate::FindingKind::NonConvexPolygonFan`] rather than left as a
+    /// number in a report, because a count nobody reads is not a warning.
+    pub non_convex_polygons: u32,
     /// Records the loader ignored: `vt`, `vn`, `usemtl`, groups, and the like.
     pub ignored_records: u32,
 }
@@ -73,6 +80,7 @@ impl MeshMeta {
             source_format: String::new(),
             source_unit: Unit::Millimetre,
             polygons_triangulated: 0,
+            non_convex_polygons: 0,
             ignored_records: 0,
         }
     }
@@ -90,6 +98,7 @@ impl Hashable for MeshMeta {
         h.str(&self.source_format);
         h.str(self.source_unit.name());
         h.u64(u64::from(self.polygons_triangulated));
+        h.u64(u64::from(self.non_convex_polygons));
         h.u64(u64::from(self.ignored_records));
         h.end();
     }
