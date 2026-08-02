@@ -1,0 +1,9 @@
+[toolchain]
+# Pinned explicitly. Determinism is a product guarantee, and codegen changes
+# between compiler releases are a real source of last-bit drift. Bumping this
+# is a deliberate act that requires re-running the golden suite on every
+# supported target (see CONTRIBUTING.md).
+channel = "1.96.0"
+components = ["rustfmt", "clippy"]
+targets = ["wasm32-wasip1"]
+profile = "minimal"

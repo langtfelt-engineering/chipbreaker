@@ -1,0 +1,22 @@
+[package]
+name = "chipbreaker-cli"
+description = "Command-line front end for the Chipbreaker machining verification engine."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[[bin]]
+name = "chipbreaker"
+path = "src/main.rs"
+
+[dependencies]
+chipbreaker-core.workspace = true
+clap.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

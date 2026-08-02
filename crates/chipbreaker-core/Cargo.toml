@@ -1,0 +1,33 @@
+[package]
+name = "chipbreaker-core"
+description = "Numeric core for Chipbreaker: exact geometric predicates, interval spans, and the bit-exact determinism harness."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+robust.workspace = true
+blake3.workspace = true
+rand.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+num-bigint.workspace = true
+num-rational.workspace = true
+num-traits.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "predicates"
+harness = false
+
+[[bench]]
+name = "spans"
+harness = false
+
+[lints]
+workspace = true
