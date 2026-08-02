@@ -1,0 +1,264 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Chipbreaker Contributors
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Nightly, for the long-running fuzz that is too slow for every commit.
+    - cron: "17 3 * * *"
+
+env:
+  CARGO_TERM_COLOR: always
+  # A golden mismatch must fail the build. Accepting one is a local, deliberate
+  # act that produces a reviewable diff — never something CI does for you.
+  CHIPBREAKER_ACCEPT_GOLDEN: "0"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      # No toolchain version here on purpose: rust-toolchain.toml is the single
+      # source of truth for the pin, its components and its extra targets.
+      # `rustup show` materialises exactly what that file asks for.
+      - name: Install the pinned toolchain
+        run: |
+          rustup show
+          rustc --version
+          cargo --version
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Formatting
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Tests
+        run: cargo test --all
+
+      # Compiled, not timed. CI runners are shared and noisy; a timing gate here
+      # would produce more false alarms than findings. Real numbers are recorded
+      # by hand in BENCHMARKS.md.
+      - name: Benchmarks compile
+        run: cargo bench --no-run
+
+      - name: Self-test
+        run: |
+          cargo run --release -p chipbreaker-cli -- \
+            selftest --report json --out "selftest-${{ matrix.os }}.json"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: selftest-${{ matrix.os }}
+          path: selftest-${{ matrix.os }}.json
+
+  cross-platform-parity:
+    name: cross-platform parity
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: reports
+
+      # The three operating systems must agree with each other, not merely each
+      # with itself. Windows, Linux and macOS use different libm, different
+      # allocators and different default codegen; if any of that reaches a float,
+      # this is where it shows.
+      - name: Compare all three results hashes
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, sys
+          seen = {}
+          for path in sorted(pathlib.Path("reports").rglob("*.json")):
+              results = json.load(path.open())["results"]
+              seen[path.name] = results
+              print(f"{path.name}: {results['hash']}")
+          if not seen:
+              sys.exit("no self-test reports were produced")
+          first_name, first = next(iter(seen.items()))
+          bad = False
+          for name, results in seen.items():
+              if results != first:
+                  print(f"::error::{name} disagrees with {first_name}")
+                  for a, b in zip(first["suites"], results["suites"]):
+                      if a["hash"] != b["hash"]:
+                          print(f"  suite {a['name']}: {a['hash']} vs {b['hash']}")
+                  bad = True
+          if bad:
+              sys.exit(1)
+          print(f"{len(seen)} platforms agree: {first['hash']}")
+          PY
+
+  determinism-rules:
+    name: determinism rules
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The rules from CONTRIBUTING.md that no linter expresses. Each grep skips
+      # comment lines, so the rules can be *discussed* in documentation without
+      # tripping the check that enforces them.
+      - name: No f32, FMA, unordered maps or parallelism in the core
+        run: |
+          fail=0
+          check() {
+            local pattern="$1" message="$2"
+            local hits
+            hits=$(grep -rn --include='*.rs' -E "$pattern" crates/ \
+                   | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*|/\*)' || true)
+            if [ -n "$hits" ]; then
+              echo "::error::$message"
+              echo "$hits"
+              fail=1
+            fi
+          }
+          check '\bf32\b' \
+            'f32 found. The core is f64 only; CONTRIBUTING.md rule 1.'
+          check '\bmul_add\b' \
+            'mul_add found. Native and WASM contract multiply-add differently; CONTRIBUTING.md rule 2.'
+          check '\bHash(Map|Set)\b' \
+            'HashMap/HashSet found. Use BTreeMap/BTreeSet where iteration order can reach a float; CONTRIBUTING.md rule 3.'
+          check '\brayon\b|thread::spawn' \
+            'Parallelism found. It arrives at U11 behind a deterministic partition; CONTRIBUTING.md rule 4.'
+          exit $fail
+
+      - name: Every crate forbids unsafe
+        run: |
+          fail=0
+          for lib in crates/chipbreaker-core/src/lib.rs crates/chipbreaker-cli/src/main.rs; do
+            if ! grep -q '#!\[forbid(unsafe_code)\]' "$lib"; then
+              echo "::error file=$lib::missing #![forbid(unsafe_code)]; CONTRIBUTING.md rule 7."
+              fail=1
+            fi
+          done
+          exit $fail
+
+      - name: Every .rs file has an SPDX header
+        run: |
+          fail=0
+          while IFS= read -r f; do
+            if ! head -n 1 "$f" | grep -q 'SPDX-License-Identifier: GPL-3.0-or-later'; then
+              echo "::error file=$f::missing SPDX header on the first line"
+              fail=1
+            fi
+          done < <(find crates -name '*.rs' -not -path '*/target/*')
+          exit $fail
+
+      - name: Golden files are LF-terminated lower-case hex
+        run: |
+          fail=0
+          shopt -s nullglob
+          files=(tests/golden/*.hash)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::no golden files found"
+            exit 1
+          fi
+          for f in "${files[@]}"; do
+            if [ "$(wc -c < "$f")" -ne 65 ]; then
+              echo "::error file=$f::expected 64 hex digits plus one LF"
+              fail=1
+            fi
+            if grep -q $'\r' "$f"; then
+              echo "::error file=$f::contains CR; .gitattributes should have prevented this"
+              fail=1
+            fi
+            if ! head -c 64 "$f" | grep -qE '^[0-9a-f]{64}$'; then
+              echo "::error file=$f::not 64 lower-case hex digits"
+              fail=1
+            fi
+          done
+          exit $fail
+
+  licences:
+    name: dependency licences
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show
+      - uses: taiki-e/install-action@cargo-deny
+      # A copyleft dependency would be compatible with our GPL side and fatal to
+      # the commercial one. This is a licensing gate, not hygiene.
+      - run: cargo deny check licenses
+      - run: cargo deny check bans sources
+
+  wasm-parity:
+    name: wasm parity
+    runs-on: ubuntu-latest
+    # This job is the point of the whole workflow. Everything else checks that
+    # the code is correct; this checks that it is *identical* on a 32-bit target
+    # with a different libm and a different codegen backend, which is the
+    # guarantee we sell.
+    steps:
+      - uses: actions/checkout@v4
+
+      # rust-toolchain.toml already lists wasm32-wasip1 as a target.
+      - name: Install the pinned toolchain
+        run: |
+          rustup show
+          rustup target list --installed
+
+      - uses: Swatinem/rust-cache@v2
+      - uses: bytecodealliance/actions/wasmtime/setup@v1
+
+      - name: Build native and WASM
+        run: |
+          cargo build --release -p chipbreaker-cli
+          cargo build --release --target wasm32-wasip1 -p chipbreaker-cli
+
+      - name: Run both self-tests
+        run: |
+          ./target/release/chipbreaker selftest --report json --out native.json
+          wasmtime ./target/wasm32-wasip1/release/chipbreaker.wasm \
+            selftest --report json > wasm.json
+
+      # The whole `results` section is compared, not only its hash. A collision
+      # is not the worry; a hash that has quietly stopped covering something is.
+      - name: Compare native against WASM
+        run: |
+          python3 - <<'PY'
+          import json, sys
+          native = json.load(open("native.json"))["results"]
+          wasm = json.load(open("wasm.json"))["results"]
+          print(f"native: {native['hash']}")
+          print(f"wasm:   {wasm['hash']}")
+          if native == wasm:
+              print(f"Identical: {len(native['suites'])} suites, {native['total_cases']} cases.")
+              sys.exit(0)
+          print("::error::WASM parity broken: the same input produced different output on wasm32-wasip1.")
+          for a, b in zip(native["suites"], wasm["suites"]):
+              flag = "same" if a["hash"] == b["hash"] else "DIFF"
+              print(f"  {a['name']:<24} {flag}")
+          sys.exit(1)
+          PY
+
+  nightly-fuzz:
+    name: nightly fuzz
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      # A million span operations against deliberately hostile input. Too slow
+      # for every commit, too valuable to drop.
+      - run: cargo test --release --all -- --ignored --nocapture

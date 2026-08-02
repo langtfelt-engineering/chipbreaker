@@ -28,12 +28,27 @@ allow = [
     "BSL-1.0",
     "Unlicense",
 ]
+# Several entries above are not currently used by anything in the tree. That is
+# intentional: the list describes what we are willing to accept, not what we
+# happen to depend on today, and the warning would otherwise churn every time a
+# dependency changed.
+unused-allowed-license = "allow"
 confidence-threshold = 0.93
 
-# blake3 is triple-licensed; CC0-1.0 and Apache-2.0 are both in `allow`, so no
-# clarification is needed. Add entries here only with a note explaining why the
-# chosen licence is the one we are relying on.
-exceptions = []
+# The allow list above governs *dependencies*. Chipbreaker's own crates are
+# GPL-3.0-or-later, which is deliberately absent from it: adding GPL there would
+# also permit a GPL dependency, and a GPL dependency is precisely what forecloses
+# the commercial licence. So the first-party crates are named exceptions instead.
+#
+# Add an entry here only with a note explaining why the licence is acceptable for
+# both sides of the dual licence.
+[[licenses.exceptions]]
+name = "chipbreaker-core"
+allow = ["GPL-3.0-or-later"]
+
+[[licenses.exceptions]]
+name = "chipbreaker-cli"
+allow = ["GPL-3.0-or-later"]
 
 [bans]
 multiple-versions = "warn"
