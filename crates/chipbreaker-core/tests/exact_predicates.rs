@@ -44,7 +44,10 @@ use rand::{Rng, SeedableRng};
 /// Decomposes a finite `f64` into `(mantissa, exponent)` with
 /// `value == mantissa * 2^exponent` exactly.
 fn decompose(v: f64) -> (i64, i32) {
-    assert!(v.is_finite(), "the oracle takes finite coordinates only, got {v}");
+    assert!(
+        v.is_finite(),
+        "the oracle takes finite coordinates only, got {v}"
+    );
     if v == 0.0 {
         return (0, 0);
     }
@@ -101,20 +104,20 @@ fn det4(m: &[[BigInt; 4]; 4]) -> BigInt {
             core::array::from_fn(|_| core::array::from_fn(|_| BigInt::zero()));
         for r in 1..4 {
             let mut sj = 0;
-            for c in 0..4 {
+            for (c, entry) in m[r].iter().enumerate() {
                 if c == skip_col {
                     continue;
                 }
-                sub[r - 1][sj] = m[r][c].clone();
+                sub[r - 1][sj] = entry.clone();
                 sj += 1;
             }
         }
         det3(&sub)
     };
     let mut acc = BigInt::zero();
-    for c in 0..4 {
-        let term = &m[0][c] * minor(c);
-        if c % 2 == 0 {
+    for (c, entry) in m[0].iter().enumerate() {
+        let term = entry * minor(c);
+        if c.is_multiple_of(2) {
             acc += term;
         } else {
             acc -= term;
@@ -155,11 +158,7 @@ fn exact(kind: PredicateKind, coords: &[f64]) -> Orientation {
         PredicateKind::Orient3d => {
             let d = [at(9), at(10), at(11)];
             let row = |i: usize| -> [BigInt; 3] {
-                [
-                    at(3 * i) - d[0],
-                    at(3 * i + 1) - d[1],
-                    at(3 * i + 2) - d[2],
-                ]
+                [at(3 * i) - d[0], at(3 * i + 1) - d[1], at(3 * i + 2) - d[2]]
             };
             let m = [row(0), row(1), row(2)];
             sign_of(&det3(&m))
@@ -289,25 +288,37 @@ fn oracle_agrees_with_hand_computed_determinants() {
     );
     // The origin is inside the unit circle through (1,0), (0,1), (-1,0).
     assert_eq!(
-        exact(PredicateKind::InCircle, &[1.0, 0.0, 0.0, 1.0, -1.0, 0.0, 0.0, 0.0]),
+        exact(
+            PredicateKind::InCircle,
+            &[1.0, 0.0, 0.0, 1.0, -1.0, 0.0, 0.0, 0.0]
+        ),
         Orientation::Positive
     );
     // (0,-1) is on it.
     assert_eq!(
-        exact(PredicateKind::InCircle, &[1.0, 0.0, 0.0, 1.0, -1.0, 0.0, 0.0, -1.0]),
+        exact(
+            PredicateKind::InCircle,
+            &[1.0, 0.0, 0.0, 1.0, -1.0, 0.0, 0.0, -1.0]
+        ),
         Orientation::Zero
     );
     // The circumcentre is inside the sphere; (1,1,0) is on it.
     let tetra = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0];
     let mut inside = tetra.to_vec();
     inside.extend_from_slice(&[0.5, 0.5, 0.5]);
-    assert_eq!(exact(PredicateKind::InSphere, &inside), Orientation::Positive);
+    assert_eq!(
+        exact(PredicateKind::InSphere, &inside),
+        Orientation::Positive
+    );
     let mut on = tetra.to_vec();
     on.extend_from_slice(&[1.0, 1.0, 0.0]);
     assert_eq!(exact(PredicateKind::InSphere, &on), Orientation::Zero);
     let mut outside = tetra.to_vec();
     outside.extend_from_slice(&[10.0, 10.0, 10.0]);
-    assert_eq!(exact(PredicateKind::InSphere, &outside), Orientation::Negative);
+    assert_eq!(
+        exact(PredicateKind::InSphere, &outside),
+        Orientation::Negative
+    );
 }
 
 #[test]
@@ -319,7 +330,11 @@ fn oracle_is_scale_invariant() {
     assert_ne!(reference, Orientation::Zero);
     for shift in [-60i32, -8, 8, 60] {
         let scaled: Vec<f64> = base.iter().map(|v| v * 2.0f64.powi(shift)).collect();
-        assert_eq!(exact(PredicateKind::Orient2d, &scaled), reference, "2^{shift}");
+        assert_eq!(
+            exact(PredicateKind::Orient2d, &scaled),
+            reference,
+            "2^{shift}"
+        );
     }
 }
 
@@ -439,8 +454,14 @@ fn near_coplanar_3d(rng: &mut StdRng) -> [f64; 12] {
         a.z + (b.z - a.z) * u + (c.z - a.z) * v,
     );
     let mut dd = [d.x, d.y, d.z];
-    nudge_non_zero(&mut dd, rng.random_range(0usize..3), rng.random_range(-2i32..=2));
-    [a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, dd[0], dd[1], dd[2]]
+    nudge_non_zero(
+        &mut dd,
+        rng.random_range(0usize..3),
+        rng.random_range(-2i32..=2),
+    );
+    [
+        a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, dd[0], dd[1], dd[2],
+    ]
 }
 
 /// Four points on a common circle of random centre and radius, with the fourth
@@ -451,15 +472,16 @@ fn near_cocircular(rng: &mut StdRng) -> [f64; 8] {
     let r: f64 = f64::from(rng.random_range(1i32..=64));
     let cx = f64::from(rng.random_range(-16i32..=16));
     let cy = f64::from(rng.random_range(-16i32..=16));
-    let pts = [
-        (cx + r, cy),
-        (cx, cy + r),
-        (cx - r, cy),
-        (cx, cy - r),
-    ];
+    let pts = [(cx + r, cy), (cx, cy + r), (cx - r, cy), (cx, cy - r)];
     let mut d = [pts[3].0, pts[3].1];
-    nudge_non_zero(&mut d, usize::from(rng.random_bool(0.5)), rng.random_range(-2i32..=2));
-    [pts[0].0, pts[0].1, pts[1].0, pts[1].1, pts[2].0, pts[2].1, d[0], d[1]]
+    nudge_non_zero(
+        &mut d,
+        usize::from(rng.random_bool(0.5)),
+        rng.random_range(-2i32..=2),
+    );
+    [
+        pts[0].0, pts[0].1, pts[1].0, pts[1].1, pts[2].0, pts[2].1, d[0], d[1],
+    ]
 }
 
 fn near_cospherical(rng: &mut StdRng) -> [f64; 15] {
@@ -478,7 +500,11 @@ fn near_cospherical(rng: &mut StdRng) -> [f64; 15] {
         [c[0], c[1] - r, c[2]],
     ];
     let mut e = pts[4];
-    nudge_non_zero(&mut e, rng.random_range(0usize..3), rng.random_range(-2i32..=2));
+    nudge_non_zero(
+        &mut e,
+        rng.random_range(0usize..3),
+        rng.random_range(-2i32..=2),
+    );
     [
         pts[0][0], pts[0][1], pts[0][2], pts[1][0], pts[1][1], pts[1][2], pts[2][0], pts[2][1],
         pts[2][2], pts[3][0], pts[3][1], pts[3][2], e[0], e[1], e[2],
@@ -528,7 +554,8 @@ fn adaptive_predicates_match_exact_arithmetic_on_seeded_random_cases() {
             let truth = exact(kind, &coords);
             let got = adaptive(kind, &coords);
             assert_eq!(
-                got, truth,
+                got,
+                truth,
                 "{kind} case {i} disagrees with exact arithmetic\n  coords: {coords:?}\n  \
                  adaptive: {}\n  exact:    {}",
                 got.as_char(),
@@ -546,7 +573,10 @@ fn adaptive_predicates_match_exact_arithmetic_on_seeded_random_cases() {
         "{skipped} generated cases fell outside their predicate's exact range; \
          the generators are supposed to stay inside it"
     );
-    assert_eq!(total, RANDOM_SWEEP_CASES, "every generated case must be checked");
+    assert_eq!(
+        total, RANDOM_SWEEP_CASES,
+        "every generated case must be checked"
+    );
     // The generators are supposed to be biased toward degeneracy. If this ever
     // drops, the sweep has quietly stopped testing the interesting path.
     assert!(
@@ -603,24 +633,59 @@ fn the_documented_range_limits_are_real() {
         !ORIENT2D_COORDS.contains_all(&subnormal),
         "the guard must reject this input"
     );
-    assert_eq!(exact(PredicateKind::Orient2d, &subnormal), Orientation::Positive);
-    let got = robust::orient2d(
-        robust::Coord { x: subnormal[0], y: subnormal[1] },
-        robust::Coord { x: subnormal[2], y: subnormal[3] },
-        robust::Coord { x: subnormal[4], y: subnormal[5] },
+    assert_eq!(
+        exact(PredicateKind::Orient2d, &subnormal),
+        Orientation::Positive
     );
-    assert_eq!(got, 0.0, "underflow silently collapses the determinant to zero");
+    let got = robust::orient2d(
+        robust::Coord {
+            x: subnormal[0],
+            y: subnormal[1],
+        },
+        robust::Coord {
+            x: subnormal[2],
+            y: subnormal[3],
+        },
+        robust::Coord {
+            x: subnormal[4],
+            y: subnormal[5],
+        },
+    );
+    assert_eq!(
+        got, 0.0,
+        "underflow silently collapses the determinant to zero"
+    );
 
     // Above the range: a degree-5 determinant at 1e75 overflows to NaN, which
     // is why INSPHERE_COORDS stops at 1e60 rather than sharing the degree-4
     // bound.
     let big = 1e75;
     let over = robust::insphere(
-        robust::Coord3D { x: big, y: 0.0, z: 0.0 },
-        robust::Coord3D { x: 0.0, y: big, z: 0.0 },
-        robust::Coord3D { x: 0.0, y: 0.0, z: big },
-        robust::Coord3D { x: 0.0, y: 0.0, z: 0.0 },
-        robust::Coord3D { x: big, y: big, z: 0.0 },
+        robust::Coord3D {
+            x: big,
+            y: 0.0,
+            z: 0.0,
+        },
+        robust::Coord3D {
+            x: 0.0,
+            y: big,
+            z: 0.0,
+        },
+        robust::Coord3D {
+            x: 0.0,
+            y: 0.0,
+            z: big,
+        },
+        robust::Coord3D {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        },
+        robust::Coord3D {
+            x: big,
+            y: big,
+            z: 0.0,
+        },
     );
     assert!(
         over.is_nan(),
@@ -630,11 +695,31 @@ fn the_documented_range_limits_are_real() {
     // And inside the range the same configuration is answered exactly.
     let inside = INSPHERE_COORDS.max;
     let ok = robust::insphere(
-        robust::Coord3D { x: inside, y: 0.0, z: 0.0 },
-        robust::Coord3D { x: 0.0, y: inside, z: 0.0 },
-        robust::Coord3D { x: 0.0, y: 0.0, z: inside },
-        robust::Coord3D { x: 0.0, y: 0.0, z: 0.0 },
-        robust::Coord3D { x: inside, y: inside, z: 0.0 },
+        robust::Coord3D {
+            x: inside,
+            y: 0.0,
+            z: 0.0,
+        },
+        robust::Coord3D {
+            x: 0.0,
+            y: inside,
+            z: 0.0,
+        },
+        robust::Coord3D {
+            x: 0.0,
+            y: 0.0,
+            z: inside,
+        },
+        robust::Coord3D {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        },
+        robust::Coord3D {
+            x: inside,
+            y: inside,
+            z: 0.0,
+        },
     );
     assert_eq!(ok, 0.0, "cospherical at the top of the range");
 }
@@ -650,12 +735,26 @@ fn exact_at_scale(kind: PredicateKind, s: f64) -> bool {
             PredicateKind::Orient2d => {
                 vec![s, s, 2.0 * s, 2.0 * s, 3.0 * s, ulps(3.0 * s, n)]
             }
-            PredicateKind::Orient3d => vec![
-                s, 0.0, 0.0, 0.0, s, 0.0, 0.0, 0.0, s, s, s, ulps(-s, n),
-            ],
+            PredicateKind::Orient3d => {
+                vec![s, 0.0, 0.0, 0.0, s, 0.0, 0.0, 0.0, s, s, s, ulps(-s, n)]
+            }
             PredicateKind::InCircle => vec![s, 0.0, 0.0, s, -s, 0.0, 0.0, ulps(-s, n)],
             PredicateKind::InSphere => vec![
-                s, 0.0, 0.0, 0.0, s, 0.0, 0.0, 0.0, s, 0.0, 0.0, 0.0, s, ulps(s, n), 0.0,
+                s,
+                0.0,
+                0.0,
+                0.0,
+                s,
+                0.0,
+                0.0,
+                0.0,
+                s,
+                0.0,
+                0.0,
+                0.0,
+                s,
+                ulps(s, n),
+                0.0,
             ],
         };
         if !coords.iter().all(|v| v.is_finite()) {
@@ -665,28 +764,85 @@ fn exact_at_scale(kind: PredicateKind, s: f64) -> bool {
         // the whole point of measuring where its refusal should start.
         let got = match kind {
             PredicateKind::Orient2d => robust::orient2d(
-                robust::Coord { x: coords[0], y: coords[1] },
-                robust::Coord { x: coords[2], y: coords[3] },
-                robust::Coord { x: coords[4], y: coords[5] },
+                robust::Coord {
+                    x: coords[0],
+                    y: coords[1],
+                },
+                robust::Coord {
+                    x: coords[2],
+                    y: coords[3],
+                },
+                robust::Coord {
+                    x: coords[4],
+                    y: coords[5],
+                },
             ),
             PredicateKind::Orient3d => robust::orient3d(
-                robust::Coord3D { x: coords[0], y: coords[1], z: coords[2] },
-                robust::Coord3D { x: coords[3], y: coords[4], z: coords[5] },
-                robust::Coord3D { x: coords[6], y: coords[7], z: coords[8] },
-                robust::Coord3D { x: coords[9], y: coords[10], z: coords[11] },
+                robust::Coord3D {
+                    x: coords[0],
+                    y: coords[1],
+                    z: coords[2],
+                },
+                robust::Coord3D {
+                    x: coords[3],
+                    y: coords[4],
+                    z: coords[5],
+                },
+                robust::Coord3D {
+                    x: coords[6],
+                    y: coords[7],
+                    z: coords[8],
+                },
+                robust::Coord3D {
+                    x: coords[9],
+                    y: coords[10],
+                    z: coords[11],
+                },
             ),
             PredicateKind::InCircle => robust::incircle(
-                robust::Coord { x: coords[0], y: coords[1] },
-                robust::Coord { x: coords[2], y: coords[3] },
-                robust::Coord { x: coords[4], y: coords[5] },
-                robust::Coord { x: coords[6], y: coords[7] },
+                robust::Coord {
+                    x: coords[0],
+                    y: coords[1],
+                },
+                robust::Coord {
+                    x: coords[2],
+                    y: coords[3],
+                },
+                robust::Coord {
+                    x: coords[4],
+                    y: coords[5],
+                },
+                robust::Coord {
+                    x: coords[6],
+                    y: coords[7],
+                },
             ),
             PredicateKind::InSphere => robust::insphere(
-                robust::Coord3D { x: coords[0], y: coords[1], z: coords[2] },
-                robust::Coord3D { x: coords[3], y: coords[4], z: coords[5] },
-                robust::Coord3D { x: coords[6], y: coords[7], z: coords[8] },
-                robust::Coord3D { x: coords[9], y: coords[10], z: coords[11] },
-                robust::Coord3D { x: coords[12], y: coords[13], z: coords[14] },
+                robust::Coord3D {
+                    x: coords[0],
+                    y: coords[1],
+                    z: coords[2],
+                },
+                robust::Coord3D {
+                    x: coords[3],
+                    y: coords[4],
+                    z: coords[5],
+                },
+                robust::Coord3D {
+                    x: coords[6],
+                    y: coords[7],
+                    z: coords[8],
+                },
+                robust::Coord3D {
+                    x: coords[9],
+                    y: coords[10],
+                    z: coords[11],
+                },
+                robust::Coord3D {
+                    x: coords[12],
+                    y: coords[13],
+                    z: coords[14],
+                },
             ),
         };
         if got.is_nan() {
@@ -768,7 +924,12 @@ fn published_coord_ranges_are_inside_the_measured_exact_band() {
 
 #[test]
 fn coord_range_membership() {
-    for range in [ORIENT2D_COORDS, ORIENT3D_COORDS, INCIRCLE_COORDS, INSPHERE_COORDS] {
+    for range in [
+        ORIENT2D_COORDS,
+        ORIENT3D_COORDS,
+        INCIRCLE_COORDS,
+        INSPHERE_COORDS,
+    ] {
         assert!(range.contains(0.0), "zero must always be admissible");
         assert!(range.contains(range.min));
         assert!(range.contains(-range.max));
@@ -780,10 +941,18 @@ fn coord_range_membership() {
         assert!(!range.contains_all(&[1.0, f64::NAN]));
     }
     // The ranges narrow monotonically with the determinant's degree.
-    let by_degree = [ORIENT2D_COORDS, ORIENT3D_COORDS, INCIRCLE_COORDS, INSPHERE_COORDS];
+    let by_degree = [
+        ORIENT2D_COORDS,
+        ORIENT3D_COORDS,
+        INCIRCLE_COORDS,
+        INSPHERE_COORDS,
+    ];
     for pair in by_degree.windows(2) {
         assert!(pair[0].degree < pair[1].degree);
-        assert!(pair[0].max > pair[1].max, "a higher degree must not admit more");
+        assert!(
+            pair[0].max > pair[1].max,
+            "a higher degree must not admit more"
+        );
         assert!(pair[0].min < pair[1].min);
     }
 }
@@ -801,27 +970,63 @@ fn corpus_inputs() -> Vec<(String, PredicateKind, Vec<f64>)> {
     use PredicateKind::{InCircle, InSphere, Orient2d, Orient3d};
     let mut out: Vec<(String, PredicateKind, Vec<f64>)> = Vec::new();
     let mut add = |id: &str, kind: PredicateKind, coords: Vec<f64>| {
-        assert_eq!(coords.len(), kind.arity(), "case `{id}` has the wrong arity");
+        assert_eq!(
+            coords.len(),
+            kind.arity(),
+            "case `{id}` has the wrong arity"
+        );
         out.push((id.to_owned(), kind, coords));
     };
 
     // -- orient2d: exact collinearity in various guises ---------------------
-    add("o2d-collinear-axis", Orient2d, vec![0.0, 0.0, 1.0, 0.0, 2.0, 0.0]);
-    add("o2d-collinear-diagonal", Orient2d, vec![0.0, 0.0, 1.0, 1.0, 2.0, 2.0]);
+    add(
+        "o2d-collinear-axis",
+        Orient2d,
+        vec![0.0, 0.0, 1.0, 0.0, 2.0, 0.0],
+    );
+    add(
+        "o2d-collinear-diagonal",
+        Orient2d,
+        vec![0.0, 0.0, 1.0, 1.0, 2.0, 2.0],
+    );
     add("o2d-ccw-unit", Orient2d, vec![0.0, 0.0, 1.0, 0.0, 0.0, 1.0]);
     add("o2d-cw-unit", Orient2d, vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0]);
-    add("o2d-repeated-point-ab", Orient2d, vec![1.0, 1.0, 1.0, 1.0, 2.0, 5.0]);
-    add("o2d-repeated-point-ac", Orient2d, vec![1.0, 1.0, 2.0, 5.0, 1.0, 1.0]);
-    add("o2d-all-identical", Orient2d, vec![3.0, 4.0, 3.0, 4.0, 3.0, 4.0]);
+    add(
+        "o2d-repeated-point-ab",
+        Orient2d,
+        vec![1.0, 1.0, 1.0, 1.0, 2.0, 5.0],
+    );
+    add(
+        "o2d-repeated-point-ac",
+        Orient2d,
+        vec![1.0, 1.0, 2.0, 5.0, 1.0, 1.0],
+    );
+    add(
+        "o2d-all-identical",
+        Orient2d,
+        vec![3.0, 4.0, 3.0, 4.0, 3.0, 4.0],
+    );
     // Tenths are not exactly representable, but equal x and y make the
     // determinant cancel exactly regardless.
-    add("o2d-collinear-tenths", Orient2d, vec![0.1, 0.1, 0.2, 0.2, 0.3, 0.3]);
-    add("o2d-collinear-rational-slope", Orient2d, vec![0.0, 0.0, 3.0, 1.0, 6.0, 2.0]);
+    add(
+        "o2d-collinear-tenths",
+        Orient2d,
+        vec![0.1, 0.1, 0.2, 0.2, 0.3, 0.3],
+    );
+    add(
+        "o2d-collinear-rational-slope",
+        Orient2d,
+        vec![0.0, 0.0, 3.0, 1.0, 6.0, 2.0],
+    );
 
     // Shewchuk's demonstration case and its ULP neighbours: the classic
     // configuration where a naive f64 determinant reports a sign that flips
     // with the compiler's mood.
-    add("o2d-shewchuk-collinear", Orient2d, vec![0.5, 0.5, 12.0, 12.0, 24.0, 24.0]);
+    add(
+        "o2d-shewchuk-collinear",
+        Orient2d,
+        vec![0.5, 0.5, 12.0, 12.0, 24.0, 24.0],
+    );
     for n in [-3i32, -2, -1, 1, 2, 3] {
         add(
             &format!("o2d-shewchuk-y{n:+}ulp"),
@@ -837,9 +1042,21 @@ fn corpus_inputs() -> Vec<(String, PredicateKind, Vec<f64>)> {
 
     // Points differing only in the last mantissa bit.
     let one_lsb = ulps(1.0, 1);
-    add("o2d-mantissa-lsb-collinear", Orient2d, vec![1.0, 1.0, one_lsb, one_lsb, ulps(1.0, 2), ulps(1.0, 2)]);
-    add("o2d-mantissa-lsb-off", Orient2d, vec![1.0, 1.0, one_lsb, one_lsb, ulps(1.0, 2), ulps(1.0, 3)]);
-    add("o2d-adjacent-doubles", Orient2d, vec![1.0, 1.0, one_lsb, 1.0, 1.0, one_lsb]);
+    add(
+        "o2d-mantissa-lsb-collinear",
+        Orient2d,
+        vec![1.0, 1.0, one_lsb, one_lsb, ulps(1.0, 2), ulps(1.0, 2)],
+    );
+    add(
+        "o2d-mantissa-lsb-off",
+        Orient2d,
+        vec![1.0, 1.0, one_lsb, one_lsb, ulps(1.0, 2), ulps(1.0, 3)],
+    );
+    add(
+        "o2d-adjacent-doubles",
+        Orient2d,
+        vec![1.0, 1.0, one_lsb, 1.0, 1.0, one_lsb],
+    );
 
     // Wide dynamic range, pressed right up against ORIENT2D_COORDS. In this
     // band a naive f64 determinant is still finite but has lost every
@@ -847,17 +1064,57 @@ fn corpus_inputs() -> Vec<(String, PredicateKind, Vec<f64>)> {
     // predicate overflows too, which is why the corpus stops here.
     // One decade inside ORIENT2D_COORDS, so that small multiples and ULP nudges
     // stay inside the exact range rather than straddling its edge.
-    add("o2d-huge-collinear", Orient2d, vec![1e149, 1e149, 2e149, 2e149, 3e149, 3e149]);
-    add("o2d-huge-off-1ulp", Orient2d, vec![1e149, 1e149, 2e149, 2e149, 3e149, ulps(3e149, 1)]);
-    add("o2d-tiny-collinear", Orient2d, vec![1e-149, 1e-149, 2e-149, 2e-149, 3e-149, 3e-149]);
-    add("o2d-tiny-off-1ulp", Orient2d, vec![1e-149, 1e-149, 2e-149, 2e-149, 3e-149, ulps(3e-149, 1)]);
-    add("o2d-mixed-scale-collinear", Orient2d, vec![1e-149, 1e-149, 1.0, 1.0, 1e149, 1e149]);
-    add("o2d-mixed-scale-off", Orient2d, vec![1e-149, 1e-149, 1.0, 1.0, 1e149, ulps(1e149, 1)]);
-    add("o2d-anisotropic-collinear", Orient2d, vec![0.0, 0.0, 1e100, 1e-100, 2e100, 2e-100]);
-    add("o2d-anisotropic-off", Orient2d, vec![0.0, 0.0, 1e100, 1e-100, 2e100, ulps(2e-100, 1)]);
+    add(
+        "o2d-huge-collinear",
+        Orient2d,
+        vec![1e149, 1e149, 2e149, 2e149, 3e149, 3e149],
+    );
+    add(
+        "o2d-huge-off-1ulp",
+        Orient2d,
+        vec![1e149, 1e149, 2e149, 2e149, 3e149, ulps(3e149, 1)],
+    );
+    add(
+        "o2d-tiny-collinear",
+        Orient2d,
+        vec![1e-149, 1e-149, 2e-149, 2e-149, 3e-149, 3e-149],
+    );
+    add(
+        "o2d-tiny-off-1ulp",
+        Orient2d,
+        vec![1e-149, 1e-149, 2e-149, 2e-149, 3e-149, ulps(3e-149, 1)],
+    );
+    add(
+        "o2d-mixed-scale-collinear",
+        Orient2d,
+        vec![1e-149, 1e-149, 1.0, 1.0, 1e149, 1e149],
+    );
+    add(
+        "o2d-mixed-scale-off",
+        Orient2d,
+        vec![1e-149, 1e-149, 1.0, 1.0, 1e149, ulps(1e149, 1)],
+    );
+    add(
+        "o2d-anisotropic-collinear",
+        Orient2d,
+        vec![0.0, 0.0, 1e100, 1e-100, 2e100, 2e-100],
+    );
+    add(
+        "o2d-anisotropic-off",
+        Orient2d,
+        vec![0.0, 0.0, 1e100, 1e-100, 2e100, ulps(2e-100, 1)],
+    );
     // Catastrophic cancellation: a long lever arm and a short one.
-    add("o2d-lever-arm", Orient2d, vec![-1e15, 0.0, 1e15, 0.0, 0.0, 1e-15]);
-    add("o2d-lever-arm-negative", Orient2d, vec![-1e15, 0.0, 1e15, 0.0, 0.0, -1e-15]);
+    add(
+        "o2d-lever-arm",
+        Orient2d,
+        vec![-1e15, 0.0, 1e15, 0.0, 0.0, 1e-15],
+    );
+    add(
+        "o2d-lever-arm-negative",
+        Orient2d,
+        vec![-1e15, 0.0, 1e15, 0.0, 0.0, -1e-15],
+    );
 
     // -- orient3d ------------------------------------------------------------
     let tri = vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
@@ -866,88 +1123,346 @@ fn corpus_inputs() -> Vec<(String, PredicateKind, Vec<f64>)> {
         v.extend_from_slice(tail);
         v
     };
-    add("o3d-origin-positive", Orient3d, with(&tri, &[0.0, 0.0, 0.0]));
+    add(
+        "o3d-origin-positive",
+        Orient3d,
+        with(&tri, &[0.0, 0.0, 0.0]),
+    );
     add("o3d-far-negative", Orient3d, with(&tri, &[2.0, 2.0, 2.0]));
-    add("o3d-coplanar-sum-one", Orient3d, with(&tri, &[1.0, 1.0, -1.0]));
-    add("o3d-coplanar-sum-one-b", Orient3d, with(&tri, &[-3.0, 2.0, 2.0]));
-    add("o3d-coplanar-1ulp-off", Orient3d, with(&tri, &[1.0, 1.0, ulps(-1.0, 1)]));
-    add("o3d-coplanar-1ulp-off-neg", Orient3d, with(&tri, &[1.0, 1.0, ulps(-1.0, -1)]));
-    add("o3d-coplanar-xy-plane", Orient3d, vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 5.0, 7.0, 0.0]);
+    add(
+        "o3d-coplanar-sum-one",
+        Orient3d,
+        with(&tri, &[1.0, 1.0, -1.0]),
+    );
+    add(
+        "o3d-coplanar-sum-one-b",
+        Orient3d,
+        with(&tri, &[-3.0, 2.0, 2.0]),
+    );
+    add(
+        "o3d-coplanar-1ulp-off",
+        Orient3d,
+        with(&tri, &[1.0, 1.0, ulps(-1.0, 1)]),
+    );
+    add(
+        "o3d-coplanar-1ulp-off-neg",
+        Orient3d,
+        with(&tri, &[1.0, 1.0, ulps(-1.0, -1)]),
+    );
+    add(
+        "o3d-coplanar-xy-plane",
+        Orient3d,
+        vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 5.0, 7.0, 0.0],
+    );
     // Just off the plane by one ULP *of unit scale*. A subnormal offset would be
     // outside ORIENT3D_COORDS, where the predicate is not exact — which is
     // itself pinned by `the_documented_range_limits_are_real`.
-    add("o3d-coplanar-xy-eps", Orient3d, vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 5.0, 7.0, f64::EPSILON]);
-    add("o3d-coplanar-xy-eps-neg", Orient3d, vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 5.0, 7.0, -f64::EPSILON]);
-    add("o3d-collinear-degenerate", Orient3d, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 5.0, 3.0, 1.0]);
-    add("o3d-repeated-point", Orient3d, vec![1.0, 2.0, 3.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
+    add(
+        "o3d-coplanar-xy-eps",
+        Orient3d,
+        vec![
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            5.0,
+            7.0,
+            f64::EPSILON,
+        ],
+    );
+    add(
+        "o3d-coplanar-xy-eps-neg",
+        Orient3d,
+        vec![
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            5.0,
+            7.0,
+            -f64::EPSILON,
+        ],
+    );
+    add(
+        "o3d-collinear-degenerate",
+        Orient3d,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 5.0, 3.0, 1.0],
+    );
+    add(
+        "o3d-repeated-point",
+        Orient3d,
+        vec![1.0, 2.0, 3.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0],
+    );
     // Bounded by ORIENT3D_COORDS, which is narrower than the 2D range because
     // this is a degree-3 determinant.
-    add("o3d-huge-coplanar", Orient3d, vec![1e99, 0.0, 0.0, 0.0, 1e99, 0.0, 0.0, 0.0, 1e99, 1e99, 1e99, -1e99]);
-    add("o3d-huge-off", Orient3d, vec![1e99, 0.0, 0.0, 0.0, 1e99, 0.0, 0.0, 0.0, 1e99, 1e99, 1e99, ulps(-1e99, 1)]);
-    add("o3d-tiny-coplanar", Orient3d, vec![1e-89, 0.0, 0.0, 0.0, 1e-89, 0.0, 0.0, 0.0, 1e-89, 1e-89, 1e-89, -1e-89]);
-    add("o3d-tiny-off", Orient3d, vec![1e-89, 0.0, 0.0, 0.0, 1e-89, 0.0, 0.0, 0.0, 1e-89, 1e-89, 1e-89, ulps(-1e-89, 1)]);
-    add("o3d-mixed-scale", Orient3d, vec![1e-60, 0.0, 0.0, 0.0, 1e60, 0.0, 0.0, 0.0, 1.0, 1e-60, 1e60, 1.0]);
-    add("o3d-thin-sliver", Orient3d, vec![0.0, 0.0, 0.0, 1e8, 1.0, 0.0, 1e8, 0.0, 1.0, 1e8, 1.0, 1.0]);
-    add("o3d-mantissa-lsb", Orient3d, vec![1.0, 1.0, 1.0, one_lsb, 1.0, 1.0, 1.0, one_lsb, 1.0, 1.0, 1.0, one_lsb]);
+    add(
+        "o3d-huge-coplanar",
+        Orient3d,
+        vec![
+            1e99, 0.0, 0.0, 0.0, 1e99, 0.0, 0.0, 0.0, 1e99, 1e99, 1e99, -1e99,
+        ],
+    );
+    add(
+        "o3d-huge-off",
+        Orient3d,
+        vec![
+            1e99,
+            0.0,
+            0.0,
+            0.0,
+            1e99,
+            0.0,
+            0.0,
+            0.0,
+            1e99,
+            1e99,
+            1e99,
+            ulps(-1e99, 1),
+        ],
+    );
+    add(
+        "o3d-tiny-coplanar",
+        Orient3d,
+        vec![
+            1e-89, 0.0, 0.0, 0.0, 1e-89, 0.0, 0.0, 0.0, 1e-89, 1e-89, 1e-89, -1e-89,
+        ],
+    );
+    add(
+        "o3d-tiny-off",
+        Orient3d,
+        vec![
+            1e-89,
+            0.0,
+            0.0,
+            0.0,
+            1e-89,
+            0.0,
+            0.0,
+            0.0,
+            1e-89,
+            1e-89,
+            1e-89,
+            ulps(-1e-89, 1),
+        ],
+    );
+    add(
+        "o3d-mixed-scale",
+        Orient3d,
+        vec![
+            1e-60, 0.0, 0.0, 0.0, 1e60, 0.0, 0.0, 0.0, 1.0, 1e-60, 1e60, 1.0,
+        ],
+    );
+    add(
+        "o3d-thin-sliver",
+        Orient3d,
+        vec![0.0, 0.0, 0.0, 1e8, 1.0, 0.0, 1e8, 0.0, 1.0, 1e8, 1.0, 1.0],
+    );
+    add(
+        "o3d-mantissa-lsb",
+        Orient3d,
+        vec![
+            1.0, 1.0, 1.0, one_lsb, 1.0, 1.0, 1.0, one_lsb, 1.0, 1.0, 1.0, one_lsb,
+        ],
+    );
 
     // -- incircle ------------------------------------------------------------
-    add("icc-cocircular-unit", InCircle, vec![1.0, 0.0, 0.0, 1.0, -1.0, 0.0, 0.0, -1.0]);
-    add("icc-inside-centre", InCircle, vec![1.0, 0.0, 0.0, 1.0, -1.0, 0.0, 0.0, 0.0]);
-    add("icc-outside", InCircle, vec![1.0, 0.0, 0.0, 1.0, -1.0, 0.0, 0.0, -2.0]);
-    add("icc-cocircular-1ulp-in", InCircle, vec![1.0, 0.0, 0.0, 1.0, -1.0, 0.0, 0.0, ulps(-1.0, 1)]);
-    add("icc-cocircular-1ulp-out", InCircle, vec![1.0, 0.0, 0.0, 1.0, -1.0, 0.0, 0.0, ulps(-1.0, -1)]);
-    add("icc-collinear-abc", InCircle, vec![0.0, 0.0, 1.0, 0.0, 2.0, 0.0, 1.0, 1.0]);
-    add("icc-repeated-point", InCircle, vec![1.0, 0.0, 1.0, 0.0, -1.0, 0.0, 0.0, 0.0]);
-    add("icc-cocircular-large", InCircle, vec![1e73, 0.0, 0.0, 1e73, -1e73, 0.0, 0.0, -1e73]);
-    add("icc-cocircular-large-off", InCircle, vec![1e73, 0.0, 0.0, 1e73, -1e73, 0.0, 0.0, ulps(-1e73, 1)]);
-    add("icc-cocircular-small", InCircle, vec![1e-62, 0.0, 0.0, 1e-62, -1e-62, 0.0, 0.0, -1e-62]);
-    add("icc-cocircular-small-off", InCircle, vec![1e-62, 0.0, 0.0, 1e-62, -1e-62, 0.0, 0.0, ulps(-1e-62, 1)]);
+    add(
+        "icc-cocircular-unit",
+        InCircle,
+        vec![1.0, 0.0, 0.0, 1.0, -1.0, 0.0, 0.0, -1.0],
+    );
+    add(
+        "icc-inside-centre",
+        InCircle,
+        vec![1.0, 0.0, 0.0, 1.0, -1.0, 0.0, 0.0, 0.0],
+    );
+    add(
+        "icc-outside",
+        InCircle,
+        vec![1.0, 0.0, 0.0, 1.0, -1.0, 0.0, 0.0, -2.0],
+    );
+    add(
+        "icc-cocircular-1ulp-in",
+        InCircle,
+        vec![1.0, 0.0, 0.0, 1.0, -1.0, 0.0, 0.0, ulps(-1.0, 1)],
+    );
+    add(
+        "icc-cocircular-1ulp-out",
+        InCircle,
+        vec![1.0, 0.0, 0.0, 1.0, -1.0, 0.0, 0.0, ulps(-1.0, -1)],
+    );
+    add(
+        "icc-collinear-abc",
+        InCircle,
+        vec![0.0, 0.0, 1.0, 0.0, 2.0, 0.0, 1.0, 1.0],
+    );
+    add(
+        "icc-repeated-point",
+        InCircle,
+        vec![1.0, 0.0, 1.0, 0.0, -1.0, 0.0, 0.0, 0.0],
+    );
+    add(
+        "icc-cocircular-large",
+        InCircle,
+        vec![1e73, 0.0, 0.0, 1e73, -1e73, 0.0, 0.0, -1e73],
+    );
+    add(
+        "icc-cocircular-large-off",
+        InCircle,
+        vec![1e73, 0.0, 0.0, 1e73, -1e73, 0.0, 0.0, ulps(-1e73, 1)],
+    );
+    add(
+        "icc-cocircular-small",
+        InCircle,
+        vec![1e-62, 0.0, 0.0, 1e-62, -1e-62, 0.0, 0.0, -1e-62],
+    );
+    add(
+        "icc-cocircular-small-off",
+        InCircle,
+        vec![1e-62, 0.0, 0.0, 1e-62, -1e-62, 0.0, 0.0, ulps(-1e-62, 1)],
+    );
     // Circle of radius 5 about (8, 5); (8, 0) is on it, (8 + 1 ULP, 0) just
     // outside. The perturbation is applied to a unit-scale coordinate rather
     // than to the zero, whose ULP neighbour is subnormal and outside the range.
-    add("icc-offset-centre", InCircle, vec![13.0, 5.0, 8.0, 10.0, 3.0, 5.0, 8.0, 0.0]);
-    add("icc-offset-centre-1ulp", InCircle, vec![13.0, 5.0, 8.0, 10.0, 3.0, 5.0, ulps(8.0, 1), 0.0]);
-    add("icc-offset-centre-1ulp-neg", InCircle, vec![13.0, 5.0, 8.0, 10.0, 3.0, 5.0, ulps(8.0, -1), 0.0]);
-    add("icc-flat-triangle", InCircle, vec![0.0, 0.0, 1e8, 1.0, 2e8, 0.0, 1e8, -1.0]);
+    add(
+        "icc-offset-centre",
+        InCircle,
+        vec![13.0, 5.0, 8.0, 10.0, 3.0, 5.0, 8.0, 0.0],
+    );
+    add(
+        "icc-offset-centre-1ulp",
+        InCircle,
+        vec![13.0, 5.0, 8.0, 10.0, 3.0, 5.0, ulps(8.0, 1), 0.0],
+    );
+    add(
+        "icc-offset-centre-1ulp-neg",
+        InCircle,
+        vec![13.0, 5.0, 8.0, 10.0, 3.0, 5.0, ulps(8.0, -1), 0.0],
+    );
+    add(
+        "icc-flat-triangle",
+        InCircle,
+        vec![0.0, 0.0, 1e8, 1.0, 2e8, 0.0, 1e8, -1.0],
+    );
 
     // -- insphere ------------------------------------------------------------
     let tetra = vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0];
     add("isp-cospherical", InSphere, with(&tetra, &[1.0, 1.0, 0.0]));
-    add("isp-cospherical-b", InSphere, with(&tetra, &[0.0, 1.0, 1.0]));
-    add("isp-inside-centre", InSphere, with(&tetra, &[0.5, 0.5, 0.5]));
+    add(
+        "isp-cospherical-b",
+        InSphere,
+        with(&tetra, &[0.0, 1.0, 1.0]),
+    );
+    add(
+        "isp-inside-centre",
+        InSphere,
+        with(&tetra, &[0.5, 0.5, 0.5]),
+    );
     add("isp-outside", InSphere, with(&tetra, &[10.0, 10.0, 10.0]));
-    add("isp-cospherical-1ulp-in", InSphere, with(&tetra, &[1.0, ulps(1.0, -1), 0.0]));
-    add("isp-cospherical-1ulp-out", InSphere, with(&tetra, &[1.0, ulps(1.0, 1), 0.0]));
-    add("isp-coplanar-tetra", InSphere, vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 2.0, 2.0, 0.0]);
-    add("isp-repeated-point", InSphere, with(&tetra, &[1.0, 0.0, 0.0]));
+    add(
+        "isp-cospherical-1ulp-in",
+        InSphere,
+        with(&tetra, &[1.0, ulps(1.0, -1), 0.0]),
+    );
+    add(
+        "isp-cospherical-1ulp-out",
+        InSphere,
+        with(&tetra, &[1.0, ulps(1.0, 1), 0.0]),
+    );
+    add(
+        "isp-coplanar-tetra",
+        InSphere,
+        vec![
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 2.0, 2.0, 0.0,
+        ],
+    );
+    add(
+        "isp-repeated-point",
+        InSphere,
+        with(&tetra, &[1.0, 0.0, 0.0]),
+    );
     // Bounded by INSPHERE_COORDS: the narrowest range of the four, because this
     // is a degree-5 determinant.
     add(
         "isp-cospherical-large",
         InSphere,
-        vec![1e58, 0.0, 0.0, 0.0, 1e58, 0.0, 0.0, 0.0, 1e58, 0.0, 0.0, 0.0, 1e58, 1e58, 0.0],
+        vec![
+            1e58, 0.0, 0.0, 0.0, 1e58, 0.0, 0.0, 0.0, 1e58, 0.0, 0.0, 0.0, 1e58, 1e58, 0.0,
+        ],
     );
     add(
         "isp-cospherical-large-off",
         InSphere,
-        vec![1e58, 0.0, 0.0, 0.0, 1e58, 0.0, 0.0, 0.0, 1e58, 0.0, 0.0, 0.0, 1e58, ulps(1e58, -1), 0.0],
+        vec![
+            1e58,
+            0.0,
+            0.0,
+            0.0,
+            1e58,
+            0.0,
+            0.0,
+            0.0,
+            1e58,
+            0.0,
+            0.0,
+            0.0,
+            1e58,
+            ulps(1e58, -1),
+            0.0,
+        ],
     );
     add(
         "isp-cospherical-small",
         InSphere,
-        vec![1e-58, 0.0, 0.0, 0.0, 1e-58, 0.0, 0.0, 0.0, 1e-58, 0.0, 0.0, 0.0, 1e-58, 1e-58, 0.0],
+        vec![
+            1e-58, 0.0, 0.0, 0.0, 1e-58, 0.0, 0.0, 0.0, 1e-58, 0.0, 0.0, 0.0, 1e-58, 1e-58, 0.0,
+        ],
     );
     add(
         "isp-cospherical-small-off",
         InSphere,
-        vec![1e-58, 0.0, 0.0, 0.0, 1e-58, 0.0, 0.0, 0.0, 1e-58, 0.0, 0.0, 0.0, 1e-58, ulps(1e-58, 1), 0.0],
+        vec![
+            1e-58,
+            0.0,
+            0.0,
+            0.0,
+            1e-58,
+            0.0,
+            0.0,
+            0.0,
+            1e-58,
+            0.0,
+            0.0,
+            0.0,
+            1e-58,
+            ulps(1e-58, 1),
+            0.0,
+        ],
     );
     add(
         "isp-offset-sphere",
         InSphere,
-        vec![10.0, 3.0, 3.0, 3.0, 10.0, 3.0, 3.0, 3.0, 10.0, 3.0, 3.0, 3.0, 10.0, 10.0, 3.0],
+        vec![
+            10.0, 3.0, 3.0, 3.0, 10.0, 3.0, 3.0, 3.0, 10.0, 3.0, 3.0, 3.0, 10.0, 10.0, 3.0,
+        ],
     );
-    add("isp-flat-sliver", InSphere, vec![0.0, 0.0, 0.0, 1e6, 0.0, 0.0, 0.0, 1e6, 0.0, 0.0, 0.0, 1.0, 1e6, 1e6, 0.0]);
+    add(
+        "isp-flat-sliver",
+        InSphere,
+        vec![
+            0.0, 0.0, 0.0, 1e6, 0.0, 0.0, 0.0, 1e6, 0.0, 0.0, 0.0, 1.0, 1e6, 1e6, 0.0,
+        ],
+    );
 
     out
 }

@@ -165,7 +165,11 @@ impl<'a> CorpusCase<'a> {
     }
 
     fn v3(&self, i: usize) -> Vec3 {
-        Vec3::new(self.coords[3 * i], self.coords[3 * i + 1], self.coords[3 * i + 2])
+        Vec3::new(
+            self.coords[3 * i],
+            self.coords[3 * i + 1],
+            self.coords[3 * i + 2],
+        )
     }
 
     /// Runs the case against a predicate implementation.
@@ -173,12 +177,8 @@ impl<'a> CorpusCase<'a> {
     pub fn evaluate<P: Predicates + ?Sized>(&self, p: &P) -> Orientation {
         match self.kind {
             PredicateKind::Orient2d => p.orient2d(self.v2(0), self.v2(1), self.v2(2)),
-            PredicateKind::Orient3d => {
-                p.orient3d(self.v3(0), self.v3(1), self.v3(2), self.v3(3))
-            }
-            PredicateKind::InCircle => {
-                p.incircle(self.v2(0), self.v2(1), self.v2(2), self.v2(3))
-            }
+            PredicateKind::Orient3d => p.orient3d(self.v3(0), self.v3(1), self.v3(2), self.v3(3)),
+            PredicateKind::InCircle => p.incircle(self.v2(0), self.v2(1), self.v2(2), self.v2(3)),
             PredicateKind::InSphere => {
                 p.insphere(self.v3(0), self.v3(1), self.v3(2), self.v3(3), self.v3(4))
             }
@@ -192,7 +192,12 @@ impl<'a> CorpusCase<'a> {
     /// human-readable decimal form.
     #[must_use]
     pub fn to_canonical_line(&self) -> String {
-        let mut s = format!("{} {} {}", self.id, self.kind.name(), self.expected.as_char());
+        let mut s = format!(
+            "{} {} {}",
+            self.id,
+            self.kind.name(),
+            self.expected.as_char()
+        );
         for &c in self.coords() {
             s.push_str(&format!(" 0x{:016x}", c.to_bits()));
         }
@@ -256,10 +261,14 @@ pub fn parse(src: &str) -> Result<Vec<CorpusCase<'_>>, CorpusError> {
 
         let mut tokens = text.split_whitespace();
         let id = tokens.next().ok_or_else(|| err("missing case id".into()))?;
-        let kind_tok = tokens.next().ok_or_else(|| err("missing predicate name".into()))?;
+        let kind_tok = tokens
+            .next()
+            .ok_or_else(|| err("missing predicate name".into()))?;
         let kind = PredicateKind::from_name(kind_tok)
             .ok_or_else(|| err(format!("unknown predicate `{kind_tok}`")))?;
-        let expected_tok = tokens.next().ok_or_else(|| err("missing expected result".into()))?;
+        let expected_tok = tokens
+            .next()
+            .ok_or_else(|| err("missing expected result".into()))?;
         let expected = expected_tok
             .chars()
             .next()
@@ -281,7 +290,12 @@ pub fn parse(src: &str) -> Result<Vec<CorpusCase<'_>>, CorpusError> {
                 "{kind} takes {arity} coordinates; trailing token `{extra}`"
             )));
         }
-        out.push(CorpusCase { id, kind, expected, coords });
+        out.push(CorpusCase {
+            id,
+            kind,
+            expected,
+            coords,
+        });
     }
     Ok(out)
 }
@@ -335,7 +349,10 @@ mod tests {
     fn corpus_covers_the_degenerate_case() {
         let cases = degenerate_corpus();
         let zeros = cases.iter().filter(|c| c.expected.is_zero()).count();
-        assert!(zeros >= 10, "only {zeros} exactly-degenerate cases; that is the whole point");
+        assert!(
+            zeros >= 10,
+            "only {zeros} exactly-degenerate cases; that is the whole point"
+        );
     }
 
     #[test]
@@ -405,7 +422,10 @@ mod tests {
         assert_eq!(parse_coord("1.5"), Some(1.5));
         assert_eq!(parse_coord("-1e300"), Some(-1e300));
         assert_eq!(parse_coord("0x3ff0000000000000"), Some(1.0));
-        assert_eq!(parse_coord(&format!("0x{:016x}", (0.1f64).to_bits())), Some(0.1));
+        assert_eq!(
+            parse_coord(&format!("0x{:016x}", (0.1f64).to_bits())),
+            Some(0.1)
+        );
         // Rejected: wrong digit count, not a number.
         assert_eq!(parse_coord("0x1"), None);
         assert_eq!(parse_coord("banana"), None);
@@ -419,11 +439,27 @@ mod tests {
             parse("# nothing\n\n   \na orient2d + 0 0 1 0 0 1 # trailing").map(|v| v.len()),
             Ok(1)
         );
-        assert_eq!(parse("a nosuchpred + 0").unwrap_err().line, 1);
+        assert_eq!(
+            parse("a nosuchpred + 0")
+                .expect_err("unknown predicate")
+                .line,
+            1
+        );
         assert!(parse("a orient2d ? 0 0 1 0 0 1").is_err());
-        assert!(parse("a orient2d + 0 0 1 0 0").is_err(), "too few coordinates");
-        assert!(parse("a orient2d + 0 0 1 0 0 1 9").is_err(), "too many coordinates");
-        assert_eq!(parse("ok orient2d + 0 0 1 0 0 1\nbad orient2d +").unwrap_err().line, 2);
+        assert!(
+            parse("a orient2d + 0 0 1 0 0").is_err(),
+            "too few coordinates"
+        );
+        assert!(
+            parse("a orient2d + 0 0 1 0 0 1 9").is_err(),
+            "too many coordinates"
+        );
+        assert_eq!(
+            parse("ok orient2d + 0 0 1 0 0 1\nbad orient2d +")
+                .expect_err("second line is short")
+                .line,
+            2
+        );
     }
 
     #[test]

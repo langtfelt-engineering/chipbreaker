@@ -126,8 +126,14 @@ fn audit(
     }
 
     for s in a.iter().chain(b.iter()) {
-        assert!(s.is_valid(), "stored an invalid span {s} after {op} operations");
-        assert!(!s.t0.is_nan() && !s.t1.is_nan(), "stored NaN after {op} operations");
+        assert!(
+            s.is_valid(),
+            "stored an invalid span {s} after {op} operations"
+        );
+        assert!(
+            !s.t0.is_nan() && !s.t1.is_nan(),
+            "stored NaN after {op} operations"
+        );
     }
 
     // Unbounded growth would mean merging has stopped working; the generators
@@ -175,7 +181,14 @@ fn a_million_operations_never_corrupt_the_invariant_or_panic() {
                 b.push_merge(span);
             }
             ops_applied += 1;
-            audit(&a, &b, ops_applied, &mut rng, &mut largest, &mut substantial);
+            audit(
+                &a,
+                &b,
+                ops_applied,
+                &mut rng,
+                &mut largest,
+                &mut substantial,
+            );
         }
 
         let mutations = rng.random_range(1usize..6);
@@ -204,12 +217,22 @@ fn a_million_operations_never_corrupt_the_invariant_or_panic() {
                 }
             }
             ops_applied += 1;
-            audit(&a, &b, ops_applied, &mut rng, &mut largest, &mut substantial);
+            audit(
+                &a,
+                &b,
+                ops_applied,
+                &mut rng,
+                &mut largest,
+                &mut substantial,
+            );
         }
     }
 
     assert_eq!(ops_applied, OPERATIONS);
-    assert!(resets > 0, "the fuzz never reset; it explored one shape only");
+    assert!(
+        resets > 0,
+        "the fuzz never reset; it explored one shape only"
+    );
     // Without these the test can pass while doing nothing: an operation mix that
     // collapses to the empty set checks the invariant of an empty vector a
     // million times and reports success.

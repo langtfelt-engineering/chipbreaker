@@ -81,7 +81,10 @@ impl Aabb3 {
     #[inline]
     #[must_use]
     pub fn from_min_max(a: Vec3, b: Vec3) -> Self {
-        Self { min: a.min(b), max: a.max(b) }
+        Self {
+            min: a.min(b),
+            max: a.max(b),
+        }
     }
 
     /// The degenerate box containing exactly one point.
@@ -118,22 +121,35 @@ impl Aabb3 {
     #[inline]
     #[must_use]
     pub fn union(&self, other: &Self) -> Self {
-        Self { min: self.min.min(other.min), max: self.max.max(other.max) }
+        Self {
+            min: self.min.min(other.min),
+            max: self.max.max(other.max),
+        }
     }
 
     /// The smallest box containing this box and `p`.
     #[inline]
     #[must_use]
     pub fn union_point(&self, p: Vec3) -> Self {
-        Self { min: self.min.min(p), max: self.max.max(p) }
+        Self {
+            min: self.min.min(p),
+            max: self.max.max(p),
+        }
     }
 
     /// The overlap of the two boxes, which is empty if they do not overlap.
     #[inline]
     #[must_use]
     pub fn intersection(&self, other: &Self) -> Self {
-        let candidate = Self { min: self.min.max(other.min), max: self.max.min(other.max) };
-        if candidate.is_empty() { Self::EMPTY } else { candidate }
+        let candidate = Self {
+            min: self.min.max(other.min),
+            max: self.max.min(other.max),
+        };
+        if candidate.is_empty() {
+            Self::EMPTY
+        } else {
+            candidate
+        }
     }
 
     /// True if the two boxes share at least one point.
@@ -174,8 +190,15 @@ impl Aabb3 {
             return Self::EMPTY;
         }
         let m = Vec3::splat(margin);
-        let candidate = Self { min: self.min - m, max: self.max + m };
-        if candidate.is_empty() { Self::EMPTY } else { candidate }
+        let candidate = Self {
+            min: self.min - m,
+            max: self.max + m,
+        };
+        if candidate.is_empty() {
+            Self::EMPTY
+        } else {
+            candidate
+        }
     }
 
     /// The extent along each axis. Zero on every axis for an empty box.

@@ -88,7 +88,11 @@ impl Span {
     #[inline]
     #[must_use]
     pub fn ordered(a: f64, b: f64) -> Self {
-        if a <= b { Self::new(a, b) } else { Self::new(b, a) }
+        if a <= b {
+            Self::new(a, b)
+        } else {
+            Self::new(b, a)
+        }
     }
 
     /// `t1 - t0`, which is negative for an invalid span.
@@ -304,7 +308,9 @@ impl Spans {
     #[inline]
     #[must_use]
     pub fn with_capacity(n: usize) -> Self {
-        Self { spans: Vec::with_capacity(n) }
+        Self {
+            spans: Vec::with_capacity(n),
+        }
     }
 
     /// The set containing exactly `span`, or the empty set if `span` is invalid
@@ -465,8 +471,12 @@ impl Spans {
                 if s.t0 < prev.t0 {
                     return Err(format!("span {i} {s} starts before span {} {prev}", i - 1));
                 }
+                // Written as an explicit NaN test plus `<=` rather than
+                // `!(gap > EPS)`: this is a checker, so it must cope with a
+                // corrupt set in which both bounds are infinite and the
+                // subtraction yields NaN.
                 let gap = s.t0 - prev.t1;
-                if !(gap > EPS_SPAN_MERGE) {
+                if gap.is_nan() || gap <= EPS_SPAN_MERGE {
                     return Err(format!(
                         "spans {} {prev} and {i} {s} are separated by {gap}, \
                          which is not greater than EPS_SPAN_MERGE ({EPS_SPAN_MERGE})",
@@ -485,11 +495,12 @@ impl Spans {
     /// broken. This is a bug in this module, never in the caller.
     #[inline]
     pub fn debug_check_invariant(&self) {
-        debug_assert!(
-            self.check_invariant().is_ok(),
-            "Spans invariant violated: {}",
-            self.check_invariant().unwrap_err()
-        );
+        // `cfg` rather than `debug_assert!`, so the check runs exactly once
+        // rather than once to test and once to build the message.
+        #[cfg(debug_assertions)]
+        if let Err(e) = self.check_invariant() {
+            panic!("Spans invariant violated: {e}\nset = {self}");
+        }
     }
 
     /// Union: everything in either set.
@@ -698,7 +709,10 @@ mod tests {
     fn intersect_keeps_only_overlap() {
         let a = s(&[(0.0, 10.0)]);
         let b = s(&[(-5.0, 2.0), (4.0, 6.0), (8.0, 20.0)]);
-        assert_eq!(pairs(&a.intersect(&b)), [(0.0, 2.0), (4.0, 6.0), (8.0, 10.0)]);
+        assert_eq!(
+            pairs(&a.intersect(&b)),
+            [(0.0, 2.0), (4.0, 6.0), (8.0, 10.0)]
+        );
         assert!(a.intersect(&Spans::new()).is_empty());
         assert!(Spans::new().intersect(&a).is_empty());
         // Abutting sets share nothing: [0,1) and [1,2) are disjoint.
@@ -728,7 +742,10 @@ mod tests {
             [(0.0, 2.0), (4.0, 6.0), (8.0, 10.0)]
         );
         // Bounds narrower than the set.
-        assert_eq!(pairs(&a.complement_within(Span::new(3.0, 7.0))), [(4.0, 6.0)]);
+        assert_eq!(
+            pairs(&a.complement_within(Span::new(3.0, 7.0))),
+            [(4.0, 6.0)]
+        );
         // Empty set complements to the whole window.
         assert_eq!(
             pairs(&Spans::new().complement_within(Span::new(0.0, 1.0))),
@@ -890,14 +907,35 @@ mod tests {
         assert!(Spans::new().check_invariant().is_ok());
         // The checker inspects private state, so construct through the private
         // field, which this test module can reach.
-        let bad_order = Spans { spans: vec![Span::new(5.0, 6.0), Span::new(0.0, 1.0)] };
-        assert!(bad_order.check_invariant().unwrap_err().contains("starts before"));
+        let bad_order = Spans {
+            spans: vec![Span::new(5.0, 6.0), Span::new(0.0, 1.0)],
+        };
+        assert!(
+            bad_order
+                .check_invariant()
+                .expect_err("out of order")
+                .contains("starts before")
+        );
 
-        let touching = Spans { spans: vec![Span::new(0.0, 1.0), Span::new(1.0, 2.0)] };
-        assert!(touching.check_invariant().unwrap_err().contains("EPS_SPAN_MERGE"));
+        let touching = Spans {
+            spans: vec![Span::new(0.0, 1.0), Span::new(1.0, 2.0)],
+        };
+        assert!(
+            touching
+                .check_invariant()
+                .expect_err("zero gap")
+                .contains("EPS_SPAN_MERGE")
+        );
 
-        let degenerate = Spans { spans: vec![Span::new(1.0, 1.0)] };
-        assert!(degenerate.check_invariant().unwrap_err().contains("degenerate"));
+        let degenerate = Spans {
+            spans: vec![Span::new(1.0, 1.0)],
+        };
+        assert!(
+            degenerate
+                .check_invariant()
+                .expect_err("zero length")
+                .contains("degenerate")
+        );
     }
 
     #[test]
@@ -926,12 +964,17 @@ mod tests {
         assert_eq!(a.len(), 2);
         assert_eq!(a.hull(), Some(Span::new(0.0, 5.0)));
         assert_eq!(Spans::new().hull(), None);
-        assert_eq!(pairs(&a.clipped_to(Span::new(0.5, 4.5))), [(0.5, 1.0), (4.0, 4.5)]);
+        assert_eq!(
+            pairs(&a.clipped_to(Span::new(0.5, 4.5))),
+            [(0.5, 1.0), (4.0, 4.5)]
+        );
         assert_eq!(a.iter().count(), 2);
         assert_eq!((&a).into_iter().count(), 2);
         assert_eq!(format!("{a}"), "{[0, 1), [4, 5)}");
 
-        let collected: Spans = vec![Span::new(4.0, 5.0), Span::new(0.0, 1.0)].into_iter().collect();
+        let collected: Spans = vec![Span::new(4.0, 5.0), Span::new(0.0, 1.0)]
+            .into_iter()
+            .collect();
         assert_eq!(collected, a);
 
         let mut c = a.clone();

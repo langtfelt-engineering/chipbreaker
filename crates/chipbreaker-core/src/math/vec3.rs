@@ -3,7 +3,9 @@
 
 //! Three-dimensional `f64` vector.
 
-use core::ops::{Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Neg, Sub, SubAssign};
+use core::ops::{
+    Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Neg, Sub, SubAssign,
+};
 
 use crate::eps::EPS_NORMALIZE;
 
@@ -21,15 +23,35 @@ pub struct Vec3 {
 
 impl Vec3 {
     /// The zero vector.
-    pub const ZERO: Self = Self { x: 0.0, y: 0.0, z: 0.0 };
+    pub const ZERO: Self = Self {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+    };
     /// The vector with all components one.
-    pub const ONE: Self = Self { x: 1.0, y: 1.0, z: 1.0 };
+    pub const ONE: Self = Self {
+        x: 1.0,
+        y: 1.0,
+        z: 1.0,
+    };
     /// The `+X` unit vector.
-    pub const X: Self = Self { x: 1.0, y: 0.0, z: 0.0 };
+    pub const X: Self = Self {
+        x: 1.0,
+        y: 0.0,
+        z: 0.0,
+    };
     /// The `+Y` unit vector.
-    pub const Y: Self = Self { x: 0.0, y: 1.0, z: 0.0 };
+    pub const Y: Self = Self {
+        x: 0.0,
+        y: 1.0,
+        z: 0.0,
+    };
     /// The `+Z` unit vector.
-    pub const Z: Self = Self { x: 0.0, y: 0.0, z: 1.0 };
+    pub const Z: Self = Self {
+        x: 0.0,
+        y: 0.0,
+        z: 1.0,
+    };
 
     /// Constructs a vector from its components.
     #[inline]
@@ -56,7 +78,11 @@ impl Vec3 {
     #[inline]
     #[must_use]
     pub const fn from_array(a: [f64; 3]) -> Self {
-        Self { x: a[0], y: a[1], z: a[2] }
+        Self {
+            x: a[0],
+            y: a[1],
+            z: a[2],
+        }
     }
 
     /// Dot product, accumulated in ascending component order (`x`, then `y`,
@@ -330,7 +356,9 @@ mod tests {
 
     #[test]
     fn normalize_rejects_degenerate_input() {
-        let n = Vec3::new(2.0, 3.0, 6.0).normalize().expect("finite non-zero");
+        let n = Vec3::new(2.0, 3.0, 6.0)
+            .normalize()
+            .expect("finite non-zero");
         assert!((n.length() - 1.0).abs() < 1e-15);
         assert_eq!(Vec3::ZERO.normalize(), None);
         assert_eq!(Vec3::new(0.0, f64::INFINITY, 0.0).normalize(), None);

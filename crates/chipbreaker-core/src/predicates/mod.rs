@@ -184,7 +184,10 @@ impl Orientation {
     #[inline]
     #[must_use]
     pub fn from_determinant(det: f64) -> Self {
-        assert!(!det.is_nan(), "predicate produced NaN: non-finite input coordinates");
+        assert!(
+            !det.is_nan(),
+            "predicate produced NaN: non-finite input coordinates"
+        );
         if det > 0.0 {
             Self::Positive
         } else if det < 0.0 {
@@ -307,7 +310,11 @@ fn c2(v: Vec2) -> robust::Coord<f64> {
 
 #[inline]
 fn c3(v: Vec3) -> robust::Coord3D<f64> {
-    robust::Coord3D { x: v.x, y: v.y, z: v.z }
+    robust::Coord3D {
+        x: v.x,
+        y: v.y,
+        z: v.z,
+    }
 }
 
 /// Debug-only guard that the inputs are inside the predicate's exact range.
@@ -430,7 +437,10 @@ mod tests {
             orient3d(a, b, c, Vec3::new(1.0, 1.0, -1.0)),
             Orientation::Zero
         );
-        assert_eq!(orient3d(a, b, c, Vec3::new(-3.0, 2.0, 2.0)), Orientation::Zero);
+        assert_eq!(
+            orient3d(a, b, c, Vec3::new(-3.0, 2.0, 2.0)),
+            Orientation::Zero
+        );
         // The origin has x + y + z = 0 < 1; anything with a larger sum is on the
         // far side.
         assert_eq!(orient3d(a, b, c, Vec3::splat(2.0)), Orientation::Negative);
@@ -445,7 +455,10 @@ mod tests {
         assert_eq!(orient2d(a, b, c), Orientation::Positive);
         assert_eq!(incircle(a, b, c, Vec2::ZERO), Orientation::Positive);
         assert_eq!(incircle(a, b, c, Vec2::new(0.0, -1.0)), Orientation::Zero);
-        assert_eq!(incircle(a, b, c, Vec2::new(0.0, -2.0)), Orientation::Negative);
+        assert_eq!(
+            incircle(a, b, c, Vec2::new(0.0, -2.0)),
+            Orientation::Negative
+        );
     }
 
     #[test]
@@ -454,11 +467,24 @@ mod tests {
         let b = Vec3::new(0.0, 1.0, 0.0);
         let c = Vec3::new(0.0, 0.0, 1.0);
         let d = Vec3::ZERO;
-        assert_eq!(orient3d(a, b, c, d), Orientation::Positive, "must be positively oriented");
+        assert_eq!(
+            orient3d(a, b, c, d),
+            Orientation::Positive,
+            "must be positively oriented"
+        );
         // Circumcentre of these four points.
-        assert_eq!(insphere(a, b, c, d, Vec3::splat(0.5)), Orientation::Positive);
-        assert_eq!(insphere(a, b, c, d, Vec3::new(1.0, 1.0, 0.0)), Orientation::Zero);
-        assert_eq!(insphere(a, b, c, d, Vec3::splat(10.0)), Orientation::Negative);
+        assert_eq!(
+            insphere(a, b, c, d, Vec3::splat(0.5)),
+            Orientation::Positive
+        );
+        assert_eq!(
+            insphere(a, b, c, d, Vec3::new(1.0, 1.0, 0.0)),
+            Orientation::Zero
+        );
+        assert_eq!(
+            insphere(a, b, c, d, Vec3::splat(10.0)),
+            Orientation::Negative
+        );
     }
 
     #[test]
@@ -502,7 +528,11 @@ mod tests {
         assert_eq!(Orientation::Zero.reverse(), Orientation::Zero);
         assert_eq!(Orientation::Negative.as_i8(), -1);
         assert!(Orientation::Zero.is_zero());
-        for o in [Orientation::Positive, Orientation::Negative, Orientation::Zero] {
+        for o in [
+            Orientation::Positive,
+            Orientation::Negative,
+            Orientation::Zero,
+        ] {
             assert_eq!(Orientation::from_char(o.as_char()), Some(o));
         }
         assert_eq!(Orientation::from_char('x'), None);

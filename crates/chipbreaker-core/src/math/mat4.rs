@@ -120,9 +120,9 @@ impl Mat4 {
     #[must_use]
     pub fn transpose(&self) -> Self {
         let mut out = [[0.0f64; 4]; 4];
-        for i in 0..4 {
-            for j in 0..4 {
-                out[i][j] = self.m[j][i];
+        for (i, row) in out.iter_mut().enumerate() {
+            for (j, cell) in row.iter_mut().enumerate() {
+                *cell = self.m[j][i];
             }
         }
         Self { m: out }
@@ -152,7 +152,11 @@ impl Mat4 {
     /// The cofactor of entry `(i, j)`.
     fn cofactor(&self, i: usize, j: usize) -> f64 {
         let minor = self.minor(i, j);
-        if (i + j) % 2 == 0 { minor } else { -minor }
+        if (i + j).is_multiple_of(2) {
+            minor
+        } else {
+            -minor
+        }
     }
 
     /// Determinant, by cofactor expansion along **row 0**, summed in ascending
@@ -182,9 +186,9 @@ impl Mat4 {
         }
         // inverse = adjugate / det, and adjugate = cofactor^T.
         let mut out = [[0.0f64; 4]; 4];
-        for i in 0..4 {
-            for j in 0..4 {
-                out[i][j] = self.cofactor(j, i) / det;
+        for (i, row) in out.iter_mut().enumerate() {
+            for (j, cell) in row.iter_mut().enumerate() {
+                *cell = self.cofactor(j, i) / det;
             }
         }
         let inv = Self { m: out };
@@ -254,9 +258,9 @@ impl Mul for Mat4 {
     /// `(row, col)` order.
     fn mul(self, rhs: Self) -> Self {
         let mut out = [[0.0f64; 4]; 4];
-        for i in 0..4 {
-            for j in 0..4 {
-                out[i][j] = self.m[i][0] * rhs.m[0][j]
+        for (i, out_row) in out.iter_mut().enumerate() {
+            for (j, cell) in out_row.iter_mut().enumerate() {
+                *cell = self.m[i][0] * rhs.m[0][j]
                     + self.m[i][1] * rhs.m[1][j]
                     + self.m[i][2] * rhs.m[2][j]
                     + self.m[i][3] * rhs.m[3][j];

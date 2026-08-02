@@ -425,7 +425,12 @@ pub enum GoldenError {
 impl fmt::Display for GoldenError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Mismatch { name, expected, actual, path } => write!(
+            Self::Mismatch {
+                name,
+                expected,
+                actual,
+                path,
+            } => write!(
                 f,
                 "golden mismatch for `{name}`\n  expected: {expected}\n  actual:   {actual}\n  \
                  file:     {}\n\nIf this change is intended, re-run with \
@@ -497,7 +502,10 @@ impl GoldenStore {
     /// files instead of failing.
     #[must_use]
     pub fn new(root: impl Into<PathBuf>, accept: bool) -> Self {
-        Self { root: root.into(), accept }
+        Self {
+            root: root.into(),
+            accept,
+        }
     }
 
     /// The store described by the environment: [`golden_dir`] and
@@ -702,8 +710,14 @@ mod tests {
     #[test]
     fn math_types_hash_structurally() {
         let v = Vec3::new(1.0, 2.0, 3.0);
-        assert_eq!(v.canonical_digest(), Vec3::new(1.0, 2.0, 3.0).canonical_digest());
-        assert_ne!(v.canonical_digest(), Vec3::new(1.0, 2.0, 3.5).canonical_digest());
+        assert_eq!(
+            v.canonical_digest(),
+            Vec3::new(1.0, 2.0, 3.0).canonical_digest()
+        );
+        assert_ne!(
+            v.canonical_digest(),
+            Vec3::new(1.0, 2.0, 3.5).canonical_digest()
+        );
         // A Vec2 and a Vec3 with the same leading components must differ.
         assert_ne!(
             Vec2::new(1.0, 2.0).canonical_digest(),
@@ -712,13 +726,25 @@ mod tests {
         // Distinct matrices, same entries in a different arrangement.
         let m = Mat3::from_rows_array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]]);
         assert_ne!(m.canonical_digest(), m.transpose().canonical_digest());
-        assert_eq!(m.canonical_digest(), m.transpose().transpose().canonical_digest());
+        assert_eq!(
+            m.canonical_digest(),
+            m.transpose().transpose().canonical_digest()
+        );
 
         let b = Aabb3::new(Vec3::ZERO, Vec3::ONE);
-        assert_eq!(b.canonical_digest(), Aabb3::new(Vec3::ZERO, Vec3::ONE).canonical_digest());
+        assert_eq!(
+            b.canonical_digest(),
+            Aabb3::new(Vec3::ZERO, Vec3::ONE).canonical_digest()
+        );
         let r = Ray::new(Vec3::ZERO, Vec3::Z);
-        assert_ne!(r.canonical_digest(), Ray::new(Vec3::Z, Vec3::ZERO).canonical_digest());
-        assert_ne!(Mat4::IDENTITY.canonical_digest(), Mat4::ZERO.canonical_digest());
+        assert_ne!(
+            r.canonical_digest(),
+            Ray::new(Vec3::Z, Vec3::ZERO).canonical_digest()
+        );
+        assert_ne!(
+            Mat4::IDENTITY.canonical_digest(),
+            Mat4::ZERO.canonical_digest()
+        );
     }
 
     #[test]
@@ -737,8 +763,8 @@ mod tests {
         // Exercises the accept path and the compare path without touching the
         // committed goldens and without mutating process-wide environment
         // state, which is why GoldenStore carries its root as a value.
-        let dir = std::env::temp_dir()
-            .join(format!("chipbreaker-golden-test-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("chipbreaker-golden-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
 
         let accepting = GoldenStore::new(&dir, true);
@@ -753,24 +779,37 @@ mod tests {
             .expect("matching digest compares equal");
 
         let other = Vec3::ZERO.canonical_digest();
-        let err = comparing.check("unit-test-sample", &other).expect_err("must reject");
+        let err = comparing
+            .check("unit-test-sample", &other)
+            .expect_err("must reject");
         assert!(matches!(err, GoldenError::Mismatch { .. }));
         let rendered = err.to_string();
         assert!(rendered.contains(&d.to_hex()), "names the expected hash");
         assert!(rendered.contains(&other.to_hex()), "names the actual hash");
         assert!(rendered.contains("unit-test-sample"), "names the test");
-        assert!(rendered.contains(ACCEPT_ENV), "tells the reader how to accept");
+        assert!(
+            rendered.contains(ACCEPT_ENV),
+            "tells the reader how to accept"
+        );
 
-        let missing = comparing.check("unit-test-absent", &d).expect_err("must report missing");
+        let missing = comparing
+            .check("unit-test-absent", &d)
+            .expect_err("must report missing");
         assert!(matches!(missing, GoldenError::Missing { .. }));
 
         std::fs::write(dir.join("unit-test-bad.hash"), "not a hash").expect("write");
-        let malformed = comparing.check("unit-test-bad", &d).expect_err("must reject");
+        let malformed = comparing
+            .check("unit-test-bad", &d)
+            .expect_err("must reject");
         assert!(matches!(malformed, GoldenError::Malformed { .. }));
 
         // The accept path overwrites rather than appending.
-        accepting.check("unit-test-bad", &d).expect("accept rewrites a malformed file");
-        comparing.check("unit-test-bad", &d).expect("and the rewrite is valid");
+        accepting
+            .check("unit-test-bad", &d)
+            .expect("accept rewrites a malformed file");
+        comparing
+            .check("unit-test-bad", &d)
+            .expect("and the rewrite is valid");
 
         let _ = std::fs::remove_dir_all(&dir);
     }

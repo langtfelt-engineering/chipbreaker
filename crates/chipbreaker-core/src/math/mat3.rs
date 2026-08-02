@@ -55,11 +55,7 @@ impl Mat3 {
     #[must_use]
     pub const fn from_cols(c0: Vec3, c1: Vec3, c2: Vec3) -> Self {
         Self {
-            m: [
-                [c0.x, c1.x, c2.x],
-                [c0.y, c1.y, c2.y],
-                [c0.z, c1.z, c2.z],
-            ],
+            m: [[c0.x, c1.x, c2.x], [c0.y, c1.y, c2.y], [c0.z, c1.z, c2.z]],
         }
     }
 
@@ -155,9 +151,9 @@ impl Mat3 {
         ];
         // inverse = adjugate / det, and adjugate = cofactor^T.
         let mut out = [[0.0f64; 3]; 3];
-        for i in 0..3 {
-            for j in 0..3 {
-                out[i][j] = cof[j][i] / det;
+        for (i, row) in out.iter_mut().enumerate() {
+            for (j, cell) in row.iter_mut().enumerate() {
+                *cell = cof[j][i] / det;
             }
         }
         let inv = Self { m: out };
@@ -193,9 +189,9 @@ impl Mul for Mat3 {
     #[inline]
     fn mul(self, rhs: Self) -> Self {
         let mut out = [[0.0f64; 3]; 3];
-        for i in 0..3 {
-            for j in 0..3 {
-                out[i][j] = self.m[i][0] * rhs.m[0][j]
+        for (i, out_row) in out.iter_mut().enumerate() {
+            for (j, cell) in out_row.iter_mut().enumerate() {
+                *cell = self.m[i][0] * rhs.m[0][j]
                     + self.m[i][1] * rhs.m[1][j]
                     + self.m[i][2] * rhs.m[2][j];
             }
@@ -248,7 +244,10 @@ mod tests {
     fn determinant_matches_hand_computation() {
         // This matrix has a known integer inverse, which is why it was chosen.
         assert_eq!(sample().determinant(), 1.0);
-        assert_eq!(Mat3::from_scale(Vec3::new(2.0, 3.0, 4.0)).determinant(), 24.0);
+        assert_eq!(
+            Mat3::from_scale(Vec3::new(2.0, 3.0, 4.0)).determinant(),
+            24.0
+        );
         assert_eq!(Mat3::ZERO.determinant(), 0.0);
     }
 
@@ -257,11 +256,8 @@ mod tests {
         let a = sample();
         let inv = a.inverse().expect("det == 1, invertible");
         // Exact: the inverse of this matrix is integral.
-        let expected = Mat3::from_rows_array([
-            [-24.0, 18.0, 5.0],
-            [20.0, -15.0, -4.0],
-            [-5.0, 4.0, 1.0],
-        ]);
+        let expected =
+            Mat3::from_rows_array([[-24.0, 18.0, 5.0], [20.0, -15.0, -4.0], [-5.0, 4.0, 1.0]]);
         assert_eq!(inv, expected);
         assert_eq!(a * inv, Mat3::IDENTITY);
         assert_eq!(inv * a, Mat3::IDENTITY);
@@ -271,8 +267,7 @@ mod tests {
     fn inverse_rejects_singular_and_nonfinite() {
         assert_eq!(Mat3::ZERO.inverse(), None);
         // Rank-deficient: row 2 = row 0 + row 1.
-        let singular =
-            Mat3::from_rows_array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [5.0, 7.0, 9.0]]);
+        let singular = Mat3::from_rows_array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [5.0, 7.0, 9.0]]);
         assert_eq!(singular.inverse(), None);
         let nan = Mat3::from_rows_array([[f64::NAN, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]);
         assert_eq!(nan.inverse(), None);

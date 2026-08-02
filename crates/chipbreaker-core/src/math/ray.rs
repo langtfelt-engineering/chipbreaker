@@ -33,7 +33,10 @@ impl Ray {
     #[inline]
     #[must_use]
     pub fn new_normalized(origin: Vec3, direction: Vec3) -> Option<Self> {
-        Some(Self { origin, direction: direction.normalize()? })
+        Some(Self {
+            origin,
+            direction: direction.normalize()?,
+        })
     }
 
     /// The point at parameter `t`: `origin + direction * t`.
