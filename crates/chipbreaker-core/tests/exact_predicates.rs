@@ -23,6 +23,26 @@
 //!
 //! This is both simpler and considerably faster than `BigRational`, which is
 //! what makes the 100,000-case sweep tolerable in CI.
+//!
+//! # The limitation, stated where the next person will hit it
+//!
+//! **The rescaling trick works only because all four predicates are
+//! homogeneous.** Scaling every coordinate by a common positive constant scales
+//! a degree-`d` determinant by that constant to the `d`, which is positive and
+//! therefore sign-preserving. Nothing else about the construction matters.
+//!
+//! A predicate that mixes a *length* with *coordinates* — "is this point within
+//! tolerance `t` of that plane?", which is exactly what U12's deviation fields
+//! will want — is **not** homogeneous. Scaling the coordinates by `s` scales the
+//! distance term by `s` and the tolerance term by `1`, so the comparison changes
+//! meaning and the sign can flip. The oracle below would then be quietly wrong
+//! rather than obviously broken, which is the worst way for a test oracle to
+//! fail.
+//!
+//! When that predicate arrives, this oracle must be replaced with true rational
+//! arithmetic (`num-rational` over `BigInt`) for that predicate specifically.
+//! The existing four can keep the fast path. Do not extend `to_exact_integers`
+//! to cover a non-homogeneous predicate.
 
 use chipbreaker_core::math::{Vec2, Vec3};
 use chipbreaker_core::predicates::corpus::{
@@ -32,6 +52,7 @@ use chipbreaker_core::predicates::{
     ADAPTIVE, INCIRCLE_COORDS, INSPHERE_COORDS, ORIENT2D_COORDS, ORIENT3D_COORDS, Orientation,
     Predicates,
 };
+use chipbreaker_core::transcendental::log10;
 use num_bigint::BigInt;
 use num_traits::{Signed, Zero};
 use rand::rngs::StdRng;
@@ -900,8 +921,8 @@ fn published_coord_ranges_are_inside_the_measured_exact_band() {
         );
 
         let range = kind.coord_range();
-        let published_low = range.min.log10().round() as i32;
-        let published_high = range.max.log10().round() as i32;
+        let published_low = log10(range.min).round() as i32;
+        let published_high = log10(range.max).round() as i32;
 
         assert!(
             published_low >= low + MARGIN_DECADES,
@@ -1514,8 +1535,8 @@ fn regenerate_corpus() {
         }
     }
 
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tests/corpus/predicates/degenerate.txt");
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("corpus/predicates/degenerate.txt");
     // LF explicitly: `.gitattributes` normalizes this file, and writing CRLF
     // here would produce a spurious diff on every Windows regeneration.
     std::fs::write(&path, body.replace("\r\n", "\n")).expect("write corpus");

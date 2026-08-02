@@ -10,6 +10,7 @@ pub mod math;
 pub mod predicates;
 pub mod selftest;
 pub mod spans;
+pub mod transcendental;
 
 pub use math::{Aabb3, Mat3, Mat4, Ray, Vec2, Vec3};
 pub use predicates::{Orientation, Predicates};

@@ -210,24 +210,88 @@ mod tests {
         assert_eq!(obj["schema"], json!(SCHEMA));
     }
 
+    /// Every object key appearing anywhere under `value`, recursively.
+    fn all_keys(value: &Value, out: &mut Vec<String>) {
+        match value {
+            Value::Object(map) => {
+                for (k, v) in map {
+                    out.push(k.clone());
+                    all_keys(v, out);
+                }
+            }
+            Value::Array(items) => {
+                for v in items {
+                    all_keys(v, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
     #[test]
     fn the_results_section_carries_no_timing_or_host_detail() {
         // The whole native/WASM parity check rests on this.
+        //
+        // Checked at the level of *keys*, not by substring-searching the
+        // serialized text. The substring form was tempting and wrong: a suite
+        // description containing "cross-target" tripped a search for "target",
+        // and a search for "os" would match the word "cosine". Free text inside
+        // results is not environment data, and a test that cannot tell the
+        // difference produces false failures that get silenced rather than
+        // fixed.
         let (report, env) = sample();
         let value: Value = serde_json::from_str(&to_json(&report, &env)).expect("valid JSON");
-        let results = serde_json::to_string(&value["results"]).expect("serializable");
-        for forbidden in [
-            "elapsed", "ms", "time", "target", "rustc", "arch", "cpu", "os",
-        ] {
+
+        let mut environment_keys = Vec::new();
+        all_keys(&value["environment"], &mut environment_keys);
+        environment_keys.sort_unstable();
+        environment_keys.dedup();
+        assert!(
+            environment_keys.len() >= 6,
+            "the environment section looks empty: {environment_keys:?}"
+        );
+
+        let mut results_keys = Vec::new();
+        all_keys(&value["results"], &mut results_keys);
+
+        for key in &results_keys {
             assert!(
-                !results.contains(forbidden),
-                "the hashed `results` section mentions `{forbidden}`: {results}"
+                !environment_keys.contains(key),
+                "`{key}` appears in both the hashed `results` section and the \
+                 unhashed `environment` section; environment data must not be hashed"
             );
         }
-        // And the environment section really does carry them.
-        let environment = serde_json::to_string(&value["environment"]).expect("serializable");
-        assert!(environment.contains("elapsed_ms"));
-        assert!(environment.contains("target"));
+
+        // And the environment section really does carry the volatile facts, so
+        // that this test proves a split rather than an empty section.
+        assert!(environment_keys.iter().any(|k| k == "elapsed_ms"));
+        assert!(environment_keys.iter().any(|k| k == "target"));
+        assert!(environment_keys.iter().any(|k| k == "rustc"));
+
+        // No value anywhere in `results` may be a floating-point number: every
+        // timing is a float, and nothing this unit reports is legitimately
+        // fractional. This catches a duration smuggled in under an innocent key.
+        fn no_floats(value: &Value, path: &str) {
+            match value {
+                Value::Object(map) => {
+                    for (k, v) in map {
+                        no_floats(v, &format!("{path}.{k}"));
+                    }
+                }
+                Value::Array(items) => {
+                    for (i, v) in items.iter().enumerate() {
+                        no_floats(v, &format!("{path}[{i}]"));
+                    }
+                }
+                Value::Number(n) => assert!(
+                    n.as_f64().is_none_or(|_| n.is_i64() || n.is_u64()),
+                    "`{path}` is a floating-point number inside the hashed \
+                     results section; timings do not belong there"
+                ),
+                _ => {}
+            }
+        }
+        no_floats(&value["results"], "results");
     }
 
     #[test]

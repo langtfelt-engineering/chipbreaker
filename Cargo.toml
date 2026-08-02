@@ -54,6 +54,10 @@ missing_docs = "warn"
 # single call is enough to break native/WASM parity.
 suboptimal_flops = "allow"          # its suggested fix is mul_add
 imprecise_flops = "allow"           # ditto
+# The banned list lives in clippy.toml: every `std` transcendental, plus
+# `mul_add`. Denied rather than warned, because a single slip breaks the
+# product guarantee rather than merely looking untidy.
+disallowed_methods = "deny"
 # Correctness and hygiene.
 todo = "warn"
 unwrap_used = "warn"

@@ -47,6 +47,12 @@ pub const SPAN_ALGEBRA_CASES: usize = 2_000;
 /// Iterations of the floating-point kernel suite.
 pub const MATH_KERNEL_CASES: usize = 2_000;
 
+/// Seed for the transcendental parity suite.
+pub const TRANSCENDENTAL_SEED: u64 = 0x0000_C41B_0000_0004;
+
+/// Iterations of the transcendental parity suite.
+pub const TRANSCENDENTAL_CASES: usize = 4_000;
+
 /// One failing case within a suite.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Failure {
@@ -148,6 +154,7 @@ pub fn run() -> SelfTestReport {
         predicate_identity_suite(),
         span_algebra_suite(),
         math_kernel_suite(),
+        transcendental_suite(),
         canonical_hash_suite(),
     ];
     let mut report = SelfTestReport {
@@ -452,6 +459,121 @@ fn math_kernel_suite() -> SuiteResult {
         name: "math.kernels",
         description: "matrix inverse, transform and normalization round-trips over seeded input",
         cases: MATH_KERNEL_CASES,
+        failures,
+        digest: h.finish(),
+    }
+}
+
+/// Transcendental functions must be bit-identical on every target.
+///
+/// This is the suite that turns [`crate::transcendental`]'s argument into
+/// evidence. `std`'s `sin` lowers to the platform libm — MSVC's, glibc's and
+/// wasi-libc's are different code that differ in the last bit — so we route
+/// everything through the pure-Rust `libm` crate instead. Whether that actually
+/// achieves bit-identity is not something to take on faith: these results are
+/// folded into the canonical hash that CI compares between native and
+/// `wasm32-wasip1`, so the claim is tested on every push.
+///
+/// U3 tessellates tool profiles as surfaces of revolution and will call `sin`
+/// and `cos` on its first day. This suite exists so that lands on a foundation
+/// that has already been proven, rather than one that gets proven by failing.
+fn transcendental_suite() -> SuiteResult {
+    use crate::transcendental as t;
+
+    let mut rng = StdRng::seed_from_u64(TRANSCENDENTAL_SEED);
+    let mut failures = Vec::new();
+    let mut h = CanonicalHash::new();
+    h.begin("transcendental");
+
+    for i in 0..TRANSCENDENTAL_CASES {
+        // Angles well beyond one turn, so argument reduction is exercised: that
+        // is where implementations most often disagree.
+        let angle: f64 = rng.random_range(-40.0..40.0);
+        let any: f64 = rng.random_range(-20.0..20.0);
+        // Strictly inside [-1, 1] for the inverse trig functions.
+        let unit: f64 = rng.random_range(-1.0..1.0);
+        // Strictly positive for the logarithms.
+        let positive: f64 = rng.random_range(1.0e-6..1.0e6);
+        // Bounded so `exp` and `powf` stay finite and keep their full mantissa.
+        let small: f64 = rng.random_range(-30.0..30.0);
+
+        h.f64(angle).f64(any).f64(unit).f64(positive).f64(small);
+
+        let (sin_v, cos_v) = t::sin_cos(angle);
+        h.f64(t::sin(angle)).f64(t::cos(angle)).f64(t::tan(angle));
+        h.f64(sin_v).f64(cos_v);
+        h.f64(t::asin(unit)).f64(t::acos(unit));
+        h.f64(t::atan(any)).f64(t::atan2(any, angle));
+        h.f64(t::exp(small))
+            .f64(t::ln(positive))
+            .f64(t::log10(positive));
+        h.f64(t::powf(positive, small.clamp(-4.0, 4.0)));
+        h.f64(t::hypot(any, angle)).f64(t::cbrt(any));
+
+        // A handful of identities, so the suite fails loudly if a wrapper is
+        // ever pointed at the wrong function. The hash catches drift; these
+        // catch a wiring mistake, which the hash alone would happily bless.
+        if sin_v != t::sin(angle) || cos_v != t::cos(angle) {
+            failures.push(Failure {
+                case: format!("sin_cos/{i}"),
+                detail: format!("sin_cos disagrees with sin/cos at {angle}"),
+            });
+        }
+        let pythagorean = sin_v * sin_v + cos_v * cos_v;
+        if (pythagorean - 1.0).abs() > 1.0e-12 {
+            failures.push(Failure {
+                case: format!("pythagorean/{i}"),
+                detail: format!("sin^2 + cos^2 = {pythagorean} at {angle}"),
+            });
+        }
+        let round_trip = t::exp(t::ln(positive));
+        if !approx_eq(round_trip / positive, 1.0) {
+            failures.push(Failure {
+                case: format!("exp-ln/{i}"),
+                detail: format!("exp(ln({positive})) = {round_trip}"),
+            });
+        }
+        if (t::asin(unit) + t::acos(unit) - core::f64::consts::FRAC_PI_2).abs() > 1.0e-12 {
+            failures.push(Failure {
+                case: format!("asin-acos/{i}"),
+                detail: format!("asin + acos != pi/2 at {unit}"),
+            });
+        }
+    }
+
+    // Exact values, which every conforming implementation must agree on and
+    // which pin the suite against a wholesale substitution.
+    h.f64(t::sin(0.0))
+        .f64(t::cos(0.0))
+        .f64(t::exp(0.0))
+        .f64(t::ln(1.0));
+    h.f64(t::log10(1000.0))
+        .f64(t::powf(2.0, 10.0))
+        .f64(t::hypot(3.0, 4.0));
+    h.f64(t::cbrt(-27.0));
+    for (label, value, expected) in [
+        ("sin(0)", t::sin(0.0), 0.0),
+        ("cos(0)", t::cos(0.0), 1.0),
+        ("exp(0)", t::exp(0.0), 1.0),
+        ("ln(1)", t::ln(1.0), 0.0),
+        ("log10(1000)", t::log10(1000.0), 3.0),
+        ("2^10", t::powf(2.0, 10.0), 1024.0),
+        ("hypot(3,4)", t::hypot(3.0, 4.0), 5.0),
+        ("cbrt(-27)", t::cbrt(-27.0), -3.0),
+    ] {
+        if value != expected {
+            failures.push(Failure {
+                case: label.to_owned(),
+                detail: format!("expected exactly {expected}, got {value}"),
+            });
+        }
+    }
+    h.end();
+
+    SuiteResult {
+        name: "transcendental",
+        description: "libm-backed trig, exp and log evaluated on seeded input for cross-target parity",
+        cases: TRANSCENDENTAL_CASES,
         failures,
         digest: h.finish(),
     }
