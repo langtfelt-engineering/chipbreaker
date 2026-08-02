@@ -1,0 +1,128 @@
+# ADR 0001 — `Spans` storage: per-ray `Vec` today, flat arena at U5
+
+- **Status:** Accepted, implementation deferred to U5
+- **Date:** 2026-08-02
+- **Unit:** raised in U1, recorded in U2, to be acted on in U5
+
+## Context
+
+`chipbreaker_core::spans::Spans` currently owns a `Vec<Span>`:
+
+```rust
+pub struct Spans {
+    spans: Vec<Span>,
+}
+```
+
+This is the right shape for Unit 1, where a `Spans` is a standalone value that
+tests construct, combine and compare. It is the wrong shape for Unit 5.
+
+U5 builds a tri-dexel field: three orthogonal bundles of parallel rays, each ray
+storing the material intervals along it. A 1000 x 1000 field in each of three
+directions is **three million rays**, and under the current design that is:
+
+- **Three million heap allocations** at construction, plus more on every growth.
+  Allocation is not free and, worse, allocator behaviour is a source of
+  timing variance that makes performance work harder to reason about.
+- **72 MB of `Vec` headers alone** — 24 bytes of pointer, length and capacity per
+  ray, before a single `Span` is stored. The payload for a typical ray is one or
+  two spans, i.e. 16–32 bytes. **The bookkeeping outweighs the data.**
+- **Terrible locality.** U5's access pattern is a coherent sweep: process ray
+  *i*, then ray *i+1*, then *i+2*. With per-ray allocations those live wherever
+  the allocator put them, so a sweep that should stream linearly through memory
+  instead chases three million pointers.
+
+None of this is hypothetical arithmetic dressed up as a problem — it is the
+dominant cost of the data structure at the scale U5 operates at.
+
+## Decision
+
+**Keep `Vec<Span>` through U4. Replace it with a flat arena at U5.**
+
+The intended shape:
+
+```rust
+/// All spans for all rays, contiguous.
+pub struct SpanArena {
+    spans: Vec<Span>,
+    /// Ray `i` owns `spans[offsets[i] .. offsets[i + 1]]`.
+    /// Length is ray_count + 1, so the last ray needs no special case.
+    offsets: Vec<u32>,
+}
+
+/// A borrowed, mutable view of one ray's spans.
+pub struct SpansMut<'a> { /* &'a mut [Span] plus growth policy */ }
+```
+
+Because cutting *shrinks or splits* a ray's span set rather than growing it
+without bound, a per-ray capacity plus a spill list handles the rare case where a
+cut increases the span count beyond its slot. That detail is U5's to settle; what
+matters here is that the arena is the target.
+
+## Why the current API already converges on this
+
+This is the part worth recording, because it means U5 is a substitution rather
+than a rewrite.
+
+Unit 1 deliberately added `_into` variants to every set operation:
+
+```rust
+pub fn union_into(&self, other: &Self, out: &mut Self);
+pub fn intersect_into(&self, other: &Self, out: &mut Self);
+pub fn subtract_into(&self, other: &Self, out: &mut Self);
+pub fn complement_within_into(&self, bounds: Span, out: &mut Self);
+```
+
+These take the output as a caller-owned buffer instead of returning a fresh
+`Spans`. That is exactly the signature an arena needs: the caller already owns
+the storage and passes a place to write. Migrating means changing what `out` *is*
+— from `&mut Spans` to `&mut SpansMut<'_>` — not changing how callers are
+written.
+
+The benchmark supports the shape too: at n = 10, which is where a dexel ray
+actually lives, `subtract_into` is 27% faster than `subtract` purely from not
+allocating. The arena extends that saving from "no allocation per operation" to
+"no allocation at all".
+
+## Why not now
+
+1. **No caller needs it.** U2–U4 handle meshes, tools and toolpaths, none of
+   which hold millions of `Spans`. Building an arena before there is a consumer
+   means guessing its access pattern, and guessing wrong is how you get an
+   abstraction that has to be unpicked later.
+2. **The growth policy depends on U5's cut algorithm**, which does not exist yet.
+   How often does a cut split a span? What is the realistic maximum count per
+   ray? Those answers determine the slot sizing, and they are measurements, not
+   opinions.
+3. **`Spans` as a standalone value is genuinely useful** for tests, for the CLI,
+   and for U12's deviation fields. The arena should be an *additional* storage
+   strategy behind the same operations, not a replacement that removes the simple
+   case.
+
+## Consequences
+
+- U5 must budget for this work rather than discovering it. It is a known,
+  scoped task, not a surprise.
+- The `_into` variants must be preserved and preferred. A future contributor who
+  "simplifies" them away because the allocating form reads better would be
+  removing the migration path. Their doc comments say so.
+- The structural invariant and the merge-scan are storage-independent: they
+  operate on `&[Span]` and `&mut Vec<Span>` already. The arena changes where the
+  slice comes from, not what the algorithm does.
+- Benchmarks at U5 should compare arena against per-ray `Vec` on the same
+  workload, so the claim in this document is measured rather than assumed.
+
+## Alternatives considered
+
+- **Small-vector optimisation** (inline capacity for 1–2 spans, spilling to the
+  heap beyond that). Removes most allocations and needs no arena. Rejected as the
+  primary plan because it does not fix locality — the rays are still scattered —
+  and because every mainstream small-vector crate uses `unsafe`, which this
+  workspace forbids. Worth revisiting only if the arena's growth handling turns
+  out to be genuinely awkward.
+- **Fixed maximum spans per ray, no spill.** Simplest and fastest, but it makes
+  a geometric limit out of an implementation detail: a ray crossing a comb-like
+  feature would silently lose material. Unacceptable in a verification tool,
+  where the entire product claim is that we do not silently lose material.
+- **Keeping `Vec<Span>` and accepting the cost.** Defensible if U5 turned out to
+  be dominated by something else entirely. The numbers above say it will not be.
