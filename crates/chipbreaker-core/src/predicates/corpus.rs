@@ -51,10 +51,11 @@ use crate::predicates::{Orientation, Predicates};
 
 /// The corpus shipped with this crate, as raw text.
 ///
-/// Lives at `tests/corpus/predicates/degenerate.txt` in the repository root, the
-/// versioned home for test inputs across all units.
-pub const DEGENERATE_CORPUS_SOURCE: &str =
-    include_str!("../../../../tests/corpus/predicates/degenerate.txt");
+/// Lives at `corpus/predicates/degenerate.txt` **inside this crate**, not at the
+/// repository root. `include_str!` cannot reach outside the package directory
+/// without breaking `cargo package`, which U20 needs in order to publish the
+/// commercial build.
+pub const DEGENERATE_CORPUS_SOURCE: &str = include_str!("../../corpus/predicates/degenerate.txt");
 
 /// Which predicate a corpus case exercises.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
