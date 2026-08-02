@@ -49,8 +49,11 @@ jobs:
       - name: Formatting
         run: cargo fmt --all --check
 
+      # --all-targets covers tests, benches and examples; the plain form skips
+      # them. --all-features means a feature-gated module cannot escape review by
+      # being off by default.
       - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Tests
         run: cargo test --all
