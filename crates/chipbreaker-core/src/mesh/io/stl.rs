@@ -149,6 +149,9 @@ pub fn read_binary(bytes: &[u8], unit: Unit) -> Result<TriMesh, ParseError> {
 /// [`ParseError`] naming the line, for a malformed vertex, a facet with the
 /// wrong number of vertices, or geometry the mesh constructor rejects.
 pub fn read_ascii(text: &str, unit: Unit) -> Result<TriMesh, ParseError> {
+    if text.trim().is_empty() {
+        return Err(ParseError::general(FORMAT_ASCII, "file is empty"));
+    }
     let scale = unit.millimetres_per();
     let mut vertices: Vec<Vec3> = Vec::new();
     let mut triangles: Vec<[u32; 3]> = Vec::new();

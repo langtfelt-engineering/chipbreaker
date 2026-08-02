@@ -734,6 +734,34 @@ impl Bvh {
         Ok(hits.into_iter().find(|h| h.t >= 0.0))
     }
 
+    /// Appends every triangle whose bounds overlap `query` to `out`, ascending.
+    ///
+    /// Used by the self-intersection check to find candidate pairs. The result
+    /// is sorted so that the caller's pair enumeration is order-independent;
+    /// without that, the findings would depend on the traversal order and the
+    /// report would not be reproducible.
+    pub fn query_aabb(&self, query: &Aabb3, out: &mut Vec<u32>) {
+        out.clear();
+        if self.nodes.is_empty() || query.is_empty() {
+            return;
+        }
+        let mut stack = vec![0u32];
+        while let Some(index) = stack.pop() {
+            let node = &self.nodes[index as usize];
+            if !node.bounds.intersects(query) {
+                continue;
+            }
+            if node.is_leaf() {
+                let start = node.first_or_left as usize;
+                out.extend_from_slice(&self.order[start..start + node.count as usize]);
+            } else {
+                stack.push(node.first_or_left);
+                stack.push(node.first_or_left + 1);
+            }
+        }
+        out.sort_unstable();
+    }
+
     /// Canonical digest of the tree's shape and bounds.
     ///
     /// Hashed into the golden suite: the tree must be identical on Windows,

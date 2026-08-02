@@ -7,7 +7,7 @@
 //! binary: the generator makes the files reproducible, and the files being
 //! committed makes the tests fast and independent of generator changes. Run it
 //! deliberately with
-//! `cargo test -p chipbreaker-cli --test mesh_cli -- --ignored regenerate`.
+//! `cargo test -p chipbreaker-cli --test corpus -- --ignored regenerate`.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -42,68 +42,27 @@ fn corpus_file(name: &str) -> String {
         .to_owned()
 }
 
-#[test]
-#[ignore = "writes committed corpus files; run deliberately"]
-fn regenerate_corpus() {
-    let dir = corpus_dir();
-    let written = chipbreaker_corpus::write(&dir).expect("writes");
-    eprintln!("wrote {} meshes to {}", written.len(), dir.display());
-    assert!(written.len() >= 16);
-}
-
-/// Re-exports the generator so the ignored test above and the CLI agree on what
-/// the corpus is.
-mod chipbreaker_corpus {
-    use chipbreaker_core::mesh::io::stl;
-    use chipbreaker_core::mesh::{TriMesh, shapes};
-    use std::path::Path;
-
-    /// The corpus, as `(name, mesh)` pairs. Analytic solids at three
-    /// tessellation levels, plus the lattice-aligned adversarial blocks.
-    pub fn meshes() -> Vec<(&'static str, TriMesh)> {
-        vec![
-            ("cube-coarse", shapes::cube(10.0)),
-            (
-                "box-oblong",
-                shapes::box_solid(
-                    chipbreaker_core::math::Vec3::new(-3.0, -5.0, -7.0),
-                    chipbreaker_core::math::Vec3::new(4.0, 6.0, 8.0),
-                ),
-            ),
-            ("sphere-0", shapes::icosphere(5.0, 0)),
-            ("sphere-1", shapes::icosphere(5.0, 1)),
-            ("sphere-2", shapes::icosphere(5.0, 2)),
-            ("cylinder-8", shapes::cylinder(4.0, 9.0, 8)),
-            ("cylinder-32", shapes::cylinder(4.0, 9.0, 32)),
-            ("cylinder-128", shapes::cylinder(4.0, 9.0, 128)),
-            ("cone-8", shapes::cone(4.0, 9.0, 8)),
-            ("cone-32", shapes::cone(4.0, 9.0, 32)),
-            ("cone-128", shapes::cone(4.0, 9.0, 128)),
-            ("torus-16", shapes::torus(6.0, 2.0, 16, 8)),
-            ("torus-32", shapes::torus(6.0, 2.0, 32, 16)),
-            ("torus-64", shapes::torus(6.0, 2.0, 64, 32)),
-            ("lattice-1", shapes::lattice_block(1)),
-            ("lattice-3", shapes::lattice_block(3)),
-            ("lattice-5", shapes::lattice_block(5)),
-        ]
-    }
-
-    /// Writes every corpus mesh as a binary STL.
-    ///
-    /// # Errors
-    /// Returns a message if a file cannot be written.
-    pub fn write(dir: &Path) -> Result<Vec<String>, String> {
-        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-        let mut names = Vec::new();
-        for (name, mesh) in meshes() {
-            let path = dir.join(format!("{name}.stl"));
-            std::fs::write(&path, stl::write_binary(&mesh))
-                .map_err(|e| format!("{}: {e}", path.display()))?;
-            names.push(format!("{name}.stl"));
-        }
-        Ok(names)
-    }
-}
+/// The well-formed corpus solids. The corpus itself, and the expectations for
+/// every entry including the broken ones, live in `corpus.rs`.
+const GOOD_MESHES: [&str; 17] = [
+    "cube-coarse",
+    "box-oblong",
+    "sphere-0",
+    "sphere-1",
+    "sphere-2",
+    "cylinder-8",
+    "cylinder-32",
+    "cylinder-128",
+    "cone-8",
+    "cone-32",
+    "cone-128",
+    "torus-16",
+    "torus-32",
+    "torus-64",
+    "lattice-1",
+    "lattice-3",
+    "lattice-5",
+];
 
 #[test]
 fn units_are_required_and_unknown_ones_are_rejected() {
@@ -158,7 +117,7 @@ fn the_same_file_read_as_inches_is_bigger() {
 
 #[test]
 fn validate_reports_every_corpus_solid_as_solid() {
-    for (name, _) in chipbreaker_corpus::meshes() {
+    for name in GOOD_MESHES {
         let file = corpus_file(&format!("{name}.stl"));
         let (code, stdout, stderr) = run(&["mesh", "validate", &file, "--units", "mm", "--json"]);
         assert_eq!(code, 0, "{name}: {stdout}{stderr}");

@@ -33,6 +33,7 @@
 //! - [`io`] — STL (binary and ASCII), OBJ, 3MF.
 
 pub mod bvh;
+pub mod intersect;
 pub mod io;
 pub mod shapes;
 pub mod units;

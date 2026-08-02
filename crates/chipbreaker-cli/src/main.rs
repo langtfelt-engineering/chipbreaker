@@ -133,7 +133,7 @@ fn run_selftest(format: ReportFormat, out: Option<&std::path::Path>) -> ExitCode
 fn run_mesh(command: &mesh::MeshCommand) -> ExitCode {
     let as_json = match command {
         mesh::MeshCommand::Inspect(i)
-        | mesh::MeshCommand::Validate { input: i }
+        | mesh::MeshCommand::Validate { input: i, .. }
         | mesh::MeshCommand::Convert { input: i, .. }
         | mesh::MeshCommand::Bvh { input: i, .. }
         | mesh::MeshCommand::Raycast { input: i, .. }
@@ -233,10 +233,15 @@ mod tests {
         .expect("mesh inspect");
         assert!(matches!(cli.command, Command::Mesh { .. }));
 
-        // The central CLI rule: STL and OBJ carry no units, so one must be given.
+        // `--units` is optional at *parse* time and required at *load* time.
+        // The distinction is not pedantry: 3MF declares its own unit, so
+        // demanding one on the command line would force the user to restate a
+        // fact the file already carries — and, worse, to guess it. Which
+        // formats need it is a property of the file, so the check belongs where
+        // the file is known. `mesh_cli.rs` asserts the runtime error.
         assert!(
-            Cli::try_parse_from(["chipbreaker", "mesh", "inspect", "part.stl"]).is_err(),
-            "--units must be mandatory"
+            Cli::try_parse_from(["chipbreaker", "mesh", "inspect", "part.stl"]).is_ok(),
+            "omitting --units must parse; the loader decides whether it is needed"
         );
         assert!(
             Cli::try_parse_from([

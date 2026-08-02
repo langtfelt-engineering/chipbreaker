@@ -1,0 +1,286 @@
+{
+  "_comment": [
+    "HAND-WRITTEN. Do not generate this file from validator output: an expectation",
+    "derived from the thing it checks asserts only self-consistency, which is worth",
+    "nothing. Each entry states what the mesh was built to exhibit.",
+    "",
+    "`load` is `ok` or `reject`. For `reject`, `error_contains` must appear in the",
+    "error message. For `ok`, any of the boolean/count fields present are asserted;",
+    "if `findings` is present it is exhaustive, so a finding kind that is absent",
+    "from the map must not occur (self-intersections excepted; they have their own",
+    "field, because the exact pair count depends on tessellation).",
+    "",
+    "Every mesh here goes through binary STL, so vertex counts are post-weld and",
+    "unused vertices cannot survive: STL stores triangles, not a vertex table."
+  ],
+  "version": 1,
+  "entries": [
+    {
+      "file": "cube-coarse.stl", "units": "mm", "load": "ok",
+      "is_manifold": true, "is_watertight": true,
+      "is_orientation_consistent": true, "is_solid": true,
+      "triangles": 12, "vertices": 8, "components": 1, "genus": 0,
+      "findings": {}
+    },
+    {
+      "file": "box-oblong.stl", "units": "mm", "load": "ok",
+      "is_manifold": true, "is_watertight": true,
+      "is_orientation_consistent": true, "is_solid": true,
+      "triangles": 12, "vertices": 8, "components": 1, "genus": 0,
+      "findings": {}
+    },
+    {
+      "file": "sphere-0.stl", "units": "mm", "load": "ok",
+      "is_manifold": true, "is_watertight": true,
+      "is_orientation_consistent": true, "is_solid": true,
+      "triangles": 20, "vertices": 12, "components": 1, "genus": 0,
+      "findings": {}
+    },
+    {
+      "file": "sphere-1.stl", "units": "mm", "load": "ok",
+      "is_manifold": true, "is_watertight": true,
+      "is_orientation_consistent": true, "is_solid": true,
+      "triangles": 80, "vertices": 42, "components": 1, "genus": 0,
+      "findings": {}
+    },
+    {
+      "file": "sphere-2.stl", "units": "mm", "load": "ok",
+      "is_manifold": true, "is_watertight": true,
+      "is_orientation_consistent": true, "is_solid": true,
+      "triangles": 320, "vertices": 162, "components": 1, "genus": 0,
+      "findings": {}
+    },
+    {
+      "file": "cylinder-8.stl", "units": "mm", "load": "ok",
+      "is_manifold": true, "is_watertight": true,
+      "is_orientation_consistent": true, "is_solid": true,
+      "triangles": 32, "vertices": 18, "components": 1, "genus": 0,
+      "findings": {}
+    },
+    {
+      "file": "cylinder-32.stl", "units": "mm", "load": "ok",
+      "is_manifold": true, "is_watertight": true,
+      "is_orientation_consistent": true, "is_solid": true,
+      "triangles": 128, "vertices": 66, "components": 1, "genus": 0,
+      "findings": {}
+    },
+    {
+      "file": "cylinder-128.stl", "units": "mm", "load": "ok",
+      "is_manifold": true, "is_watertight": true,
+      "is_orientation_consistent": true, "is_solid": true,
+      "triangles": 512, "vertices": 258, "components": 1, "genus": 0,
+      "findings": {}
+    },
+    {
+      "file": "cone-8.stl", "units": "mm", "load": "ok",
+      "is_manifold": true, "is_watertight": true,
+      "is_orientation_consistent": true, "is_solid": true,
+      "triangles": 16, "vertices": 10, "components": 1, "genus": 0,
+      "findings": {}
+    },
+    {
+      "file": "cone-32.stl", "units": "mm", "load": "ok",
+      "is_manifold": true, "is_watertight": true,
+      "is_orientation_consistent": true, "is_solid": true,
+      "triangles": 64, "vertices": 34, "components": 1, "genus": 0,
+      "findings": {}
+    },
+    {
+      "file": "cone-128.stl", "units": "mm", "load": "ok",
+      "is_manifold": true, "is_watertight": true,
+      "is_orientation_consistent": true, "is_solid": true,
+      "triangles": 256, "vertices": 130, "components": 1, "genus": 0,
+      "findings": {}
+    },
+    {
+      "file": "torus-16.stl", "units": "mm", "load": "ok",
+      "is_manifold": true, "is_watertight": true,
+      "is_orientation_consistent": true, "is_solid": true,
+      "triangles": 256, "vertices": 128, "components": 1, "genus": 1,
+      "findings": {}
+    },
+    {
+      "file": "torus-32.stl", "units": "mm", "load": "ok",
+      "is_manifold": true, "is_watertight": true,
+      "is_orientation_consistent": true, "is_solid": true,
+      "triangles": 1024, "vertices": 512, "components": 1, "genus": 1,
+      "findings": {}
+    },
+    {
+      "file": "torus-64.stl", "units": "mm", "load": "ok",
+      "is_manifold": true, "is_watertight": true,
+      "is_orientation_consistent": true, "is_solid": true,
+      "triangles": 4096, "vertices": 2048, "components": 1, "genus": 1,
+      "findings": {}
+    },
+    {
+      "file": "lattice-1.stl", "units": "mm", "load": "ok",
+      "is_manifold": true, "is_watertight": true,
+      "is_orientation_consistent": true, "is_solid": true,
+      "triangles": 12, "vertices": 8, "components": 1, "genus": 0,
+      "findings": {}
+    },
+    {
+      "file": "lattice-3.stl", "units": "mm", "load": "ok",
+      "is_manifold": true, "is_watertight": true,
+      "is_orientation_consistent": true, "is_solid": true,
+      "triangles": 108, "vertices": 56, "components": 1, "genus": 0,
+      "findings": {}
+    },
+    {
+      "file": "lattice-5.stl", "units": "mm", "load": "ok",
+      "is_manifold": true, "is_watertight": true,
+      "is_orientation_consistent": true, "is_solid": true,
+      "triangles": 300, "vertices": 152, "components": 1, "genus": 0,
+      "findings": {}
+    },
+
+    {
+      "_why": "Three triangles share one edge, so that edge has three incident faces. The six outer edges of the fan are boundaries. No edge has exactly two uses, so orientation consistency is vacuously true.",
+      "file": "broken-nonmanifold.stl", "units": "mm", "load": "ok",
+      "is_manifold": false, "is_watertight": false,
+      "is_orientation_consistent": true, "is_solid": false,
+      "triangles": 3, "vertices": 5, "components": 1,
+      "findings": { "non-manifold-edge": 1, "boundary-edge": 6 }
+    },
+    {
+      "_why": "A cube with one facet removed leaves a triangular hole: three boundary edges. A boundary edge is also non-manifold, since it has one incident face rather than two.",
+      "file": "broken-open.stl", "units": "mm", "load": "ok",
+      "is_manifold": false, "is_watertight": false,
+      "is_orientation_consistent": true, "is_solid": false,
+      "triangles": 11, "vertices": 8, "components": 1,
+      "findings": { "boundary-edge": 3 }
+    },
+    {
+      "_why": "One facet wound backwards. Its three edges are each then traversed in the same direction by both incident triangles. Still closed and manifold: only the winding is wrong.",
+      "file": "broken-flipped-face.stl", "units": "mm", "load": "ok",
+      "is_manifold": true, "is_watertight": true,
+      "is_orientation_consistent": false, "is_solid": false,
+      "triangles": 12, "vertices": 8, "components": 1,
+      "findings": { "inconsistent-orientation": 3 }
+    },
+    {
+      "_why": "Every facet wound backwards. Locally consistent everywhere, globally inside out, so it is caught by the sign of the enclosed volume rather than by the edge map.",
+      "file": "broken-inverted.stl", "units": "mm", "load": "ok",
+      "is_manifold": true, "is_watertight": true,
+      "is_orientation_consistent": true, "is_solid": false,
+      "triangles": 12, "vertices": 8, "components": 1,
+      "findings": { "inverted-orientation": 1 }
+    },
+    {
+      "_why": "A closed cube plus an isolated triangle with a repeated vertex. Degeneracy is a finding, not a fatal defect: it contributes nothing to any ray test, so the mesh remains solid.",
+      "file": "broken-zero-area.stl", "units": "mm", "load": "ok",
+      "is_manifold": true, "is_watertight": true,
+      "is_orientation_consistent": true, "is_solid": true,
+      "triangles": 13, "components": 2,
+      "findings": { "degenerate-triangle": 1 }
+    },
+    {
+      "_why": "A cube plus an isolated triangle whose three vertices are exactly collinear. Detected by exact orient2d on all three coordinate-plane projections, never by an area threshold. Its three edges are boundaries.",
+      "file": "broken-collinear.stl", "units": "mm", "load": "ok",
+      "is_manifold": false, "is_watertight": false,
+      "is_orientation_consistent": true, "is_solid": false,
+      "triangles": 13, "components": 2,
+      "findings": { "degenerate-triangle": 1, "boundary-edge": 3 }
+    },
+    {
+      "_why": "Two coincident triangles with opposite windings. Every edge has exactly two consistently wound uses, so it is manifold and watertight, and it encloses exactly nothing.",
+      "file": "broken-duplicate-tri.stl", "units": "mm", "load": "ok",
+      "is_manifold": true, "is_watertight": true,
+      "is_orientation_consistent": true, "is_solid": false,
+      "triangles": 2, "vertices": 3, "components": 1,
+      "findings": { "duplicate-triangle": 1 }
+    },
+    {
+      "_why": "Two cubes overlapping in space. Every topological check passes: interpenetration is invisible to the edge map and only the geometric test finds it.",
+      "file": "broken-selfintersect.stl", "units": "mm", "load": "ok",
+      "is_manifold": true, "is_watertight": true,
+      "is_orientation_consistent": true, "is_solid": true,
+      "triangles": 24, "vertices": 16, "components": 2,
+      "self_intersections": 1,
+      "findings": {}
+    },
+    {
+      "_why": "Two cubes far apart: two components, both valid.",
+      "file": "broken-two-components.stl", "units": "mm", "load": "ok",
+      "is_manifold": true, "is_watertight": true,
+      "is_orientation_consistent": true, "is_solid": true,
+      "triangles": 24, "vertices": 16, "components": 2,
+      "self_intersections": 0,
+      "findings": {}
+    },
+    {
+      "_why": "A small sphere entirely inside a large one, both outward-oriented. The signed volumes ADD rather than subtract, which is the question U5 will care about: a nested shell is a separate solid, not a cavity.",
+      "file": "broken-nested.stl", "units": "mm", "load": "ok",
+      "is_manifold": true, "is_watertight": true,
+      "is_orientation_consistent": true, "is_solid": true,
+      "triangles": 640, "vertices": 324, "components": 2,
+      "self_intersections": 0,
+      "findings": {}
+    },
+
+    {
+      "_why": "A NaN coordinate must be stopped at the boundary: Orientation::from_determinant panics on NaN in release builds by design, so it must never reach the predicates.",
+      "file": "broken-nan.stl", "units": "mm", "load": "reject",
+      "error_contains": "non-finite"
+    },
+    {
+      "_why": "Same argument as NaN.",
+      "file": "broken-inf.stl", "units": "mm", "load": "reject",
+      "error_contains": "non-finite"
+    },
+    {
+      "_why": "The declared triangle count is validated against the file length before any triangle is read, so truncation is a specific error rather than garbage geometry.",
+      "file": "broken-truncated.stl", "units": "mm", "load": "reject",
+      "error_contains": "truncated"
+    },
+    {
+      "_why": "A header claiming 999 triangles in a 684-byte file. The error must name the count, which is why format detection treats a NUL-bearing .stl as binary even when its length check fails.",
+      "file": "broken-wrong-count.stl", "units": "mm", "load": "reject",
+      "error_contains": "999"
+    },
+    {
+      "_why": "An empty file is not a mesh.",
+      "file": "broken-empty.stl", "units": "mm", "load": "reject",
+      "error_contains": "empty"
+    },
+    {
+      "_why": "1e200 is inside f64 but outside the measured range where orient3d is exact, so the ray caster would return a meaningless sign for it. Rejected with the predicate named.",
+      "file": "broken-out-of-range.obj", "units": "mm", "load": "reject",
+      "error_contains": "orient3d"
+    },
+
+    {
+      "_why": "A missing `endsolid` is common and harmless once every facet has closed, so it is tolerated and counted rather than rejected. The single triangle is of course an open surface.",
+      "file": "quirk-no-endsolid.stla", "units": "mm", "load": "ok",
+      "is_manifold": false, "is_watertight": false,
+      "is_orientation_consistent": true, "is_solid": false,
+      "triangles": 1, "vertices": 3, "components": 1,
+      "findings": { "boundary-edge": 3 }
+    },
+    {
+      "_why": "OBJ negative indices are relative to the vertex count at that point in the file. -3 -2 -1 must resolve to the same triangle as 1 2 3.",
+      "file": "quirk-negative-indices.obj", "units": "mm", "load": "ok",
+      "is_manifold": false, "is_watertight": false,
+      "is_orientation_consistent": true, "is_solid": false,
+      "triangles": 1, "vertices": 3, "components": 1,
+      "findings": { "boundary-edge": 3 }
+    },
+    {
+      "_why": "A U-shaped octagon, fan triangulated from vertex 1. An L-shape would NOT demonstrate the limitation, because an L is star-shaped from every vertex and the fan is correct; a U is not. Six triangles, five interior diagonals, eight perimeter edges.",
+      "file": "quirk-nonconvex.obj", "units": "mm", "load": "ok",
+      "is_manifold": false, "is_watertight": false,
+      "is_orientation_consistent": true, "is_solid": false,
+      "triangles": 6, "vertices": 8, "components": 1,
+      "findings": { "boundary-edge": 8 }
+    },
+    {
+      "_why": "An indexed mesh with two pairs of coincident vertices. Unwelded it is two disconnected triangles; welding merges 6 vertices into 4 and makes them share an edge, leaving 4 boundary edges around the quad.",
+      "file": "quirk-unwelded.obj", "units": "mm", "load": "ok",
+      "is_manifold": false, "is_watertight": false,
+      "is_orientation_consistent": true, "is_solid": false,
+      "triangles": 2, "vertices": 4, "components": 1,
+      "findings": { "boundary-edge": 4 }
+    }
+  ]
+}

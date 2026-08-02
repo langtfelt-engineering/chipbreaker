@@ -18,6 +18,7 @@
 
 pub mod obj;
 pub mod stl;
+pub mod threemf;
 
 use core::fmt;
 
@@ -92,6 +93,8 @@ pub enum Format {
     StlAscii,
     /// Wavefront OBJ.
     Obj,
+    /// 3MF: a ZIP container holding an XML model part.
+    ThreeMf,
 }
 
 impl Format {
@@ -102,9 +105,23 @@ impl Format {
             Self::StlBinary => "stl-binary",
             Self::StlAscii => "stl-ascii",
             Self::Obj => "obj",
+            Self::ThreeMf => "3mf",
         }
     }
+
+    /// True if this format states its own unit, so the caller must not supply
+    /// one. See [`crate::mesh::units`].
+    #[must_use]
+    pub const fn declares_units(self) -> bool {
+        matches!(self, Self::ThreeMf)
+    }
 }
+
+/// How many leading bytes are inspected for the binary/ASCII NUL heuristic.
+///
+/// Large enough to cover the 84-byte header plus a triangle, small enough to be
+/// free.
+const HEADER_SNIFF: usize = 128;
 
 /// Guesses the format of `bytes`, given an optional filename for its extension.
 ///
@@ -122,6 +139,11 @@ impl Format {
 /// bytes 80..84 — and it is checked before any prefix is looked at.
 #[must_use]
 pub fn detect(bytes: &[u8], filename: Option<&str>) -> Format {
+    // ZIP magic, checked first: a 3MF container is unambiguous, and both other
+    // formats would misread it as garbage.
+    if bytes.starts_with(b"PK\x03\x04") {
+        return Format::ThreeMf;
+    }
     if stl::looks_binary(bytes) {
         return Format::StlBinary;
     }
@@ -131,6 +153,15 @@ pub fn detect(bytes: &[u8], filename: Option<&str>) -> Format {
     if extension.as_deref() == Some("obj") {
         return Format::Obj;
     }
+    // A *corrupt* binary STL fails the length check above but is still binary,
+    // and handing it to the ASCII parser produces "this does not look like an
+    // ASCII STL" instead of the specific "the header declares 999 triangles"
+    // that would actually help. ASCII STL is text and never contains a NUL, so a
+    // NUL in the first part of the file is a reliable signal.
+    if bytes.len() >= HEADER_SNIFF && bytes[..HEADER_SNIFF.min(bytes.len())].contains(&0) {
+        return Format::StlBinary;
+    }
+
     let head = &bytes[..bytes.len().min(6)];
     if head.starts_with(b"solid") {
         return Format::StlAscii;

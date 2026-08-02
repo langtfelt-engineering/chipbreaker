@@ -629,6 +629,32 @@ pub fn validate(mesh: &TriMesh) -> MeshReport {
     }
 }
 
+/// Adds self-intersection findings to an existing report.
+///
+/// Separate from [`validate`], and opt-in behind `--check-self-intersect`,
+/// because it costs `O(n log n)` with a large constant — a BVH query per
+/// triangle and an exact test per candidate pair. On a million-triangle model
+/// that is minutes rather than milliseconds.
+///
+/// Building the hierarchy here rather than taking one as a parameter keeps the
+/// call site simple; a caller that already has a BVH can use
+/// [`crate::mesh::intersect::self_intersections`] directly.
+pub fn check_self_intersections(mesh: &TriMesh, report: &mut MeshReport) {
+    let bvh = crate::mesh::bvh::Bvh::build(mesh);
+    for (a, b) in crate::mesh::intersect::self_intersections(mesh, &bvh) {
+        let mut vertices: Vec<u32> = mesh.triangles()[a as usize].to_vec();
+        vertices.extend_from_slice(&mesh.triangles()[b as usize]);
+        report.findings.push(Finding::new(
+            FindingKind::SelfIntersection,
+            vec![a, b],
+            vertices,
+            format!("triangles {a} and {b} intersect but share no vertex"),
+        ));
+    }
+    report.self_intersection_checked = true;
+    report.findings.sort_by_key(Finding::sort_key);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

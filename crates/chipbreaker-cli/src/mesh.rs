@@ -58,9 +58,13 @@ pub fn parse_vec3(s: &str) -> Result<Vec3, String> {
 pub struct Input {
     /// Mesh file to read.
     pub file: PathBuf,
-    /// Unit the file's coordinates are in. Required: STL and OBJ do not say.
+    /// Unit the file's coordinates are in.
+    ///
+    /// Required for STL and OBJ, which carry no unit information at all. 3MF
+    /// declares its own, so passing this for a 3MF file is only checked for
+    /// agreement — a contradiction is an error, not an override.
     #[arg(long, value_parser = parse_unit)]
-    pub units: Unit,
+    pub units: Option<Unit>,
     /// Vertex welding lattice, in millimetres.
     #[arg(long, default_value_t = EPS_WELD)]
     pub weld_tol: f64,
@@ -78,6 +82,11 @@ pub enum MeshCommand {
     Validate {
         #[command(flatten)]
         input: Input,
+        /// Also look for triangles that intersect but share no vertex.
+        ///
+        /// Opt-in: it costs O(n log n) with a large constant.
+        #[arg(long)]
+        check_self_intersect: bool,
     },
     /// Convert between mesh formats.
     Convert {
@@ -130,7 +139,7 @@ impl MeshCommand {
     fn input(&self) -> &Input {
         match self {
             Self::Inspect(i)
-            | Self::Validate { input: i }
+            | Self::Validate { input: i, .. }
             | Self::Convert { input: i, .. }
             | Self::Bvh { input: i, .. }
             | Self::Raycast { input: i, .. }
@@ -145,23 +154,41 @@ fn load(input: &Input) -> Result<(TriMesh, Value), String> {
         .map_err(|e| format!("cannot read {}: {e}", input.file.display()))?;
     let name = input.file.file_name().and_then(|s| s.to_str());
     let format = io::detect(&bytes, name);
+
+    // 3MF states its unit; everything else has none, so the caller must.
+    // Refusing to guess is the point: see chipbreaker_core::mesh::units.
+    let unit = match (format.declares_units(), input.units) {
+        (true, _) => None,
+        (false, Some(u)) => Some(u),
+        (false, None) => {
+            return Err(format!(
+                "{} carries no unit information, so --units is required. Accepted: {}",
+                format.name(),
+                accepted_names()
+            ));
+        }
+    };
+    let required = || unit.unwrap_or(Unit::Millimetre);
+
     let raw = match format {
-        Format::StlBinary => io::stl::read_binary(&bytes, input.units).map_err(|e| e.to_string()),
+        Format::StlBinary => io::stl::read_binary(&bytes, required()).map_err(|e| e.to_string()),
         Format::StlAscii => {
             let text = String::from_utf8_lossy(&bytes);
-            io::stl::read_ascii(&text, input.units).map_err(|e| e.to_string())
+            io::stl::read_ascii(&text, required()).map_err(|e| e.to_string())
         }
         Format::Obj => {
             let text = String::from_utf8_lossy(&bytes);
-            io::obj::read(&text, input.units).map_err(|e| e.to_string())
+            io::obj::read(&text, required()).map_err(|e| e.to_string())
         }
+        Format::ThreeMf => io::threemf::read(&bytes, input.units).map_err(|e| e.to_string()),
     }?;
+    let source_unit = raw.meta().source_unit;
 
     let (welded, weld_report) = weld(&raw, input.weld_tol).map_err(|e| e.to_string())?;
     let summary = json!({
         "format": format.name(),
         "lattice_mm": weld_report.lattice,
-        "source_unit": input.units.name(),
+        "source_unit": source_unit.name(),
         "triangles_collapsed_by_welding": weld_report.triangles_collapsed,
         "vertices_after_weld": weld_report.vertices_after,
         "vertices_before_weld": weld_report.vertices_before,
@@ -247,7 +274,9 @@ pub fn run(command: &MeshCommand) -> Result<(Value, String, bool), String> {
                  welded  {} -> {} vertices at a {} mm lattice\n",
                 mesh.triangle_count(),
                 mesh.vertex_count(),
-                input.units,
+                // The unit actually used, which for 3MF comes from the file
+                // rather than from the command line.
+                load_summary["source_unit"],
                 bounds.min.to_array(),
                 bounds.max.to_array(),
                 mesh.signed_volume(),
@@ -259,9 +288,17 @@ pub fn run(command: &MeshCommand) -> Result<(Value, String, bool), String> {
             Ok((results, text, true))
         }
 
-        MeshCommand::Validate { .. } => {
-            let report = validate(&mesh);
-            let ok = report.is_solid();
+        MeshCommand::Validate {
+            check_self_intersect,
+            ..
+        } => {
+            let mut report = validate(&mesh);
+            if *check_self_intersect {
+                chipbreaker_core::mesh::validate::check_self_intersections(&mesh, &mut report);
+            }
+            let ok = report.is_solid()
+                && report.count_of(chipbreaker_core::mesh::validate::FindingKind::SelfIntersection)
+                    == 0;
             let results = json!({
                 "command": "validate",
                 "load": load_summary,
