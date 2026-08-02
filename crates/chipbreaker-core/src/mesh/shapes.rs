@@ -431,7 +431,10 @@ mod tests {
         // tessellation — the same order as the sphere, and for the same reason.
         let torus_v = torus(3.0, 1.0, 128, 64).signed_volume();
         let torus_exact = 2.0 * PI * PI * 3.0 * 1.0;
-        assert!(torus_v < torus_exact, "an inscribed torus cannot exceed the true volume");
+        assert!(
+            torus_v < torus_exact,
+            "an inscribed torus cannot exceed the true volume"
+        );
         assert!(
             (torus_v - torus_exact).abs() / torus_exact < 0.0025,
             "{torus_v} vs {torus_exact}"
