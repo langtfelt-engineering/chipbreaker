@@ -9,6 +9,7 @@
 //! the core and there will not be one; the eventual browser demo is a consumer
 //! of the library, never a part of it.
 
+mod mesh;
 mod report;
 
 use std::io::Write;
@@ -43,6 +44,11 @@ enum Command {
         #[arg(long, value_name = "FILE")]
         out: Option<PathBuf>,
     },
+    /// Inspect, validate and ray-cast triangle meshes.
+    Mesh {
+        #[command(subcommand)]
+        command: mesh::MeshCommand,
+    },
     /// Print version information.
     Version {
         /// Emit JSON instead of a single line of text.
@@ -63,6 +69,7 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
     match cli.command {
         Command::Selftest { report, out } => run_selftest(report, out.as_deref()),
+        Command::Mesh { command } => run_mesh(&command),
         Command::Version { json } => {
             print_version(json);
             ExitCode::SUCCESS
@@ -120,6 +127,33 @@ fn run_selftest(format: ReportFormat, out: Option<&std::path::Path>) -> ExitCode
             results.suites.iter().filter(|s| !s.passed()).count()
         );
         ExitCode::FAILURE
+    }
+}
+
+fn run_mesh(command: &mesh::MeshCommand) -> ExitCode {
+    let as_json = match command {
+        mesh::MeshCommand::Inspect(i)
+        | mesh::MeshCommand::Validate { input: i }
+        | mesh::MeshCommand::Convert { input: i, .. }
+        | mesh::MeshCommand::Bvh { input: i, .. }
+        | mesh::MeshCommand::Raycast { input: i, .. }
+        | mesh::MeshCommand::Parity { input: i, .. } => i.json,
+    };
+    let (outcome, elapsed) = mesh::timed(|| mesh::run(command));
+    match outcome {
+        Ok((results, text, ok)) => {
+            print!("{}", mesh::render(&results, &text, elapsed, as_json));
+            let _ = std::io::stdout().flush();
+            if ok {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
+            }
+        }
+        Err(message) => {
+            eprintln!("chipbreaker: {message}");
+            ExitCode::FAILURE
+        }
     }
 }
 
@@ -182,8 +216,78 @@ mod tests {
                 assert_eq!(report, ReportFormat::Json);
                 assert_eq!(out, Some(PathBuf::from("r.json")));
             }
-            Command::Version { .. } => panic!("wrong subcommand"),
+            other => panic!("wrong subcommand: {other:?}"),
         }
+    }
+
+    #[test]
+    fn mesh_subcommands_parse_and_require_units() {
+        let cli = Cli::try_parse_from([
+            "chipbreaker",
+            "mesh",
+            "inspect",
+            "part.stl",
+            "--units",
+            "in",
+        ])
+        .expect("mesh inspect");
+        assert!(matches!(cli.command, Command::Mesh { .. }));
+
+        // The central CLI rule: STL and OBJ carry no units, so one must be given.
+        assert!(
+            Cli::try_parse_from(["chipbreaker", "mesh", "inspect", "part.stl"]).is_err(),
+            "--units must be mandatory"
+        );
+        assert!(
+            Cli::try_parse_from([
+                "chipbreaker",
+                "mesh",
+                "inspect",
+                "part.stl",
+                "--units",
+                "furlong"
+            ])
+            .is_err(),
+            "unknown units must be rejected rather than defaulted"
+        );
+
+        for sub in ["validate", "bvh", "parity"] {
+            assert!(
+                Cli::try_parse_from(["chipbreaker", "mesh", sub, "p.stl", "--units", "mm"]).is_ok(),
+                "{sub} should parse"
+            );
+        }
+        assert!(
+            Cli::try_parse_from([
+                "chipbreaker",
+                "mesh",
+                "raycast",
+                "p.stl",
+                "--units",
+                "mm",
+                "--origin",
+                "0,0,-1",
+                "--dir",
+                "0,0,1",
+            ])
+            .is_ok()
+        );
+        // A malformed vector is a parse error, not a silent zero.
+        assert!(
+            Cli::try_parse_from([
+                "chipbreaker",
+                "mesh",
+                "raycast",
+                "p.stl",
+                "--units",
+                "mm",
+                "--origin",
+                "0,0",
+                "--dir",
+                "0,0,1",
+            ])
+            .is_err()
+        );
     }
 
     #[test]

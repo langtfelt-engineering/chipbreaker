@@ -155,6 +155,7 @@ pub fn run() -> SelfTestReport {
         span_algebra_suite(),
         math_kernel_suite(),
         transcendental_suite(),
+        mesh_suite(),
         canonical_hash_suite(),
     ];
     let mut report = SelfTestReport {
@@ -574,6 +575,126 @@ fn transcendental_suite() -> SuiteResult {
         name: "transcendental",
         description: "libm-backed trig, exp and log evaluated on seeded input for cross-target parity",
         cases: TRANSCENDENTAL_CASES,
+        failures,
+        digest: h.finish(),
+    }
+}
+
+/// Mesh generation, topology, BVH shape and ray casting must agree across
+/// targets.
+///
+/// The BVH topology hash is the interesting one. The tree is built by median
+/// split on sorted centroids, so its shape depends on a floating-point sort key;
+/// if that key differed by an ULP on one target, the split would land elsewhere,
+/// the traversal order would change, and — once U11 adds parallelism — results
+/// would follow. Hashing the tree turns that from a latent risk into a CI
+/// failure.
+///
+/// The ray sweep is deliberately run against `lattice_block`, whose vertices are
+/// all integers, so it exercises the Simulation of Simplicity cascade rather
+/// than the float fast path. A cross-target disagreement in SoS would be
+/// invisible on generic geometry.
+fn mesh_suite() -> SuiteResult {
+    use crate::mesh::bvh::Bvh;
+    use crate::mesh::validate::validate;
+    use crate::mesh::{shapes, weld};
+
+    let mut failures = Vec::new();
+    let mut h = CanonicalHash::new();
+    h.begin("mesh");
+
+    let meshes = [
+        ("cube", shapes::cube(10.0)),
+        ("sphere-2", shapes::icosphere(5.0, 2)),
+        ("cylinder-32", shapes::cylinder(4.0, 9.0, 32)),
+        ("cone-32", shapes::cone(4.0, 9.0, 32)),
+        ("torus-16", shapes::torus(6.0, 2.0, 16, 8)),
+        ("lattice-3", shapes::lattice_block(3)),
+    ];
+
+    let mut cases = 0usize;
+    for (name, mesh) in &meshes {
+        h.begin(name);
+        mesh.hash_canonical(&mut h);
+
+        // Welding must be a pure function of the geometry.
+        match weld::weld(mesh, crate::eps::EPS_WELD) {
+            Ok((welded, report)) => {
+                welded.hash_canonical(&mut h);
+                report.hash_canonical(&mut h);
+            }
+            Err(e) => failures.push(Failure {
+                case: format!("weld/{name}"),
+                detail: e.to_string(),
+            }),
+        }
+
+        let report = validate(mesh);
+        report.hash_canonical(&mut h);
+        if !report.is_solid() {
+            failures.push(Failure {
+                case: format!("validate/{name}"),
+                detail: format!(
+                    "generated shape is not a closed outward solid: {:?}",
+                    report.findings
+                ),
+            });
+        }
+
+        let bvh = Bvh::build(mesh);
+        bvh.hash_canonical(&mut h);
+
+        // A small ray sweep, hashed in full. Crossing counts, parameters and
+        // directions all have to match across targets, not merely the totals.
+        let bounds = mesh.bounds();
+        let extent = bounds.extent();
+        let mut scratch = Vec::new();
+        for i in 0..8u32 {
+            for j in 0..8u32 {
+                let origin = Vec3::new(
+                    bounds.min.x + extent.x * f64::from(i) / 7.0,
+                    bounds.min.y + extent.y * f64::from(j) / 7.0,
+                    bounds.min.z - extent.z - 1.0,
+                );
+                let ray = crate::math::Ray::new(origin, Vec3::Z);
+                match bvh.intersect_ray_all_into(mesh, &ray, &mut scratch) {
+                    Ok(stats) => {
+                        h.add(&origin);
+                        h.add_all(scratch.iter());
+                        // Counter totals are hashed too: a target that took the
+                        // exact path a different number of times would be a
+                        // genuine divergence even if the answers matched.
+                        h.u64(stats.triangle_tests)
+                            .u64(stats.exact_path)
+                            .u64(stats.sos_resolutions)
+                            .u64(stats.coplanar_rejected);
+                        cases += 1;
+
+                        if !scratch.len().is_multiple_of(2) {
+                            failures.push(Failure {
+                                case: format!("parity/{name}/{i}-{j}"),
+                                detail: format!(
+                                    "odd crossing count {} from {origin:?}; material leaks",
+                                    scratch.len()
+                                ),
+                            });
+                        }
+                    }
+                    Err(e) => failures.push(Failure {
+                        case: format!("raycast/{name}/{i}-{j}"),
+                        detail: e.to_string(),
+                    }),
+                }
+            }
+        }
+        h.end();
+    }
+    h.end();
+
+    SuiteResult {
+        name: "mesh",
+        description: "shape generation, welding, topology, BVH shape and leak-free ray casting",
+        cases,
         failures,
         digest: h.finish(),
     }

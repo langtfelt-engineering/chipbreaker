@@ -62,7 +62,8 @@ impl Environment {
         }
     }
 
-    fn to_json(&self) -> Value {
+    /// The environment as JSON. Never hashed; see the module documentation.
+    pub fn to_json(&self) -> Value {
         json!({
             "arch": self.arch,
             "core_version": self.crate_version,
