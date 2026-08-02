@@ -7,6 +7,7 @@
 pub mod eps;
 pub mod golden;
 pub mod math;
+pub mod mesh;
 pub mod predicates;
 pub mod selftest;
 pub mod spans;

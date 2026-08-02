@@ -116,6 +116,55 @@ pub const EPS_SPAN_MERGE: f64 = 1e-9;
 /// why that order is the one that terminates.
 pub const EPS_SPAN_MIN: f64 = 1e-9;
 
+/// Lattice spacing used to weld coincident vertices, in millimetres.
+///
+/// # Why a lattice rather than a tolerance
+///
+/// Tolerance-based welding — "merge `a` and `b` if `|a - b| < eps`" — is **not
+/// transitive**. `a` can be within tolerance of `b`, and `b` of `c`, while `a`
+/// and `c` are not. Whether `a` and `c` end up welded then depends on the order
+/// the pairs were considered in, which is precisely the class of order-dependent
+/// result the whole project forbids.
+///
+/// Snapping to a lattice is transitive by construction: two coordinates weld iff
+/// they round to the same lattice point, and that is a property of each
+/// coordinate alone. See [`crate::mesh::weld`] for the full argument, including
+/// the cost this trade accepts.
+///
+/// # Why 1e-6 mm
+///
+/// One nanometre. Two orders of magnitude below the finest surface finish any
+/// machining process produces (~1e-4 mm), so it never merges two vertices a
+/// machinist would consider distinct.
+///
+/// It also has to sit above the noise in the input. Binary STL stores `f32`,
+/// whose 24-bit mantissa gives a resolution of about 6e-6 mm at a 100 mm
+/// coordinate — so vertices that were coincident in the CAD system arrive
+/// differing by a few units in the last `f32` place. A lattice finer than that
+/// would fail to weld them and leave the mesh non-manifold for no reason. 1e-6 mm
+/// is comfortably coarser than `f32` noise at part scale and comfortably finer
+/// than any real feature.
+///
+/// Overridable per-invocation with `--weld-tol`.
+pub const EPS_WELD: f64 = 1e-6;
+
+/// Relative magnitude below which a floating-point edge function in the
+/// ray-triangle test is considered untrustworthy, forcing the exact fallback.
+///
+/// The fast path computes the three edge functions in `f64` and accepts the
+/// classification when every one of them is comfortably away from zero.
+/// "Comfortably" means: larger than this multiple of the magnitude of the terms
+/// that produced it, so that the accumulated rounding error cannot have changed
+/// the sign.
+///
+/// A 3x3 determinant of differences accumulates a relative error of a few units
+/// in the last place — call it `8 * f64::EPSILON` to be generous, roughly
+/// `1.8e-15`. `1e-12` leaves three orders of magnitude of margin, which costs a
+/// slightly higher exact-fallback rate and buys certainty that the fast path is
+/// never wrong. Being wrong here means a leaked ray, and a leaked ray is a
+/// tunnel through the simulated stock.
+pub const EPS_EDGE_FN: f64 = 1e-12;
+
 /// Compares two lengths with the combined absolute/relative tolerance described
 /// on [`EPS_RELATIVE`].
 ///
