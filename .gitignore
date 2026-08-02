@@ -1,0 +1,11 @@
+/target
+/.tools
+**/*.rs.bk
+*.pdb
+
+# Criterion output is machine-specific; the curated numbers live in BENCHMARKS.md.
+/target/criterion
+
+# Local editor state
+.vscode/
+.idea/
