@@ -37,6 +37,23 @@ machine.
 No `f32` in the core. Ever. Not for storage, not for interchange, not "just for
 the display path". CI greps for it.
 
+**One narrow exception**, because reality intrudes: binary STL *stores* `f32`,
+so reading and writing that format has to name the type. Those lines carry an
+`ALLOW-f32-WIRE-FORMAT` marker comment and CI skips them. The marker is
+deliberately ugly and deliberately per-line: it makes each exception show up in
+review rather than widening the rule to a whole file or module.
+
+The exception is for the **wire format only**. A value read from an `f32` is
+widened to `f64` immediately — which is exact, since every `f32` is an `f64` —
+and no arithmetic ever happens at single precision. If you find yourself wanting
+the marker on a line that computes something, the answer is no.
+
+Note the knock-on effect this has on tolerances: `f32`'s 24-bit mantissa gives
+about 6e-6 mm of resolution at a 100 mm coordinate, which is why
+[`EPS_WELD`](crates/chipbreaker-core/src/eps.rs) is 1e-6 mm and not finer. A weld
+lattice below the incoming noise floor fails to merge vertices that really are
+the same point.
+
 ### 2. No FMA
 
 Never call `f64::mul_add`, and never write anything that invites the compiler to

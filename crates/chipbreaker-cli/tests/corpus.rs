@@ -196,11 +196,11 @@ fn malformed_files() -> Vec<(&'static str, Vec<u8>)> {
 
     // A NaN coordinate, planted in the first vertex of the first facet.
     let mut nan = good.clone();
-    nan[96..100].copy_from_slice(&f32::NAN.to_le_bytes());
+    nan[96..100].copy_from_slice(&f32::NAN.to_le_bytes()); // ALLOW-f32-WIRE-FORMAT
 
     // An infinite coordinate, likewise.
     let mut infinite = good.clone();
-    infinite[96..100].copy_from_slice(&f32::INFINITY.to_le_bytes());
+    infinite[96..100].copy_from_slice(&f32::INFINITY.to_le_bytes()); // ALLOW-f32-WIRE-FORMAT
 
     // Truncated part-way through the triangle array.
     let mut truncated = good.clone();

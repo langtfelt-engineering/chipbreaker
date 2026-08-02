@@ -127,8 +127,13 @@ jobs:
           check() {
             local pattern="$1" message="$2"
             local hits
+            # Comment lines are skipped, so the rules can be discussed in
+            # documentation without tripping the check that enforces them.
+            # `ALLOW-f32-WIRE-FORMAT` marks the handful of lines that must name
+            # f32 because a file format stores it; see CONTRIBUTING.md rule 1.
             hits=$(grep -rn --include='*.rs' -E "$pattern" crates/ \
-                   | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*|/\*)' || true)
+                   | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*|/\*)' \
+                   | grep -v 'ALLOW-f32-WIRE-FORMAT' || true)
             if [ -n "$hits" ]; then
               echo "::error::$message"
               echo "$hits"
@@ -136,7 +141,10 @@ jobs:
             fi
           }
           check '\bf32\b' \
-            'f32 found. The core is f64 only; CONTRIBUTING.md rule 1.'
+            'f32 found. The core is f64 only; CONTRIBUTING.md rule 1. A wire
+             format that genuinely stores f32 (binary STL) may name the type on a
+             line carrying the marker comment, which makes each exception
+             reviewable rather than widening the rule.'
           check '\bmul_add\b' \
             'mul_add found. Native and WASM contract multiply-add differently; CONTRIBUTING.md rule 2.'
           check '\bHash(Map|Set)\b' \

@@ -117,7 +117,7 @@ pub fn read_binary(bytes: &[u8], unit: Unit) -> Result<TriMesh, ParseError> {
             for (a, out) in xyz.iter_mut().enumerate() {
                 let at = base + c * 12 + a * 4;
                 let raw =
-                    f32::from_le_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]]);
+                    f32::from_le_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]]); // ALLOW-f32-WIRE-FORMAT
                 // Widening f32 to f64 is exact; the scale multiply is the only
                 // rounding, and it happens once.
                 *out = f64::from(raw) * scale;
@@ -271,7 +271,7 @@ pub fn write_binary(mesh: &TriMesh) -> Vec<u8> {
         let n = mesh.face_normal(i).unwrap_or(Vec3::ZERO);
         for v in [n, tri[0], tri[1], tri[2]] {
             for c in v.to_array() {
-                out.extend_from_slice(&(c as f32).to_le_bytes());
+                out.extend_from_slice(&(c as f32).to_le_bytes()); // ALLOW-f32-WIRE-FORMAT
             }
         }
         out.extend_from_slice(&0u16.to_le_bytes());
@@ -471,7 +471,7 @@ mod tests {
 
         // And through the binary path, where the f32 carries the infinity.
         let mut bytes = write_binary(&shapes::cube(1.0));
-        bytes[96..100].copy_from_slice(&f32::INFINITY.to_le_bytes());
+        bytes[96..100].copy_from_slice(&f32::INFINITY.to_le_bytes()); // ALLOW-f32-WIRE-FORMAT
         let e = read_binary(&bytes, Unit::Millimetre).expect_err("must reject");
         assert!(e.to_string().contains("non-finite"), "{e}");
     }
