@@ -36,6 +36,7 @@
 
 pub mod cut;
 pub mod horizontal;
+pub mod plunge;
 pub mod reference;
 
 use crate::math::{Aabb3, Ray, Vec3};

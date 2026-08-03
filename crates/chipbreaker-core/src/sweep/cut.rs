@@ -25,7 +25,7 @@ use crate::spans::Spans;
 use crate::tool::Profile;
 use crate::tool::raycast::{RaycastScratch, RaycastStats};
 
-use super::{LinearMove, SweepCase, horizontal, reference, spans_in_tool_at};
+use super::{LinearMove, SweepCase, horizontal, plunge, reference, spans_in_tool_at};
 
 /// How a swept volume should be computed.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -73,6 +73,10 @@ impl SweepMethod {
             Self::Analytic { tolerance } => match motion.case() {
                 // Exact: no sub-stepping, so no deviation at all.
                 SweepCase::Stationary | SweepCase::Horizontal => (0, 0.0),
+                // A plunge is usually exact too, but only for an axis ray
+                // against a radially convex profile, and neither is known here.
+                // The plan is the fallback's; `cut_bundle` records zero
+                // sub-steps for the rays that took the exact path.
                 SweepCase::Plunge | SweepCase::Ramp => {
                     reference::substeps_for_error(motion, tolerance)
                 }
@@ -197,7 +201,10 @@ pub fn cut_bundle(
 ) -> CutStats {
     let mut stats = CutStats::default();
     let (steps, bound) = method.plan(motion);
-    stats.worst_bound_mm = bound;
+    // Set only when a ray actually sub-steps. A cut that took the exact path on
+    // every ray reports no deviation, which is the truth and is what makes the
+    // number worth printing.
+    let planned_bound = bound;
 
     let lattice = bundle.lattice().clone();
     let axis = lattice.axis();
@@ -253,6 +260,20 @@ pub fn cut_bundle(
                     &mut stats.raycast,
                 );
             }
+            // A plunge is exact only for an axis ray against a radially convex
+            // profile. `swept_spans_into` says whether it took it, and anything
+            // it declines falls through to sub-stepping rather than being
+            // guessed at.
+            SweepMethod::Analytic { .. }
+                if matches!(motion.case(), SweepCase::Plunge)
+                    && plunge::swept_spans_into(
+                        profile,
+                        motion,
+                        &ray,
+                        &mut scratch.raycast,
+                        &mut scratch.swept,
+                        &mut stats.raycast,
+                    ) => {}
             _ => {
                 reference::swept_spans_into(
                     profile,
@@ -264,6 +285,7 @@ pub fn cut_bundle(
                     &mut stats.raycast,
                 );
                 stats.substeps += u64::from(steps);
+                stats.worst_bound_mm = stats.worst_bound_mm.max(planned_bound);
             }
         }
         if scratch.swept.is_empty() {
