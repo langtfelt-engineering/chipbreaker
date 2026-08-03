@@ -22,9 +22,12 @@
 //! spacing.
 
 pub mod arena;
+pub mod convergence;
 pub mod field;
+pub mod io;
 pub mod lattice;
 
 pub use arena::{Arena, INLINE_CAPACITY};
 pub use field::{BuildError, BuildOptions, BuildStats, DexelField};
+pub use io::{FORMAT_VERSION, FormatError};
 pub use lattice::{Lattice, LatticeError};

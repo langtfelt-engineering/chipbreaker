@@ -215,6 +215,19 @@ impl DexelField {
         }
     }
 
+    /// Reassembles a field from its parts, for the `.dexel` reader.
+    ///
+    /// Not a general constructor: it trusts that the arena has one entry per
+    /// lattice ray, which the reader checks before calling.
+    #[must_use]
+    pub const fn from_parts(lattice: Lattice, arena: Arena, placement: Mat4) -> Self {
+        Self {
+            lattice,
+            arena,
+            placement,
+        }
+    }
+
     /// Builds a field from a closed stock mesh.
     ///
     /// # Errors
