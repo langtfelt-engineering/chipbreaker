@@ -57,29 +57,79 @@ branch that leaves the closed form.
 | bull (quartic) | 321 ns | 3.1 M/s | 4.4x |
 | barrel (quartic) | 1.39 µs | 0.72 M/s | **19x** |
 
-### The barrel is the number to carry forward
+### Per-ray cost with the confounds made visible
 
-19x against a flat end mill on the innermost loop of U5 is a real cost, and it
-follows directly from the first table. A bull nose pays for a quartic only on
-the rays that clip its corner radius; a barrel cutter's entire cutting length
-*is* one torus, so nearly every ray that touches it pays for two quartic solves.
-At 1.39 µs per ray, a million-ray sweep against a barrel is 1.4 seconds where
-the same sweep against a flat is 74 ms.
+Measured separately from Criterion, with the hit rate and the torus share of the
+profile printed alongside, because a bare ratio between two tools can be an
+artefact of bundle geometry rather than a statement about the solver. Hit rates
+are ~60% for every row, so the ratios below are comparable.
 
-**This is a deliberate trade and it is recoverable.** Section 8 abandoned
-Ferrari's closed form because it lost every significant digit when `|b/a|` was
-large — which is the *normal* case for a ray meeting a torus away from the
-origin, not an exotic one. A quartic with roots `{1e-5, 1, 10, 1e5}` came back
-from Ferrari with a spurious root at `-22462`, and 41 of 2000 seeded random
-quartics reported no real roots where the exact Sturm oracle counts two. The
-replacement solves through the derivative and refines each bracket with
-safeguarded Newton, which is unconditionally correct and about ten times dearer.
+| tool | ns/ray | vs flat | torus share |
+|---|---:|---:|---:|
+| flat 6 mm | 61.1 | 1.00x | 0% |
+| drill 6 mm/118 | 75.3 | 1.23x | 0% |
+| ball 6 mm | 91.9 | 1.50x | 0% |
+| **bull 10 mm r2** | **222.2** | **3.64x** | 5.7% |
+| bull 10 mm r0.5 | 195.8 | 3.20x | 1.4% |
+| barrel 12 mm R60 | 1246.8 | 20.4x | 38.2% |
+| barrel 12 mm R200 | 1323.7 | 21.7x | 54.3% |
 
-The recovery is not to go back. It is to try Ferrari first, check the residual of
-every root it returns, and fall back to bracketing only when the check fails —
-keeping closed-form speed on the well-conditioned majority and the guarantee
-everywhere. That is not done here because an optimisation needs a measurement to
-justify it, and this is the measurement.
+**The bull nose is the number that matters and it is 3.6x, not 20x.** A bull nose
+is the workhorse of 3-axis finishing and appears from U5; a barrel is a 5-axis
+specialty that does not appear until U17.
+
+The mechanism is *not* per-solve conditioning. One quartic costs about the same
+either way -- 1350 ns for the bull's torus, 1308 ns for the barrel's. What
+differs is **how many rays actually cross a torus**. A bull nose's corner is 2 mm
+of a 50 mm tool, so about 94% of rays meet its torus quartic with no real roots
+and leave through the cheap no-sign-change path. A barrel's entire cutting length
+*is* the torus.
+
+### Correcting the quartic figure above
+
+The 560 ns in the first table understates in-situ cost by about 2.4x. That corpus
+uses dyadic roots in [-8, 8]; a real tool geometry quartic costs 0.6 to 1.35 us.
+The cause is bracket width. Moving a ray's origin from -100 mm to -7 mm halves
+the bull's quartic, 1350 ns to 645 ns, with no change to the algorithm at all:
+
+| torus | ray starts at | ns/solve |
+|---|---:|---:|
+| bull R=3 rho=2 | -100 | 1350 |
+| bull R=3 rho=2 | -20 | 913 |
+| bull R=3 rho=2 | -7 | 645 |
+| barrel R=194 rho=200 | -100 | 1308 |
+| barrel R=194 rho=200 | -20 | 1281 |
+
+Refinement is spending its time bisecting in from a Cauchy bound far wider than
+the geometry warrants.
+
+### Correcting the recovery plan
+
+An earlier revision of this file proposed trying Ferrari first and checking each
+root's residual, falling back only when the check failed. **That does not work,
+and the reason is worth recording.** The failure Ferrari exhibited was reporting
+*no* real roots where two exist -- and there is no residual to check for a root
+that was never found. On those 41 cases the trigger never fires and the fast path
+silently returns an empty set. Residual checking catches inaccurate roots; it is
+blind to missing ones, which is the failure mode we actually have.
+
+The sound trigger is a **root count**, available cheaply from machinery already
+trusted. For a quartic normalised to a positive leading coefficient, `p` tends to
+`+inf` at both ends, so the sign sequence `[+, p(c1), p(c2), p(c3), +]` over the
+critical points gives the exact distinct real root count by alternation -- and the
+critical points are the roots of `p'`, a cubic, which the repaired cubic solver
+handles reliably. If Ferrari's count disagrees, fall back. That is a handful of
+Horner evaluations plus one cubic solve.
+
+This is the same phenomenon as the cubic discriminant finding, twice: the
+closed-form quantity that is supposed to reveal the root structure is itself
+catastrophically cancelled, so the structure has to come from the derivative
+instead.
+
+Note also that the bracket-width result above suggests the *larger* win is not a
+Ferrari fast path at all. Clipping the initial bracket to the element's own
+`t`-range -- which the ray caster knows and the general-purpose solver cannot --
+cannot change which roots are found, so it needs no soundness argument.
 
 ### Allocation, bull nose, 32 x 32 coherent rays
 
@@ -118,13 +168,16 @@ chords along an arc scale that way, and the triangle count is their product.
 
 ### Action items carried into U5 and U11
 
-1. Implement the Ferrari-with-residual-check fast path for the quartic, and
-   re-measure the barrel row. It is the single largest available win in the
-   ray caster.
-2. Re-measure the allocation table at U5 sweep sizes before trusting the 17%
+1. Clip the quartic's initial bracket to the element's own `t`-range. Sound by
+   construction, and worth up to 2x on its own.
+2. If a closed-form fast path is still wanted after that, gate it on the
+   **root count** from the critical-point sign sequence, never on residuals.
+3. Re-measure the allocation table at U5 sweep sizes before trusting the 17%
    figure either way.
-3. `contains_rz` is called once per candidate interval. If the quartic gets
+4. `contains_rz` is called once per candidate interval. If the quartic gets
    cheaper, this becomes the next thing to look at.
+5. Barrel cutters are 20x and are a U17 concern. Bull noses are 3.6x and are
+   not a blocker for U5 or U7.
 
 ---
 
