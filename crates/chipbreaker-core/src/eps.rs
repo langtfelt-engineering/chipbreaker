@@ -165,6 +165,90 @@ pub const EPS_WELD: f64 = 1e-6;
 /// tunnel through the simulated stock.
 pub const EPS_EDGE_FN: f64 = 1e-12;
 
+/// Leading-coefficient threshold below which a polynomial degrades one degree.
+///
+/// A quartic whose `a` satisfies `|a| <= ROOT_DEGENERACY_TAU * max|other|` is
+/// solved as a cubic, and so on down.
+///
+/// # Why discarding a root is safe
+///
+/// As `a` tends to zero a quartic root does not vanish, it **escapes**: the
+/// magnitude of the departing root grows like `|b/a|`. At this threshold that
+/// puts it at `1e14` times the coefficient scale — a ray parameter around
+/// `1e15` mm, when the tool's bounding cylinder is a few millimetres across. The
+/// discarded root provably cannot be a hit, so degrading loses nothing real.
+///
+/// `1e-14` is roughly 45 machine epsilons: just above the noise already present
+/// in the coefficients themselves, so a leading term that survives the test is
+/// one the input actually determined.
+///
+/// The alternative — always solving at the stated degree — is not viable.
+/// Ferrari's method divides through by `a`, so a leading coefficient near the
+/// noise floor destroys the *other* three roots, which are ordinary and
+/// physically real.
+pub const ROOT_DEGENERACY_TAU: f64 = 1e-14;
+
+/// The square root of [`f64::EPSILON`], exactly.
+///
+/// `f64::EPSILON` is `2^-52`, so its square root is `2^-26` — a power of two,
+/// therefore exactly representable, therefore identical on every target. Written
+/// as a literal rather than computed because `sqrt` is not a `const fn`.
+///
+/// # Why this number governs tangency
+///
+/// It is the accuracy floor for a **double root**. At a simple root, a
+/// coefficient perturbation of `eps` moves the root by about `eps / |p'|` — a
+/// relative error near `1e-16`. At a double root `p'` vanishes, the expansion
+/// starts at the quadratic term, and the same perturbation moves the root by
+/// about `sqrt(eps)` instead: a relative error near `1.5e-8`, eight digits
+/// worse.
+///
+/// So two roots closer together than this are not "nearly equal"; they are
+/// **indistinguishable by any `f64` solver**, and the gap between them is noise
+/// rather than geometry. That is what makes collapsing them a fact about the
+/// arithmetic rather than a tuning choice.
+pub const SQRT_F64_EPSILON: f64 = 1.490_116_119_384_765_6e-8;
+
+/// Root separation below which a ray is treated as **tangent** to a solid of
+/// revolution, contributing no interval.
+///
+/// `scale` is the characteristic size of the solid — its bounding-cylinder
+/// diagonal — because the threshold is a length and a length without a scale is
+/// not a quantity.
+///
+/// # The policy, and why it cannot contradict [`EPS_SPAN_MIN`]
+///
+/// A ray grazing a tool tangentially removes no material, so it must produce
+/// **no interval** — not a zero-length one, and emphatically not a sliver of
+/// numerical noise. Over millions of rays those slivers accumulate into visible
+/// artefacts on the simulated surface.
+///
+/// The threshold is [`SQRT_F64_EPSILON`] times the scale, which is exactly the
+/// point below which the solver cannot tell a double root from two near ones.
+/// It is then **floored at [`EPS_SPAN_MIN`]**, and that floor is what keeps the
+/// two thresholds from disagreeing:
+///
+/// - anything this rule *keeps* is at least `EPS_SPAN_MIN` long, so
+///   [`crate::spans::Spans`] keeps it too;
+/// - anything `Spans` would drop, this rule has already dropped.
+///
+/// There is therefore no regime in which one admits what the other rejects. The
+/// two are a single monotone policy, not two independently tunable numbers, and
+/// this function is the only place the relationship is expressed.
+///
+/// For a 10 mm tool the threshold lands near `2e-7` mm — some 5000x below any
+/// achievable surface finish, so nothing a machinist could produce is discarded.
+#[inline]
+#[must_use]
+pub fn eps_tangent(scale: f64) -> f64 {
+    let derived = SQRT_F64_EPSILON * scale.abs();
+    if derived > EPS_SPAN_MIN {
+        derived
+    } else {
+        EPS_SPAN_MIN
+    }
+}
+
 /// Compares two lengths with the combined absolute/relative tolerance described
 /// on [`EPS_RELATIVE`].
 ///

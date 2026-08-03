@@ -9,6 +9,7 @@ pub mod golden;
 pub mod math;
 pub mod mesh;
 pub mod predicates;
+pub mod roots;
 pub mod selftest;
 pub mod spans;
 pub mod transcendental;
