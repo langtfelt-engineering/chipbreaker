@@ -90,6 +90,16 @@ impl Digest {
         &self.0
     }
 
+    /// Wraps raw digest bytes.
+    ///
+    /// For readers of formats that store a digest verbatim, such as `.tdx`'s
+    /// source-mesh provenance. Not a way to invent a digest: it is the inverse
+    /// of [`Self::as_bytes`] and nothing more.
+    #[must_use]
+    pub const fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
     /// Lower-case hex, 64 characters.
     #[must_use]
     pub fn to_hex(&self) -> String {

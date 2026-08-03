@@ -41,6 +41,13 @@ fn quick_ratios() -> Vec<f64> {
     vec![0.1, 0.05, 0.025]
 }
 
+/// Skips the heavy grid in a debug build, where it costs twenty seconds against
+/// two. CI runs the workspace in release, so coverage is not lost -- but a
+/// developer running plain `cargo test` should not wait for it.
+fn heavy_grid_is_affordable() -> bool {
+    cfg!(not(debug_assertions))
+}
+
 fn envelope_for(result: &Convergence) -> f64 {
     match result.model {
         ErrorModel::Quadrature => SUPERLINEAR,
@@ -203,15 +210,27 @@ fn accuracy_depends_on_the_ratio_and_not_on_the_spacing() {
     );
 }
 
-// --- nightly ---------------------------------------------------------------
+// --- the full grid ---------------------------------------------------------
+//
+// Was `#[ignore]`d and therefore nightly-only, which left the envelope
+// unguarded on every-commit CI -- the one place a convergence regression would
+// actually be caught. CI runs the workspace in release, where this costs
+// seconds rather than the twenty it costs in debug, so it belongs here.
 
 #[test]
-#[ignore = "the full grid reaches 50M rays; run in release with --ignored"]
 fn the_absolute_bound_holds_where_the_cells_are_fine() {
     // The customer-facing accuracy claim, and it is stated WITH the ratio it was
     // measured at. An absolute accuracy number without the ratio is not a claim
     // about anything, because the same 0.05 mm lattice is fine for a 20 mm boss
     // and hopeless for a 0.1 mm fillet.
+    if !heavy_grid_is_affordable() {
+        // Not silently skipped: a test that quietly does nothing reads as
+        // coverage, which is worse than not having it.
+        eprintln!(
+            "SKIPPED in debug: the full convergence grid reaches 50M rays. CI runs              the workspace in release, where this test does run."
+        );
+        return;
+    }
     for case in standard_cases() {
         let result = measure(
             &case,

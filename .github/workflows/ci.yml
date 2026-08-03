@@ -110,6 +110,19 @@ jobs:
           if bad:
               sys.exit(1)
           print(f"{len(seen)} platforms agree: {first['hash']}")
+          # Per-suite digests, per platform, printed ALWAYS. The overall hash
+          # covers every suite digest via SuiteResult::hash_canonical, so
+          # agreement on it implies agreement on each -- but that is an argument
+          # about an encoding, and a table of numbers read off each machine is
+          # not. The report quotes these directly.
+          print()
+          header = f"  {'suite':<24}" + "".join(f" {n.replace('selftest-', '').replace('.json', ''):<20}" for n in seen)
+          print(header)
+          for index in range(len(first["suites"])):
+              row = f"  {first['suites'][index]['name']:<24}"
+              for results in seen.values():
+                  row += f" {results['suites'][index]['hash'][:18]:<20}"
+              print(row)
           PY
 
   determinism-rules:
@@ -312,13 +325,19 @@ jobs:
           wasm = json.load(open("wasm.json"))["results"]
           print(f"native: {native['hash']}")
           print(f"wasm:   {wasm['hash']}")
+          # Per-suite digests printed ALWAYS, not only on failure. Four numbers
+          # read off four machines beats one number plus an argument about what
+          # SuiteResult::hash_canonical covers, and the report quotes these.
+          print()
+          print(f"  {'suite':<24} {'native':<20} {'wasm':<20} ")
+          for a, b in zip(native["suites"], wasm["suites"]):
+              flag = "same" if a["hash"] == b["hash"] else "DIFF"
+              print(f"  {a['name']:<24} {a['hash'][:16]}...  {b['hash'][:16]}...  {flag}")
+          print()
           if native == wasm:
               print(f"Identical: {len(native['suites'])} suites, {native['total_cases']} cases.")
               sys.exit(0)
           print("::error::WASM parity broken: the same input produced different output on wasm32-wasip1.")
-          for a, b in zip(native["suites"], wasm["suites"]):
-              flag = "same" if a["hash"] == b["hash"] else "DIFF"
-              print(f"  {a['name']:<24} {flag}")
           sys.exit(1)
           PY
 

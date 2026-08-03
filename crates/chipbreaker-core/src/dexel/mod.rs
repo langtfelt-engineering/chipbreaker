@@ -26,8 +26,12 @@ pub mod convergence;
 pub mod field;
 pub mod io;
 pub mod lattice;
+pub mod tessellation;
+pub mod tri;
 
 pub use arena::{Arena, INLINE_CAPACITY};
 pub use field::{BuildError, BuildOptions, BuildStats, DexelField};
-pub use io::{FORMAT_VERSION, FormatError};
+pub use io::{FORMAT_VERSION, FieldFormat, FormatError, TDX_FORMAT_VERSION};
 pub use lattice::{Lattice, LatticeError};
+pub use tessellation::TessellationEstimate;
+pub use tri::{AxisSet, Provenance, TriBuildOptions, TriBuildStats, TriDexelField};
