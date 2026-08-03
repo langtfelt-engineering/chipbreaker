@@ -36,9 +36,11 @@
 
 pub mod catalog;
 pub mod profile;
+pub mod properties;
 
 pub use catalog::{CatalogError, HolderStage, Shank};
 pub use profile::{ArcDirection, ElementRole, Profile, ProfileElement, ProfileError, RoledElement};
+pub use properties::{BoundingCylinder, Contact, TOP_CAP};
 
 use crate::golden::{CanonicalHash, Hashable};
 use crate::math::Vec3;
