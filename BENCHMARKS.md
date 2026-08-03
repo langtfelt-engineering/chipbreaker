@@ -13,11 +13,124 @@ cargo bench --bench predicates -- --warm-up-time 1 --measurement-time 3
 cargo bench --bench spans      -- --warm-up-time 1 --measurement-time 3
 cargo bench --bench mesh       -- --warm-up-time 1 --measurement-time 3
 cargo bench --bench tool       -- --warm-up-time 1 --measurement-time 3
+cargo bench --bench gcode      -- --warm-up-time 1 --measurement-time 3
 ```
 
 CI compiles the benchmarks (`cargo bench --no-run`) but does not time them.
 Timing on shared CI runners produces numbers with more variance than the
 regressions we would be looking for.
+
+---
+
+## 2026-08-03 — Unit 4: G-code parsing and the toolpath IR
+
+- **Commit:** `HEAD` (Unit 4 complete)
+- **Machine:** Intel Core Ultra 7 270K Plus, 24 physical / 24 logical cores,
+  31.5 GB RAM
+- **OS:** Windows 11 Pro 10.0.26200
+- **Toolchain:** rustc 1.96.0 (ac68faa20 2026-05-25), `x86_64-pc-windows-msvc`
+- **Profile:** `bench` — `lto = "fat"`, `codegen-units = 1`
+- **Criterion:** 1 s warm-up, 3 s measurement.
+
+```sh
+cargo bench --bench gcode -- --warm-up-time 1 --measurement-time 3
+cargo run --release -p chipbreaker-gcode --example ir_memory
+```
+
+### The number U5 needs: IR memory
+
+Measured from the real layout rather than added up from the struct definition,
+because padding and the inline `Option<ArcData>` make the two differ.
+
+| | bytes |
+|---|---:|
+| `MotionSegment` | **192** |
+| ...of which `ArcData`, carried inline | 56 |
+| `PathEvent` | 40 |
+
+| segments | resident |
+|---:|---:|
+| 100,000 | 18.3 MB |
+| **1,000,000** | **183.1 MB** |
+| 10,000,000 | 1831.1 MB |
+
+**A million segments cost 183 MB**, and a million-segment finishing pass is
+ordinary. U5 holds this beside its dexel field, so that is a real slice of a
+working set rather than a footnote.
+
+The arc payload is inline rather than boxed, so a program of pure linear moves
+pays 56 bytes a segment for arcs it does not have — roughly 29% of the total.
+That is the right trade while U7 wants arc data resident during a sweep, and it
+is the first thing to revisit if the number becomes a problem. Boxing it would
+take a linear-only program to about 136 bytes a segment.
+
+### End to end, synthetic raster surfacing
+
+| lines | time | throughput |
+|---:|---:|---:|
+| 1,004 | 882 µs | 1.14 M lines/s |
+| 10,004 | 10.1 ms | 990 K lines/s |
+| 100,004 | 111 ms | 898 K lines/s |
+
+**The 100k-line file is synthetic.** It is generated from a realistic raster
+pattern — long alternating passes of short `G1` moves, a step-over arc between
+them, a full-precision coordinate every seventh line — rather than taken from a
+CAM post, because a real post's output is somebody's copyrighted part program.
+Nobody should read this as "Chipbreaker parses Mastercam at 900k lines a second".
+
+The mild fall-off with size is allocation growth in the segment vector, not
+anything super-linear.
+
+### By stage, on the same 20k-line input
+
+| stage | time | throughput | share |
+|---|---:|---:|---:|
+| lex | 12.7 ms | 1.58 M lines/s | 60% |
+| assemble | 1.5 ms | 13.4 M lines/s | 7% |
+| lex + assemble + resolve | 21.3 ms | 941 K lines/s | 100% |
+
+**Lexing dominates at 60%**, which is worth knowing before anyone optimises the
+resolver. It allocates a `Vec<char>` per line and a `String` per word; both are
+straightforward to remove and neither is worth removing until a profile of U5
+says the parse is on a critical path. Resolution — the arithmetic, the arcs, the
+cycles — is about a third.
+
+### Arc forms
+
+| form | time | throughput |
+|---|---:|---:|
+| I/J/K | 14.7 ms | 681 K arcs/s |
+| R | 13.2 ms | 755 K arcs/s |
+
+The `R` form is *faster* by about 10%, which is the opposite of the expectation
+that deriving a centre through a square root would cost more than being given
+one. The centre-offset path pays for reconciling the given centre against both
+endpoints — two `hypot` calls and a projection onto the chord's perpendicular
+bisector — and that costs more than one `sqrt`. Not a reason to prefer either;
+recorded so the next person does not assume the wrong direction.
+
+### Canned cycle expansion
+
+| | value |
+|---|---:|
+| input | 5,010 lines |
+| time | 13.5 ms |
+| throughput | 370 K lines/s |
+| expansion ratio | ~4.6 segments per cycle line |
+
+A `G83` line with pecking expands to a rapid, a plunge, and two motions per peck
+plus a retract. The ratio is what U5 should budget from: a drilling program is
+five times more IR than it looks.
+
+### Action items carried into U5
+
+1. **183 MB per million segments.** Decide early whether U5 streams the IR or
+   holds it. If it holds it, boxing `ArcData` is the obvious 29% saving on
+   linear-dominated programs.
+2. Lexing is 60% of parse time and is allocation-bound. Only worth attacking if
+   parsing shows up in a U5 profile.
+3. Cycle expansion multiplies segment count by about 4.6. A drilling-heavy
+   program has far more IR than its line count suggests.
 
 ---
 

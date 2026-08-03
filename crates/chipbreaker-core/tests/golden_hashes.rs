@@ -56,7 +56,7 @@ fn selftest_results_digest_is_unchanged() {
     );
     let mut h = CanonicalHash::new();
     report.hash_canonical(&mut h);
-    assert_golden("selftest-results", &h);
+    assert_golden("selftest-core-results", &h);
 }
 
 #[test]

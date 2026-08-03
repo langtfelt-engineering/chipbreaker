@@ -159,13 +159,28 @@ impl Hashable for SelfTestReport {
     }
 }
 
-/// Runs every deterministic suite in Unit 1.
+/// Runs every deterministic suite this crate defines.
 ///
 /// Contains no I/O, no clock, and no threads, so it behaves identically under
 /// `wasmtime` and natively.
+///
+/// Crates layered on top of this one contribute their own suites through
+/// [`run_with`]. The G-code parser is one: it cannot live here, because this
+/// crate must not depend on a parser, and yet it must be inside the
+/// cross-platform parity guarantee like everything else.
 #[must_use]
 pub fn run() -> SelfTestReport {
-    let suites = vec![
+    run_with(Vec::new())
+}
+
+/// As [`run`], with suites contributed by a crate this one cannot see.
+///
+/// `extra` is appended in the order given and hashed with the rest, so the
+/// caller's ordering is part of the contract. The CLI passes the G-code suites;
+/// nothing else should.
+#[must_use]
+pub fn run_with(extra: Vec<SuiteResult>) -> SelfTestReport {
+    let mut suites = vec![
         predicate_corpus_suite(),
         predicate_identity_suite(),
         span_algebra_suite(),
@@ -176,6 +191,7 @@ pub fn run() -> SelfTestReport {
         tool_geometry_suite(),
         canonical_hash_suite(),
     ];
+    suites.extend(extra);
     let mut report = SelfTestReport {
         suites,
         digest: Digest::from_hex(&"0".repeat(64)).unwrap_or_else(|| unreachable!()),

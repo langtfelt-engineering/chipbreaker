@@ -350,13 +350,21 @@ fn block_skip_is_obeyed_and_recorded() {
 }
 
 #[test]
-fn a_canned_cycle_is_named_rather_than_silently_doing_nothing() {
-    // Increment B expands these. Until it does, they must not be quietly
-    // ignored: a program whose drilling vanished would verify as clean.
-    match fails("G90 G21 G0 X0. Y0. Z5.\nG81 X10. Y10. Z-5. R2. F100.\n") {
-        GcodeError::UnsupportedCode { code, .. } => assert_eq!(code, "G81"),
-        other => panic!("{other:?}"),
-    }
+fn a_canned_cycle_expands_rather_than_vanishing() {
+    // This began life asserting that cycles were *refused*, while Increment B
+    // was still ahead. The point was the same either way: a program whose
+    // drilling silently disappeared would verify as clean.
+    let (path, _, stats) = run("G90 G21 G0 X0. Y0. Z5.
+G81 X10. Y10. Z-5. R2. F100.
+G80
+");
+    assert!(stats.cycle_segments > 0, "the cycle must produce motion");
+    assert!(
+        path.segments
+            .iter()
+            .any(|s| s.kind == MotionKind::Linear && (s.end.z + 5.0).abs() < 1e-12),
+        "and it must reach the programmed depth"
+    );
 }
 
 #[test]

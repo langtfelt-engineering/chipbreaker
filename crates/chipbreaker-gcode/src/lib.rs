@@ -42,6 +42,7 @@ pub mod diag;
 pub mod lex;
 pub mod modal;
 pub mod resolve;
+pub mod selftest;
 
 pub use diag::{Diagnostics, ForeignDialect, GcodeError, GcodeWarning, Site};
 

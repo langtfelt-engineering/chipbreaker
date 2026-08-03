@@ -938,7 +938,18 @@ impl Resolver<'_> {
                 peck: params.q,
                 site: block.site,
             };
-            for (step, motion) in cycles::expand(&request).into_iter().enumerate() {
+            let moves = cycles::expand(&request).map_err(|e| match e {
+                cycles::CycleError::TooManyPecks { wanted } => GcodeError::BadCycle {
+                    site: block.site,
+                    detail: format!(
+                        "a peck depth of {} over {} mm asks for {wanted} pecks, above the {} this build will expand. A Q an order of magnitude too small is the usual cause",
+                        params.q.unwrap_or(0.0),
+                        (params.r - params.z).abs(),
+                        cycles::MAX_PECKS
+                    ),
+                },
+            })?;
+            for (step, motion) in moves.into_iter().enumerate() {
                 if motion.kind != MotionKind::Rapid && self.state.feed.is_none() {
                     return Err(GcodeError::NoFeedRate { site: block.site });
                 }

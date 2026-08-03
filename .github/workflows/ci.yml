@@ -244,10 +244,11 @@ jobs:
         run: |
           cargo run -q -p chipbreaker-core --example generate_tool_corpus             > tests/corpus/tool/standard-library.json
           python3 scripts/tool_corpus_expectations.py             > tests/corpus/tool/expectations.json
+          python3 scripts/gcode_corpus.py
 
       - name: Nothing may have changed, and nothing may be empty
         run: |
-          for f in tests/corpus/tool/standard-library.json                    tests/corpus/tool/expectations.json; do
+          for f in tests/corpus/tool/standard-library.json                    tests/corpus/tool/expectations.json                    tests/corpus/gcode/expectations.json; do
             if [ ! -s "$f" ]; then
               echo "::error file=$f::regenerated to an empty file"
               exit 1

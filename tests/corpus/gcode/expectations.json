@@ -1,0 +1,287 @@
+{
+  "entries": {
+    "arc-full-circle-ijk": {
+      "_why": "Coincident endpoints with I/J/K is a full circle. Its chord is zero and it is emphatically not a zero-length move.",
+      "error": null,
+      "expect": "parse"
+    },
+    "arc-helix": {
+      "_why": "A helix: the third axis moves linearly across the arc, so the segment is longer than the planar arc by the rise.",
+      "error": null,
+      "expect": "parse"
+    },
+    "arc-major-r": {
+      "_why": "Negative R selects the major arc: the same endpoints, the long way round.",
+      "error": null,
+      "expect": "parse"
+    },
+    "arc-plane-g17": {
+      "_why": "The same quarter arc in G17. G18's handedness is the trap: RS-274 orders it Z then X so its normal is +Y, and reading it as X,Z turns every G2 into a G3.",
+      "error": null,
+      "expect": "parse"
+    },
+    "arc-plane-g18": {
+      "_why": "The same quarter arc in G18. G18's handedness is the trap: RS-274 orders it Z then X so its normal is +Y, and reading it as X,Z turns every G2 into a G3.",
+      "error": null,
+      "expect": "parse"
+    },
+    "arc-plane-g19": {
+      "_why": "The same quarter arc in G19. G18's handedness is the trap: RS-274 orders it Z then X so its normal is +Y, and reading it as X,Z turns every G2 into a G3.",
+      "error": null,
+      "expect": "parse"
+    },
+    "arc-quarter-ijk": {
+      "_why": "A quarter arc in centre-offset form. Paired with arc-quarter-r: the two must resolve to the same arc within 32 ULP, and their golden hashes are SUPPOSED to differ. See the corpus README.",
+      "error": null,
+      "expect": "parse"
+    },
+    "arc-quarter-r": {
+      "_why": "The same quarter arc in radius form. Positive R selects the minor arc.",
+      "error": null,
+      "expect": "parse"
+    },
+    "arc-residual-within-tolerance": {
+      "_why": "A centre 4 microns inconsistent between the endpoints, which is ordinary CAM rounding rather than an error. The centre is moved onto the chord's perpendicular bisector and the residual is recorded.",
+      "error": null,
+      "expect": "parse"
+    },
+    "block-skip": {
+      "_why": "A leading slash marks a block as optional, conditional on a control switch we do not have. The policy is a flag and is recorded in the IR header.",
+      "error": null,
+      "expect": "parse"
+    },
+    "comment-forms": {
+      "_why": "Both comment forms in one file, including an inline comment that must not swallow the words following it on the same line.",
+      "error": null,
+      "expect": "parse"
+    },
+    "comment-unbalanced": {
+      "_why": "An unbalanced parenthesis. Illegal, common in the wild, and a warning rather than a refusal because the file runs on the machine.",
+      "error": null,
+      "expect": "parse"
+    },
+    "cycle-g73-g98": {
+      "_why": "Peck with a chip-break retract that is a machine parameter and is not modelled. G98 retracts to the initial Z, which changes every intermediate retract in a pattern.",
+      "error": null,
+      "expect": "parse"
+    },
+    "cycle-g73-g99": {
+      "_why": "Peck with a chip-break retract that is a machine parameter and is not modelled. G99 retracts to the R plane, which changes every intermediate retract in a pattern.",
+      "error": null,
+      "expect": "parse"
+    },
+    "cycle-g81-g98": {
+      "_why": "Drill: position, plunge to R, feed to depth, retract. G98 retracts to the initial Z, which changes every intermediate retract in a pattern.",
+      "error": null,
+      "expect": "parse"
+    },
+    "cycle-g81-g99": {
+      "_why": "Drill: position, plunge to R, feed to depth, retract. G99 retracts to the R plane, which changes every intermediate retract in a pattern.",
+      "error": null,
+      "expect": "parse"
+    },
+    "cycle-g82-g98": {
+      "_why": "Drill with a dwell, which removes no material. G98 retracts to the initial Z, which changes every intermediate retract in a pattern.",
+      "error": null,
+      "expect": "parse"
+    },
+    "cycle-g82-g99": {
+      "_why": "Drill with a dwell, which removes no material. G99 retracts to the R plane, which changes every intermediate retract in a pattern.",
+      "error": null,
+      "expect": "parse"
+    },
+    "cycle-g83-g98": {
+      "_why": "Peck with a full retract to the R plane between pecks. G98 retracts to the initial Z, which changes every intermediate retract in a pattern.",
+      "error": null,
+      "expect": "parse"
+    },
+    "cycle-g83-g99": {
+      "_why": "Peck with a full retract to the R plane between pecks. G99 retracts to the R plane, which changes every intermediate retract in a pattern.",
+      "error": null,
+      "expect": "parse"
+    },
+    "cycle-g84-g98": {
+      "_why": "Tapping, which is geometrically a bore. G98 retracts to the initial Z, which changes every intermediate retract in a pattern.",
+      "error": null,
+      "expect": "parse"
+    },
+    "cycle-g84-g99": {
+      "_why": "Tapping, which is geometrically a bore. G99 retracts to the R plane, which changes every intermediate retract in a pattern.",
+      "error": null,
+      "expect": "parse"
+    },
+    "cycle-g85-g98": {
+      "_why": "Bore: feed in, feed back out. G98 retracts to the initial Z, which changes every intermediate retract in a pattern.",
+      "error": null,
+      "expect": "parse"
+    },
+    "cycle-g85-g99": {
+      "_why": "Bore: feed in, feed back out. G99 retracts to the R plane, which changes every intermediate retract in a pattern.",
+      "error": null,
+      "expect": "parse"
+    },
+    "cycle-g86-g98": {
+      "_why": "Bore with the spindle stopped: feed in, rapid out. G98 retracts to the initial Z, which changes every intermediate retract in a pattern.",
+      "error": null,
+      "expect": "parse"
+    },
+    "cycle-g86-g99": {
+      "_why": "Bore with the spindle stopped: feed in, rapid out. G99 retracts to the R plane, which changes every intermediate retract in a pattern.",
+      "error": null,
+      "expect": "parse"
+    },
+    "cycle-l0-does-nothing": {
+      "_why": "L0 means do not execute. A real case, and one that reads exactly like a typo.",
+      "error": null,
+      "expect": "parse"
+    },
+    "cycle-persists-until-g80": {
+      "_why": "A cycle fires again on any block carrying axis words, and a block with only an F word does not fire it.",
+      "error": null,
+      "expect": "parse"
+    },
+    "cycle-repeat-bolt-pattern": {
+      "_why": "One line becomes a bolt pattern: L3 under G91 fires the cycle three times, each stepping by the same increment.",
+      "error": null,
+      "expect": "parse"
+    },
+    "distance-incremental": {
+      "_why": "G91: a delta is a delta in every frame, so incremental motion needs no offset chain at all.",
+      "error": null,
+      "expect": "parse"
+    },
+    "feed-inverse-time": {
+      "_why": "G93 inverse time: F is a reciprocal duration rather than a distance rate, so it must not be scaled by the unit factor. The norm in 5-axis output.",
+      "error": null,
+      "expect": "parse"
+    },
+    "feed-per-revolution": {
+      "_why": "G95 feed per revolution, which needs the spindle speed to become a duration.",
+      "error": null,
+      "expect": "parse"
+    },
+    "motion-g28-two-moves": {
+      "_why": "G28 travels to the reference point VIA an intermediate point given by the block's axis words. One straight move to the reference point can pass through the fixture.",
+      "error": null,
+      "expect": "parse"
+    },
+    "offset-g10-mid-program": {
+      "_why": "G10 L2 rewrites an offset that earlier segments already used. Their geometry is unaffected, but the header must record both epochs or a report rendering into a workpiece frame places the early moves wrongly.",
+      "error": null,
+      "expect": "parse"
+    },
+    "offset-g53-machine-coordinates": {
+      "_why": "G53 is non-modal and bypasses the work offset and the G92 shift for one block. It keeps tool length compensation, because the IR stores a tip position and a segment where 'tip' meant something else would trap U5.",
+      "error": null,
+      "expect": "parse"
+    },
+    "offset-g54-to-g55": {
+      "_why": "A mid-program work offset change. In machine coordinates the path stays continuous across it, which is the whole argument of ADR 0003.",
+      "error": null,
+      "expect": "parse"
+    },
+    "offset-g92-shift": {
+      "_why": "G92 is a persistent coordinate shift, not a move. Nothing travels on the G92 line itself.",
+      "error": null,
+      "expect": "parse"
+    },
+    "reject-arc-ill-conditioned": {
+      "_why": "An R-form arc sweeping almost exactly 180 degrees, where the centre is not determined by the endpoints. No tolerance rescues it.",
+      "error": "arc-ill-conditioned",
+      "expect": "reject"
+    },
+    "reject-arc-r-full-circle": {
+      "_why": "Coincident endpoints with an R word name no particular circle: every circle of that radius through the point qualifies.",
+      "error": "full-circle-with-radius-word",
+      "expect": "reject"
+    },
+    "reject-arc-radius-mismatch": {
+      "_why": "A centre half a millimetre inconsistent between the endpoints, far beyond ordinary CAM rounding.",
+      "error": "arc-radius-mismatch",
+      "expect": "reject"
+    },
+    "reject-cutter-comp-g41": {
+      "_why": "G41 asks the control to offset the path by the tool radius, including lead-in and corner geometry that differs between controls. Simulating the uncompensated path would be wrong by the tool radius everywhere.",
+      "error": "cutter-compensation",
+      "expect": "reject"
+    },
+    "reject-g54-1": {
+      "_why": "Fanuc's extended offsets are addressed by a P word and are a different mechanism. A range like 540..=593 would silently treat this as G54.",
+      "error": "unsupported-code",
+      "expect": "reject"
+    },
+    "reject-heidenhain": {
+      "_why": "Heidenhain Klartext, which is a different language rather than a dialect of RS-274 and is refused by name.",
+      "error": "foreign-language",
+      "expect": "reject"
+    },
+    "reject-macro-if": {
+      "_why": "Flow control is macro programming: common in shop-written programs and absent from CAM output, so refusing it costs little and guessing costs much.",
+      "error": "macro-programming",
+      "expect": "reject"
+    },
+    "reject-macro-variable": {
+      "_why": "Coordinates that come out of arithmetic the parser guessed at would make the verification meaningless.",
+      "error": "macro-programming",
+      "expect": "reject"
+    },
+    "reject-missing-decimal": {
+      "_why": "On a legacy control X10 means 0.010 mm. A factor of a thousand that parses perfectly either way.",
+      "error": "missing-decimal-point",
+      "expect": "reject"
+    },
+    "reject-modal-conflict": {
+      "_why": "Two motion codes in one block. Which one a real control performs depends on the control, so there is no safe reading.",
+      "error": "modal-group-conflict",
+      "expect": "reject"
+    },
+    "reject-no-feed-rate": {
+      "_why": "A feed move before any F word has been commanded. Treating a missing feed as zero would divide by it later.",
+      "error": "no-feed-rate",
+      "expect": "reject"
+    },
+    "reject-o-word": {
+      "_why": "LinuxCNC's procedural extension, not Fanuc RS-274. M98/M99 are supported.",
+      "error": "o-word",
+      "expect": "reject"
+    },
+    "reject-siemens-cycle": {
+      "_why": "Siemens 840D is a different language, not a dialect. Refusing by name beats a syntax error at line 3.",
+      "error": "foreign-language",
+      "expect": "reject"
+    },
+    "reject-siemens-rparam": {
+      "_why": "An R-parameter assignment. The `=` is what tells it from an arc radius.",
+      "error": "foreign-language",
+      "expect": "reject"
+    },
+    "reject-subprogram-recursion": {
+      "_why": "A subprogram that calls itself would recurse until the stack gave out, which is a crash rather than a diagnosis.",
+      "error": "subprogram-too-deep",
+      "expect": "reject"
+    },
+    "reject-unknown-subprogram": {
+      "_why": "M98 naming a body that does not exist. Falling through silently would run the wrong geometry rather than none.",
+      "error": "unknown-subprogram",
+      "expect": "reject"
+    },
+    "reject-unsupported-code": {
+      "_why": "G65 is a macro call, which needs the parametric evaluation this parser refuses. Naming it beats ignoring it.",
+      "error": "unsupported-code",
+      "expect": "reject"
+    },
+    "subprogram-call": {
+      "_why": "M98 calls a body and M99 returns. Execution stops at M30 rather than falling into the bodies that follow it.",
+      "error": null,
+      "expect": "parse"
+    },
+    "units-change-mid-program": {
+      "_why": "G20/G21 can change partway, and the change affects feed rates and offsets as well as coordinates.",
+      "error": null,
+      "expect": "parse"
+    }
+  },
+  "note": "Generated by scripts/gcode_corpus.py. `expect` is parse or reject; for a rejection, `error` is the GcodeError::kind() that must be produced. See README.md for the arc form amendment.",
+  "schema": "chipbreaker.gcode-corpus",
+  "version": 1
+}

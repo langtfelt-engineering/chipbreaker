@@ -158,6 +158,7 @@ name = "chipbreaker-cli"
 version = "0.1.0"
 dependencies = [
  "chipbreaker-core",
+ "chipbreaker-gcode",
  "clap",
  "serde_json",
 ]
@@ -186,6 +187,8 @@ name = "chipbreaker-gcode"
 version = "0.1.0"
 dependencies = [
  "chipbreaker-core",
+ "criterion",
+ "rand",
  "serde_json",
 ]
 

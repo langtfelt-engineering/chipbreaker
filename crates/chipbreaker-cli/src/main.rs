@@ -10,6 +10,7 @@
 //! of the library, never a part of it.
 
 mod mesh;
+mod path;
 mod report;
 mod roots;
 mod tool;
@@ -56,6 +57,11 @@ enum Command {
         #[command(subcommand)]
         command: tool::ToolCommand,
     },
+    /// Parse NC programs into the canonical toolpath IR.
+    Path {
+        #[command(subcommand)]
+        command: path::PathCommand,
+    },
     /// Solve polynomials for their real roots.
     ///
     /// The solver behind every ray-versus-tool intersection, exposed so that a
@@ -90,6 +96,11 @@ fn main() -> ExitCode {
             let (outcome, elapsed) = mesh::timed(|| tool::run(&command));
             emit(outcome, elapsed, as_json)
         }
+        Command::Path { command } => {
+            let as_json = command.input().json;
+            let (outcome, elapsed) = mesh::timed(|| path::run(&command));
+            emit(outcome, elapsed, as_json)
+        }
         Command::Roots { command } => {
             let as_json = command.json();
             let (outcome, elapsed) = mesh::timed(|| roots::run(&command));
@@ -107,7 +118,10 @@ fn run_selftest(format: ReportFormat, out: Option<&std::path::Path>) -> ExitCode
     // ever reaches the hashed section, every CI run disagrees with every other
     // one and the failure looks like a determinism bug.
     let started = Instant::now();
-    let results = chipbreaker_core::selftest::run();
+    // `run_with` rather than `run`: the G-code parser lives in a crate the
+    // core cannot see, and it has to be inside the parity guarantee like
+    // everything else. Unit 3 shipped a whole unit outside it by accident.
+    let results = chipbreaker_core::selftest::run_with(chipbreaker_gcode::selftest::suites());
     let env = Environment::collect(started.elapsed());
 
     let rendered = match format {

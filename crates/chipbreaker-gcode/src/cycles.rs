@@ -49,6 +49,17 @@ use chipbreaker_core::toolpath::{MotionKind, Provenance};
 
 use crate::diag::Site;
 
+/// Most pecks one cycle firing may produce.
+///
+/// A `G83` with `Q0.0001` over a 100 mm depth asks for a million pecks and three
+/// million segments, from one line of NC. That is not a program anybody wrote on
+/// purpose -- it is a decimal point in the wrong place -- and producing the IR
+/// for it would exhaust memory before anything could report the mistake.
+///
+/// Chosen well above any real drilling operation: a 300 mm hole pecked 0.1 mm at
+/// a time is 3000, and both of those numbers are already implausible.
+pub const MAX_PECKS: usize = 10_000;
+
 /// Which cycle, and what its bottom motion looks like.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CycleKind {
@@ -132,12 +143,42 @@ pub struct CycleRequest {
     pub site: Site,
 }
 
+/// Why a cycle could not be expanded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CycleError {
+    /// The peck depth would produce more than [`MAX_PECKS`] pecks.
+    TooManyPecks {
+        /// How many it asked for.
+        wanted: usize,
+    },
+}
+
 /// Expands one firing of a cycle into its longhand motion.
 ///
 /// The result is exactly what a programmer would have written; see the module
 /// header, and `tests/cycles.rs` which asserts it.
+///
+/// # Errors
+/// [`CycleError::TooManyPecks`] for a peck depth so small that the expansion
+/// would be unbounded; see [`MAX_PECKS`].
+pub fn expand(request: &CycleRequest) -> Result<Vec<CycleMove>, CycleError> {
+    if request.kind.pecks()
+        && let Some(depth) = request.peck
+        && depth > 0.0
+    {
+        let travel = (request.r_plane - request.bottom).abs();
+        let wanted = (travel / depth).ceil();
+        if wanted > MAX_PECKS as f64 {
+            return Err(CycleError::TooManyPecks {
+                wanted: wanted as usize,
+            });
+        }
+    }
+    Ok(expand_unchecked(request))
+}
+
 #[must_use]
-pub fn expand(request: &CycleRequest) -> Vec<CycleMove> {
+fn expand_unchecked(request: &CycleRequest) -> Vec<CycleMove> {
     let mut moves = Vec::with_capacity(6);
     let axis = |z: f64| Vec3::new(request.hole.x, request.hole.y, z);
 

@@ -243,6 +243,13 @@ pub enum GcodeError {
         /// The `P` number.
         number: u32,
     },
+    /// A canned cycle whose parameters cannot be expanded.
+    BadCycle {
+        /// Where.
+        site: Site,
+        /// What was wrong.
+        detail: String,
+    },
     /// A motion block that needs a feed rate but has never been given one.
     NoFeedRate {
         /// Where.
@@ -366,6 +373,7 @@ impl fmt::Display for GcodeError {
             Self::UnknownSubprogram { site, number } => {
                 write!(f, "{site}: no subprogram O{number} in this file")
             }
+            Self::BadCycle { site, detail } => write!(f, "{site}: {detail}"),
             Self::NoFeedRate { site } => {
                 write!(f, "{site}: a feed move with no feed rate ever commanded")
             }
@@ -399,6 +407,7 @@ impl GcodeError {
             Self::ArcRadiusTooSmall { .. } => "arc-radius-too-small",
             Self::SubprogramTooDeep { .. } => "subprogram-too-deep",
             Self::UnknownSubprogram { .. } => "unknown-subprogram",
+            Self::BadCycle { .. } => "bad-cycle",
             Self::NoFeedRate { .. } => "no-feed-rate",
             Self::Ir { .. } => "invalid-ir",
             Self::Strict { .. } => "strict",
@@ -424,6 +433,7 @@ impl GcodeError {
             | Self::ArcIllConditioned { site, .. }
             | Self::FullCircleWithRadiusWord { site }
             | Self::ArcRadiusTooSmall { site, .. }
+            | Self::BadCycle { site, .. }
             | Self::SubprogramTooDeep { site, .. }
             | Self::UnknownSubprogram { site, .. }
             | Self::NoFeedRate { site } => Some(*site),

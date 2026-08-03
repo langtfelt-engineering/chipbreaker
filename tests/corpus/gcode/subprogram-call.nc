@@ -1,0 +1,14 @@
+%
+O1000 (generated corpus entry)
+G21 G17 G90 G94 G54
+G0 X0. Y0. Z10.
+S8000 M3
+F300.
+M98 P200 L2
+G0 X50.
+M30
+O200
+G91 G1 X10.
+G90
+M99
+%
