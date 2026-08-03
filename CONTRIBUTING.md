@@ -192,6 +192,7 @@ which is precisely when a comment in the code is not enough.
 |---|---|
 | [0001](docs/adr/0001-spans-arena.md) | Dexel span storage, and the ray lattice offset that U5 must not "simplify" away |
 | [0002](docs/adr/0002-branch-protection.md) | Branch protection on `main`: deferred, why, and what guards the branch meanwhile |
+| [0003](docs/adr/0003-toolpath-ir-coordinate-frame.md) | The toolpath IR stores machine coordinates, so contiguity is unconditional |
 
 Add the new file *and* a row here. An ADR nothing links to is a file nobody
 reads.

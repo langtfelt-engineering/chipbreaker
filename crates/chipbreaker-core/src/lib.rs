@@ -13,6 +13,7 @@ pub mod roots;
 pub mod selftest;
 pub mod spans;
 pub mod tool;
+pub mod toolpath;
 pub mod transcendental;
 
 pub use math::{Aabb3, Mat3, Mat4, Ray, Vec2, Vec3};
