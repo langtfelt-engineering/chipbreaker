@@ -1,0 +1,19 @@
+[package]
+name = "chipbreaker-gcode"
+description = "RS-274 G-code parser producing the Chipbreaker canonical toolpath IR."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+chipbreaker-core.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

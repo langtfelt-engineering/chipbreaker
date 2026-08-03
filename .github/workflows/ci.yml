@@ -174,7 +174,15 @@ jobs:
       - name: Every crate forbids unsafe
         run: |
           fail=0
-          for lib in crates/chipbreaker-core/src/lib.rs crates/chipbreaker-cli/src/main.rs; do
+          # Globbed rather than listed: a hard-coded list silently stops
+          # covering a crate the moment somebody adds one, which is exactly
+          # when the check matters most.
+          roots=$(ls crates/*/src/lib.rs crates/*/src/main.rs 2>/dev/null)
+          if [ -z "$roots" ]; then
+            echo "::error::no crate roots found"
+            exit 1
+          fi
+          for lib in $roots; do
             if ! grep -q '#!\[forbid(unsafe_code)\]' "$lib"; then
               echo "::error file=$lib::missing #![forbid(unsafe_code)]; CONTRIBUTING.md rule 7."
               fail=1

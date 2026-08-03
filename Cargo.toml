@@ -1,6 +1,10 @@
 [workspace]
 resolver = "3"
-members = ["crates/chipbreaker-core", "crates/chipbreaker-cli"]
+members = [
+    "crates/chipbreaker-core",
+    "crates/chipbreaker-gcode",
+    "crates/chipbreaker-cli",
+]
 
 [workspace.package]
 version = "0.1.0"
@@ -15,6 +19,7 @@ homepage = "https://github.com/chipbreaker/chipbreaker"
 
 [workspace.dependencies]
 chipbreaker-core = { path = "crates/chipbreaker-core", version = "0.1.0" }
+chipbreaker-gcode = { path = "crates/chipbreaker-gcode", version = "0.1.0" }
 
 # --- Determinism-critical dependencies ---------------------------------------
 # These are pinned with `=` because their output feeds a canonical hash that is
