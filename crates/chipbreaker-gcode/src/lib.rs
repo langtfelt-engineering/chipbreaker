@@ -35,9 +35,11 @@
 //! yields a part wrong by the tool radius *everywhere*, and it looks entirely
 //! reasonable.
 
+pub mod arcs;
 pub mod block;
 pub mod diag;
 pub mod lex;
+pub mod modal;
 
 pub use diag::{Diagnostics, ForeignDialect, GcodeError, GcodeWarning, Site};
 
