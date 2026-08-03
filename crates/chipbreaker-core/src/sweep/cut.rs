@@ -25,7 +25,7 @@ use crate::spans::Spans;
 use crate::tool::Profile;
 use crate::tool::raycast::{RaycastScratch, RaycastStats};
 
-use super::{LinearMove, reference};
+use super::{LinearMove, SweepCase, horizontal, reference, spans_in_tool_at};
 
 /// How a swept volume should be computed.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -36,6 +36,17 @@ pub enum SweepMethod {
     Reference {
         /// Sub-steps per motion.
         steps: u32,
+    },
+    /// Closed form where one exists, bounded sub-stepping otherwise.
+    ///
+    /// The shipping method. Horizontal moves take the three-piece
+    /// decomposition and stationary ones the static tool, both exact; a general
+    /// ramp falls back to sub-stepping with a computed bound. Unit 7 measured
+    /// ramps at 0.75% of linear segments, so the fallback is rare and the cases
+    /// that are not rare are exact.
+    Analytic {
+        /// Deviation tolerance for the moves that still need sub-stepping.
+        tolerance: f64,
     },
     /// Sub-stepping refined until the deviation bound falls under a tolerance.
     ///
@@ -59,6 +70,13 @@ impl SweepMethod {
                 (steps, distance / (2.0 * f64::from(steps)))
             }
             Self::Bounded { tolerance } => reference::substeps_for_error(motion, tolerance),
+            Self::Analytic { tolerance } => match motion.case() {
+                // Exact: no sub-stepping, so no deviation at all.
+                SweepCase::Stationary | SweepCase::Horizontal => (0, 0.0),
+                SweepCase::Plunge | SweepCase::Ramp => {
+                    reference::substeps_for_error(motion, tolerance)
+                }
+            },
         }
     }
 }
@@ -214,16 +232,40 @@ pub fn cut_bundle(
             origin,
             direction: axis.direction(),
         };
-        reference::swept_spans_into(
-            profile,
-            motion,
-            steps,
-            &ray,
-            &mut scratch.raycast,
-            &mut scratch.swept,
-            &mut stats.raycast,
-        );
-        stats.substeps += u64::from(steps);
+        match method {
+            SweepMethod::Analytic { .. } if matches!(motion.case(), SweepCase::Horizontal) => {
+                horizontal::swept_spans_into(
+                    profile,
+                    motion,
+                    &ray,
+                    &mut scratch.raycast,
+                    &mut scratch.swept,
+                    &mut stats.raycast,
+                );
+            }
+            SweepMethod::Analytic { .. } if matches!(motion.case(), SweepCase::Stationary) => {
+                spans_in_tool_at(
+                    profile,
+                    motion.start,
+                    &ray,
+                    &mut scratch.raycast,
+                    &mut scratch.swept,
+                    &mut stats.raycast,
+                );
+            }
+            _ => {
+                reference::swept_spans_into(
+                    profile,
+                    motion,
+                    steps.max(1),
+                    &ray,
+                    &mut scratch.raycast,
+                    &mut scratch.swept,
+                    &mut stats.raycast,
+                );
+                stats.substeps += u64::from(steps);
+            }
+        }
         if scratch.swept.is_empty() {
             continue;
         }

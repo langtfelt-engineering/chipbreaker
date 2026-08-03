@@ -35,6 +35,7 @@
 //! a swept prism that no amount of staring would.
 
 pub mod cut;
+pub mod horizontal;
 pub mod reference;
 
 use crate::math::{Aabb3, Ray, Vec3};
