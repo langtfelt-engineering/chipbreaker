@@ -351,3 +351,95 @@ fn nested_shells(outer: f64, inner: f64) -> TriMesh {
     );
     TriMesh::new(vertices, triangles, shell.meta().clone()).expect("valid")
 }
+
+// --- the safety gate -------------------------------------------------------
+
+#[test]
+fn a_degenerate_triangle_does_not_abort_the_build() {
+    // Unit 2's validator used to claim a degenerate triangle "contributes
+    // nothing to any ray test". It does not: a zero-area triangle has collapsed
+    // to a segment, and every ray coplanar with that segment sees all three of
+    // its edge functions vanish, which is the caster's coplanar path, which is a
+    // hard error here. `broken-zero-area.stl` has one such triangle and produced
+    // 102 rejections across 10,404 rays.
+    //
+    // Construction drops them before casting. That is sound rather than
+    // convenient: a triangle bounding no volume cannot change which points are
+    // inside.
+    let solid = shapes::box_solid(Vec3::new(0.0, 0.0, 0.0), Vec3::new(10.0, 10.0, 10.0));
+    let mut vertices = solid.vertices().to_vec();
+    let mut triangles = solid.triangles().to_vec();
+
+    // A segment along the diagonal, so rays with x == y are coplanar with it.
+    let base = solid.vertex_count();
+    vertices.push(Vec3::new(2.0, 2.0, 2.0));
+    vertices.push(Vec3::new(6.0, 6.0, 6.0));
+    triangles.push([base, base + 1, base + 1]);
+    // And an exactly-collinear one, which no repeated-index check would catch.
+    vertices.push(Vec3::new(1.0, 1.0, 5.0));
+    vertices.push(Vec3::new(2.0, 2.0, 5.0));
+    vertices.push(Vec3::new(3.0, 3.0, 5.0));
+    triangles.push([base + 2, base + 3, base + 4]);
+
+    let dirty = TriMesh::new(vertices, triangles, MeshMeta::synthetic()).expect("valid");
+    let (field, stats) = DexelField::build(&dirty, &options(1.0))
+        .expect("a degenerate triangle must not abort the build");
+    assert_eq!(
+        stats.degenerate_triangles, 2,
+        "both must be found and reported"
+    );
+
+    // And the field is the box, unchanged: a triangle bounding no volume
+    // contributes no volume.
+    let (clean, _) = DexelField::build(&solid, &options(1.0)).expect("builds");
+    assert_eq!(field.volume().to_bits(), clean.volume().to_bits());
+}
+
+#[test]
+fn a_clean_mesh_reports_no_degenerate_triangles() {
+    let (_, stats) = DexelField::build(&shapes::icosphere(8.0, 3), &options(0.5)).expect("builds");
+    assert_eq!(stats.degenerate_triangles, 0);
+}
+
+#[test]
+fn the_safety_gate_holds_across_every_synthetic_solid() {
+    // The gate Unit 6 depends on: zero coplanar rejections and zero odd crossing
+    // counts. Construction aborts on either, so a build that succeeds IS the
+    // assertion -- but stating it as its own test means a regression names the
+    // right thing instead of surfacing as a confusing failure elsewhere.
+    //
+    // The full corpus sweep is `examples/dexel_budget.rs`; this is the subset
+    // that fits an every-commit budget.
+    let cases: [(&str, TriMesh); 7] = [
+        ("lattice-block-9", shapes::lattice_block(9)),
+        (
+            "box",
+            shapes::box_solid(Vec3::new(0.0, 0.0, 0.0), Vec3::new(30.0, 20.0, 10.0)),
+        ),
+        ("sphere", shapes::icosphere(12.0, 3)),
+        ("cylinder", shapes::cylinder(10.0, 20.0, 64)),
+        ("cone", shapes::cone(10.0, 20.0, 64)),
+        ("torus", shapes::torus(15.0, 4.0, 48, 24)),
+        ("nested shells", nested_shells(10.0, 5.0)),
+    ];
+    for (name, mesh) in &cases {
+        for axis in [Axis::X, Axis::Y, Axis::Z] {
+            let result = DexelField::build(
+                mesh,
+                &BuildOptions {
+                    spacing: 0.5,
+                    axis,
+                    ..BuildOptions::default()
+                },
+            );
+            let (_, stats) = result.unwrap_or_else(|e| {
+                panic!(
+                    "{name} on {axis:?} failed the safety gate. A coplanar rejection or \
+                     an odd crossing count means the cell-centre invariant has stopped \
+                     holding, and Unit 6 rests on it: {e}"
+                )
+            });
+            assert_eq!(stats.predicates.coplanar_rejected, 0, "{name}/{axis:?}");
+        }
+    }
+}

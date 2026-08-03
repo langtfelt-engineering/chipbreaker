@@ -188,6 +188,12 @@ pub struct BuildStats {
     pub spans: u64,
     /// Rays that outgrew the arena's inline capacity.
     pub spilled_rays: u64,
+    /// Exactly-degenerate triangles dropped before casting.
+    ///
+    /// Zero for clean geometry. Non-zero means the stock mesh contained
+    /// triangles that bound no volume, which is untidy rather than fatal -- but
+    /// worth surfacing, because a mesh with junk in it usually has more.
+    pub degenerate_triangles: u32,
     /// Predicate counters, summed across every ray.
     pub predicates: RayStats,
 }
@@ -242,13 +248,29 @@ impl DexelField {
             return Err(BuildError::BadPlacement { determinant });
         }
 
-        let placed = place(mesh, &options.placement);
+        // Degenerate triangles are dropped BEFORE casting, and this is not
+        // tidiness. A zero-area triangle has collapsed to a segment; every ray
+        // coplanar with that segment sees all three of its edge functions
+        // vanish, which is the caster's coplanar path, which is a hard error
+        // below. One such triangle in `broken-zero-area.stl` produces 102
+        // rejections across 10,404 rays.
+        //
+        // Removing them is sound rather than convenient: a triangle that bounds
+        // no volume cannot change which points are inside, so the parity
+        // argument is untouched. Unit 2's validator used to claim these
+        // "contribute nothing to any ray test"; that was wrong, and it is true
+        // now only because this happens.
+        let (clean, degenerate) = drop_degenerate(mesh);
+        let placed = place(clean.as_ref(), &options.placement);
         let bounds = grow(placed.bounds(), options.margin);
         let lattice = Lattice::new(bounds, options.spacing, options.axis)?;
         let bvh = Bvh::build(placed.as_ref());
 
         let mut arena = Arena::new(lattice.ray_count());
-        let mut stats = BuildStats::default();
+        let mut stats = BuildStats {
+            degenerate_triangles: degenerate,
+            ..BuildStats::default()
+        };
         let mut hits = Vec::new();
         let mut spans: Vec<Span> = Vec::new();
 
@@ -463,6 +485,44 @@ fn place<'a>(mesh: &'a TriMesh, transform: &Mat4) -> Cow<'a, TriMesh> {
     Cow::Owned(
         TriMesh::new(vertices, triangles, mesh.meta().clone())
             .unwrap_or_else(|_| unreachable!("a transform changes no index")),
+    )
+}
+
+/// Removes triangles that bound no volume.
+///
+/// Uses [`crate::mesh::validate::collinear_exact`] rather than a second
+/// definition of its own: two tests for "degenerate" that disagree by one
+/// triangle would put the validator and the field builder into an argument
+/// nobody could settle. Exact, so it does not depend on the model's units.
+///
+/// Borrowed when there is nothing to remove, which is the common case.
+fn drop_degenerate(mesh: &TriMesh) -> (Cow<'_, TriMesh>, u32) {
+    use crate::mesh::validate::collinear_exact;
+
+    let is_degenerate = |i: u32| {
+        let t = mesh.triangles()[i as usize];
+        if t[0] == t[1] || t[1] == t[2] || t[2] == t[0] {
+            return true;
+        }
+        let [a, b, c] = mesh.triangle(i);
+        collinear_exact(a, b, c)
+    };
+
+    let count = (0..mesh.triangle_count())
+        .filter(|i| is_degenerate(*i))
+        .count();
+    if count == 0 {
+        return (Cow::Borrowed(mesh), 0);
+    }
+    let kept: Vec<[u32; 3]> = (0..mesh.triangle_count())
+        .filter(|i| !is_degenerate(*i))
+        .map(|i| mesh.triangles()[i as usize])
+        .collect();
+    let trimmed = TriMesh::new(mesh.vertices().to_vec(), kept, mesh.meta().clone())
+        .unwrap_or_else(|_| unreachable!("removing triangles adds no index"));
+    (
+        Cow::Owned(trimmed),
+        u32::try_from(count).unwrap_or(u32::MAX),
     )
 }
 

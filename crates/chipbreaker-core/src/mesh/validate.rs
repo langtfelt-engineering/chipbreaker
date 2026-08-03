@@ -100,8 +100,24 @@ impl FindingKind {
     ///
     /// The distinction is not cosmetic. A boundary edge or a non-manifold edge
     /// breaks the closed-surface theorem outright, so ray casting cannot infer
-    /// material. A degenerate triangle is untidy but harmless — it contributes
-    /// nothing to any ray test and the parity argument survives it.
+    /// material. A degenerate triangle does not break the parity argument: it
+    /// bounds no volume, so removing it changes nothing about which points are
+    /// inside.
+    ///
+    /// **Amended at U5.** This used to say a degenerate triangle "contributes
+    /// nothing to any ray test", and that was wrong. Left in the mesh it is
+    /// very much visible to a ray test: all three of its edge functions vanish
+    /// for any ray coplanar with the segment it collapsed to, which is the
+    /// caster's `coplanar_rejected` path — and U5 treats a coplanar rejection as
+    /// a hard error, because for a *real* triangle it means a hole of unknown
+    /// size. One zero-area triangle in `broken-zero-area.stl` produced 102
+    /// rejections across 10,404 rays, every one of them on the diagonal where
+    /// the ray happens to be coplanar with that segment.
+    ///
+    /// So the sentence is now true only because U5 acts on it:
+    /// [`crate::dexel::DexelField::build`] drops exactly-degenerate triangles
+    /// before casting and reports how many. Anyone casting rays at a mesh
+    /// without doing that should expect the rejections.
     #[must_use]
     pub const fn is_fatal_for_raycasting(self) -> bool {
         matches!(
@@ -336,7 +352,12 @@ struct EdgeUse {
 /// planes are collinear. Each projection is decided exactly by
 /// [`orient2d`], so the whole test is exact — no area threshold, and therefore
 /// no dependence on what unit the model happens to be in.
-fn collinear_exact(a: crate::math::Vec3, b: crate::math::Vec3, c: crate::math::Vec3) -> bool {
+///
+/// Public because Unit 5 drops degenerate triangles before casting, and it must
+/// use *this* test rather than a second one of its own: two definitions of
+/// "degenerate" that disagree by one triangle would put the validator and the
+/// field builder into an argument nobody could settle.
+pub fn collinear_exact(a: crate::math::Vec3, b: crate::math::Vec3, c: crate::math::Vec3) -> bool {
     let xy = orient2d(
         Vec2::new(a.x, a.y),
         Vec2::new(b.x, b.y),
