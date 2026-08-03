@@ -30,6 +30,79 @@ impl Axis {
     pub const fn index(self) -> usize {
         self as usize
     }
+
+    /// The unit vector along this axis.
+    #[must_use]
+    pub const fn direction(self) -> Vec3 {
+        match self {
+            Self::X => Vec3 {
+                x: 1.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            Self::Y => Vec3 {
+                x: 0.0,
+                y: 1.0,
+                z: 0.0,
+            },
+            Self::Z => Vec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 1.0,
+            },
+        }
+    }
+
+    /// The other two axes, in right-handed cyclic order, then this one.
+    ///
+    /// `Z` gives `[X, Y, Z]`, `X` gives `[Y, Z, X]`, `Y` gives `[Z, X, Y]`. The
+    /// convention matches [`crate::toolpath::ArcPlane`], deliberately: two
+    /// places that both name "the XZ plane" and disagree about its hand are a
+    /// sign error waiting to happen.
+    ///
+    /// Used by the dexel lattice, where the first two index the grid and the
+    /// third is the direction the rays run.
+    #[must_use]
+    pub const fn cyclic(self) -> [usize; 3] {
+        match self {
+            Self::X => [1, 2, 0],
+            Self::Y => [2, 0, 1],
+            Self::Z => [0, 1, 2],
+        }
+    }
+
+    /// Lowercase name, as used in reports and file headers.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::X => "x",
+            Self::Y => "y",
+            Self::Z => "z",
+        }
+    }
+
+    /// Parses a name, case-insensitively.
+    #[must_use]
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name.to_ascii_lowercase().as_str() {
+            "x" => Some(Self::X),
+            "y" => Some(Self::Y),
+            "z" => Some(Self::Z),
+            _ => None,
+        }
+    }
+}
+
+impl core::fmt::Display for Axis {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl crate::golden::Hashable for Axis {
+    fn hash_canonical(&self, h: &mut crate::golden::CanonicalHash) {
+        h.str(self.as_str());
+    }
 }
 
 /// An axis-aligned bounding box.

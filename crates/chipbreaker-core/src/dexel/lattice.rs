@@ -42,85 +42,7 @@
 //! is another bundle along another axis, which is the whole of Unit 6.
 
 use crate::golden::{CanonicalHash, Hashable};
-use crate::math::{Aabb3, Vec3};
-
-/// Which axis a bundle's rays run along.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub enum Axis {
-    /// Rays along `+X`; the lattice spans Y and Z.
-    X,
-    /// Rays along `+Y`; the lattice spans Z and X.
-    Y,
-    /// Rays along `+Z`; the lattice spans X and Y. The only axis in Unit 5.
-    #[default]
-    Z,
-}
-
-impl Axis {
-    /// Unit vector along the rays.
-    #[must_use]
-    pub const fn direction(self) -> Vec3 {
-        match self {
-            Self::X => Vec3 {
-                x: 1.0,
-                y: 0.0,
-                z: 0.0,
-            },
-            Self::Y => Vec3 {
-                x: 0.0,
-                y: 1.0,
-                z: 0.0,
-            },
-            Self::Z => Vec3 {
-                x: 0.0,
-                y: 0.0,
-                z: 1.0,
-            },
-        }
-    }
-
-    /// The two lattice axes, then the ray axis. `0` is X, `1` is Y, `2` is Z.
-    ///
-    /// The pairs follow the same right-handed convention as
-    /// [`crate::toolpath::ArcPlane`], for the same reason: a mismatch between
-    /// two places that both call something "the XZ plane" is a sign error
-    /// waiting to happen.
-    #[must_use]
-    pub const fn axes(self) -> [usize; 3] {
-        match self {
-            Self::X => [1, 2, 0],
-            Self::Y => [2, 0, 1],
-            Self::Z => [0, 1, 2],
-        }
-    }
-
-    /// Name used in reports and in the `.dexel` header.
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::X => "x",
-            Self::Y => "y",
-            Self::Z => "z",
-        }
-    }
-
-    /// Parses a name.
-    #[must_use]
-    pub fn from_str_opt(s: &str) -> Option<Self> {
-        match s.to_ascii_lowercase().as_str() {
-            "x" => Some(Self::X),
-            "y" => Some(Self::Y),
-            "z" => Some(Self::Z),
-            _ => None,
-        }
-    }
-}
-
-impl Hashable for Axis {
-    fn hash_canonical(&self, h: &mut CanonicalHash) {
-        h.str(self.as_str());
-    }
-}
+use crate::math::{Aabb3, Axis, Vec3};
 
 /// Why a lattice could not be built.
 #[derive(Debug, Clone, PartialEq)]
@@ -175,7 +97,7 @@ pub struct Lattice {
     /// Lower corner of the workspace the lattice covers.
     origin: Vec3,
     spacing: f64,
-    /// Ray counts along the two lattice axes, in `axis.axes()` order.
+    /// Ray counts along the two lattice axes, in `axis.cyclic()` order.
     counts: [u32; 2],
     /// Extent along the ray axis, so a ray knows where to start and stop.
     length: f64,
@@ -199,7 +121,7 @@ impl Lattice {
         }
 
         let extent = bounds.extent().to_array();
-        let [u, v, w] = axis.axes();
+        let [u, v, w] = axis.cyclic();
         let count = |e: f64| -> u64 {
             #[allow(
                 clippy::cast_possible_truncation,
@@ -295,7 +217,7 @@ impl Lattice {
     /// `origins_are_never_on_the_integer_lattice`, which fails if it is removed.
     #[must_use]
     pub fn origin_of(&self, i: u32, j: u32) -> Vec3 {
-        let [u, v, w] = self.axis.axes();
+        let [u, v, w] = self.axis.cyclic();
         let mut point = self.origin.to_array();
         point[u] += (f64::from(i) + 0.5) * self.spacing;
         point[v] += (f64::from(j) + 0.5) * self.spacing;
@@ -325,7 +247,7 @@ impl Lattice {
     /// The box the lattice's cell centres cover.
     #[must_use]
     pub fn covered_bounds(&self) -> Aabb3 {
-        let [u, v, w] = self.axis.axes();
+        let [u, v, w] = self.axis.cyclic();
         let mut lo = self.origin.to_array();
         let mut hi = self.origin.to_array();
         lo[u] += 0.5 * self.spacing;

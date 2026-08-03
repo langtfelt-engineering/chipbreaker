@@ -6,9 +6,9 @@
 //! No field construction here — that is Increment B. These are the two
 //! structures a field is made of, tested apart from it.
 
-use chipbreaker_core::dexel::{Arena, Axis, INLINE_CAPACITY, Lattice, LatticeError};
+use chipbreaker_core::dexel::{Arena, INLINE_CAPACITY, Lattice, LatticeError};
 use chipbreaker_core::golden::CanonicalHash;
-use chipbreaker_core::math::{Aabb3, Vec3};
+use chipbreaker_core::math::{Aabb3, Axis, Vec3};
 use chipbreaker_core::spans::{Span, Spans};
 
 fn workspace() -> Aabb3 {
@@ -96,7 +96,7 @@ fn each_axis_puts_its_rays_along_the_right_direction() {
         assert_eq!(lattice.ray_at(0).direction, expected);
         // And the lattice spans the other two axes, so the ray's own axis is
         // the one that does not vary between neighbouring rays.
-        let [_, _, w] = axis.axes();
+        let [_, _, w] = axis.cyclic();
         let a = lattice.ray_at(0).origin.to_array();
         let b = lattice.ray_at(1).origin.to_array();
         assert!(

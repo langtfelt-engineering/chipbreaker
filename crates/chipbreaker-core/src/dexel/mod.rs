@@ -22,7 +22,9 @@
 //! spacing.
 
 pub mod arena;
+pub mod field;
 pub mod lattice;
 
 pub use arena::{Arena, INLINE_CAPACITY};
-pub use lattice::{Axis, Lattice, LatticeError};
+pub use field::{BuildError, BuildOptions, BuildStats, DexelField};
+pub use lattice::{Lattice, LatticeError};
