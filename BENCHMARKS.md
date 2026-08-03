@@ -11,11 +11,120 @@ Run them with:
 ```sh
 cargo bench --bench predicates -- --warm-up-time 1 --measurement-time 3
 cargo bench --bench spans      -- --warm-up-time 1 --measurement-time 3
+cargo bench --bench mesh       -- --warm-up-time 1 --measurement-time 3
+cargo bench --bench tool       -- --warm-up-time 1 --measurement-time 3
 ```
 
 CI compiles the benchmarks (`cargo bench --no-run`) but does not time them.
 Timing on shared CI runners produces numbers with more variance than the
 regressions we would be looking for.
+
+---
+
+## 2026-08-03 — Unit 3: root solving and ray versus tool
+
+- **Commit:** `05c8c75` (Unit 3, tool geometry and the root solver complete)
+- **Machine:** Intel Core Ultra 7 270K Plus, 24 physical / 24 logical cores,
+  31.5 GB RAM
+- **OS:** Windows 11 Pro 10.0.26200
+- **Toolchain:** rustc 1.96.0 (ac68faa20 2026-05-25), `x86_64-pc-windows-msvc`
+- **Profile:** `bench` — `lto = "fat"`, `codegen-units = 1`
+- **Criterion:** 1 s warm-up, 3 s measurement. Times are the median of the
+  reported confidence interval.
+
+```sh
+cargo bench --bench tool -- --warm-up-time 1 --measurement-time 3
+```
+
+### Root solving, per solve
+
+A quarter of the corpus has a repeated root deliberately, because that is the
+branch that leaves the closed form.
+
+| degree | per solve | relative |
+|---|---:|---:|
+| quadratic | 11.5 ns | 1x |
+| cubic | 94.1 ns | 8.2x |
+| quartic | 560.7 ns | **48.8x** |
+
+### Ray against a tool, coherent bundle of 48 x 48
+
+| tool | per ray | throughput | relative |
+|---|---:|---:|---:|
+| flat (quadratic) | 73.6 ns | 13.6 M/s | 1x |
+| drill (quadratic) | 128 ns | 7.8 M/s | 1.7x |
+| ball (quadratic) | 142 ns | 7.0 M/s | 1.9x |
+| bull (quartic) | 321 ns | 3.1 M/s | 4.4x |
+| barrel (quartic) | 1.39 µs | 0.72 M/s | **19x** |
+
+### The barrel is the number to carry forward
+
+19x against a flat end mill on the innermost loop of U5 is a real cost, and it
+follows directly from the first table. A bull nose pays for a quartic only on
+the rays that clip its corner radius; a barrel cutter's entire cutting length
+*is* one torus, so nearly every ray that touches it pays for two quartic solves.
+At 1.39 µs per ray, a million-ray sweep against a barrel is 1.4 seconds where
+the same sweep against a flat is 74 ms.
+
+**This is a deliberate trade and it is recoverable.** Section 8 abandoned
+Ferrari's closed form because it lost every significant digit when `|b/a|` was
+large — which is the *normal* case for a ray meeting a torus away from the
+origin, not an exotic one. A quartic with roots `{1e-5, 1, 10, 1e5}` came back
+from Ferrari with a spurious root at `-22462`, and 41 of 2000 seeded random
+quartics reported no real roots where the exact Sturm oracle counts two. The
+replacement solves through the derivative and refines each bracket with
+safeguarded Newton, which is unconditionally correct and about ten times dearer.
+
+The recovery is not to go back. It is to try Ferrari first, check the residual of
+every root it returns, and fall back to bracketing only when the check fails —
+keeping closed-form speed on the well-conditioned majority and the guarantee
+everywhere. That is not done here because an optimisation needs a measurement to
+justify it, and this is the measurement.
+
+### Allocation, bull nose, 32 x 32 coherent rays
+
+| form | time | per ray |
+|---|---:|---:|
+| `intersect_ray` (allocates) | 333.8 µs | 326 ns |
+| `intersect_ray_into` (reuses scratch) | 286.1 µs | 279 ns |
+
+A 17% saving, which is smaller than it looks and worth stating plainly: at this
+size the allocator is not the bottleneck, the quartic is. The scratch parameter
+earns its place in the API on the strength of U5's call volume rather than on
+this table, and if a later measurement at U5 scale does not show more than this,
+the API should lose it.
+
+### Closed-form properties
+
+| operation | flat | ball | bull | barrel |
+|---|---:|---:|---:|---:|
+| `volume` | 2.72 ns | 24.3 ns | 25.7 ns | 28.6 ns |
+| `contains_rz` | 12.6 ns | 21.2 ns | 29.3 ns | 62.4 ns |
+
+`contains_rz` is on the ray caster's hot path — every candidate interval is
+classified by testing its midpoint — so the barrel's 62 ns is part of why its
+rays cost what they do, though the quartic still dominates.
+
+### Tessellation, bull nose
+
+| tolerance | time |
+|---|---:|
+| 0.1 mm | 1.10 µs |
+| 0.01 mm | 4.27 µs |
+| 0.001 mm | 31.1 µs |
+
+Roughly `1/sqrt(tolerance)`, as expected: both the angular divisions and the
+chords along an arc scale that way, and the triangle count is their product.
+
+### Action items carried into U5 and U11
+
+1. Implement the Ferrari-with-residual-check fast path for the quartic, and
+   re-measure the barrel row. It is the single largest available win in the
+   ray caster.
+2. Re-measure the allocation table at U5 sweep sizes before trusting the 17%
+   figure either way.
+3. `contains_rz` is called once per candidate interval. If the quartic gets
+   cheaper, this becomes the next thing to look at.
 
 ---
 

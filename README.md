@@ -7,12 +7,13 @@ answers: **what shape is left at the end, and does it match the part we
 intended?** It finds gouges, leftover stock and tool-holder collisions before a
 real machine drives into a real workpiece.
 
-> **Status: Unit 3 of 20, in progress.** The numeric foundation, the determinism
-> harness, the triangle mesh core with its I/O and BVH, and tool geometry are in
-> place: exact geometric predicates, interval spans, canonical hashing, a
-> deterministic root solver validated against an exact Sturm oracle, ray casting
-> against tool solids of revolution, and native/WASM parity in CI. There is no
-> G-code parser and no dexel field yet. See [Roadmap](#roadmap).
+> **Status: Unit 3 of 20 complete.** The numeric foundation, the determinism
+> harness, the triangle mesh core with its I/O and BVH, and tool and holder
+> geometry are in place: exact geometric predicates, interval spans, canonical
+> hashing, a deterministic root solver validated against an exact Sturm oracle,
+> ray casting against tool solids of revolution, error-bounded tessellation, and
+> native/WASM parity in CI across all of it. There is no G-code parser and no
+> dexel field yet. See [Roadmap](#roadmap).
 
 ## The guarantee
 
@@ -79,16 +80,21 @@ The `results.hash` field must match the native run exactly.
 
 | Path | Contents |
 |---|---|
-| `crates/chipbreaker-core` | `math`, `predicates`, `spans`, `golden`, `selftest` |
+| `crates/chipbreaker-core` | `math`, `predicates`, `spans`, `roots`, `mesh`, `tool`, `golden`, `selftest` |
 | `crates/chipbreaker-cli` | the `chipbreaker` binary |
 | `tests/corpus` | versioned test inputs, growing every unit |
 | `tests/golden` | committed golden hashes |
 | `BENCHMARKS.md` | append-only performance record |
 
-The interesting module is [`spans`](crates/chipbreaker-core/src/spans.rs): sorted,
-disjoint, normalized sets of half-open intervals, with union, intersection and
-difference implemented as a single merge-scan. Every material-removal operation
-in the engine bottoms out there, so its tolerance policy is documented at length.
+Two modules are worth reading first.
+[`spans`](crates/chipbreaker-core/src/spans.rs) holds sorted, disjoint,
+normalized sets of half-open intervals, with union, intersection and difference
+implemented as a single merge-scan; every material-removal operation in the
+engine bottoms out there, so its tolerance policy is documented at length.
+[`roots`](crates/chipbreaker-core/src/roots.rs) solves the polynomials that every
+ray-versus-tool intersection reduces to, and its header explains why a double
+root gives eight digits rather than sixteen — the fact that governs the
+tolerances in both modules.
 
 ## Roadmap
 
@@ -96,7 +102,7 @@ in the engine bottoms out there, so its tolerance policy is documented at length
 |---|---|---|
 | U1 | Workspace, determinism harness, numeric core | **done** |
 | U2 | Triangle mesh, I/O, validation, BVH | **done** |
-| U3 | Tool and holder geometry, root solver, ray versus solid of revolution | in progress |
+| U3 | Tool and holder geometry, root solver, ray versus solid of revolution | **done** |
 | U4 | G-code parser and toolpath IR | |
 | U5–U8 | Dexel field, tri-dexel, 3-axis material removal, arcs | |
 | U9–U11 | Dual contouring, adaptive resolution, deterministic parallelism | |
