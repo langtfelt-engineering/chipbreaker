@@ -46,6 +46,17 @@
 //! solution needs `cbrt`. All three go through [`crate::transcendental`], so the
 //! roots are bit-identical on every target. A `std` call here would silently
 //! break WASM parity for every ray that touched a torus.
+//!
+//! Everything else in this module is `+ - * /` and comparison, which IEEE-754
+//! requires to be correctly rounded and therefore identical everywhere — **on a
+//! target with IEEE-754 double semantics**. That assumption is doing real work
+//! and is worth naming: an `i686` target using the x87 stack computes
+//! intermediates at 80-bit extended precision and rounds them to 64 bits at
+//! unpredictable points, which would reintroduce exactly the cross-target
+//! divergence this module is built to exclude. `x86_64` (SSE2), `aarch64` and
+//! `wasm32` all have the required semantics. A 32-bit x86 target would need
+//! `+sse2` forced, and would still want re-validating against the Sturm oracle
+//! rather than assumed correct.
 
 use crate::eps::{ROOT_DEGENERACY_TAU, SQRT_F64_EPSILON};
 use crate::golden::{CanonicalHash, Hashable};

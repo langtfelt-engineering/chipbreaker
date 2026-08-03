@@ -455,6 +455,20 @@ pub enum ProfileError {
         /// The lowest `z` it reaches.
         z: f64,
     },
+    /// The chain crosses itself.
+    ///
+    /// A profile bounds a region together with the axis and one cap, and that
+    /// region is only well defined if the chain is simple. A crossing makes
+    /// containment and volume meaningless rather than merely inaccurate; see
+    /// [`super::selfintersect`].
+    SelfIntersecting {
+        /// Index of the earlier element.
+        first: u32,
+        /// Index of the later element.
+        second: u32,
+        /// `(r, z)` where they meet.
+        at: Vec2,
+    },
     /// Roles are out of order.
     ///
     /// Reading from the tip upward, cutting geometry must come before
@@ -513,6 +527,11 @@ impl fmt::Display for ProfileError {
             Self::BelowTip { index, z } => {
                 write!(f, "element {index} reaches z = {z}, below the tip at z = 0")
             }
+            Self::SelfIntersecting { first, second, at } => write!(
+                f,
+                "elements {first} and {second} cross at (r {}, z {}); a profile                  that crosses itself does not bound a well-defined solid",
+                at.x, at.y
+            ),
             Self::RolesOutOfOrder {
                 index,
                 previous,
@@ -641,6 +660,19 @@ impl Profile {
                 });
             }
             previous_role = roled.role;
+        }
+
+        // Last, because it is the only O(n^2) check and because its message is
+        // the least useful of the set: if the chain is also discontinuous or
+        // has a zero-length element, say that instead.
+        if let Some(crossing) = super::selfintersect::first_crossing(
+            &elements.iter().map(|e| e.element).collect::<Vec<_>>(),
+        ) {
+            return Err(ProfileError::SelfIntersecting {
+                first: crossing.first,
+                second: crossing.second,
+                at: crossing.at,
+            });
         }
 
         Ok(Self { elements })

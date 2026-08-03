@@ -196,6 +196,31 @@ which is precisely when a comment in the code is not enough.
 Add the new file *and* a row here. An ADR nothing links to is a file nobody
 reads.
 
+## Fixtures that cross a serialization boundary
+
+**Every fixture that is written out and read back must contain at least one
+value requiring all 17 significant digits.**
+
+This is not a style preference. `serde_json`'s default float parser reads
+`2.0481555856608242` as `2.048155585660824` — one ULP low — and the tool library
+fixture failed to notice for an entire unit because every tool in it was a flat,
+a ball or a bull nose, whose coordinates are `3.0` and `20.0` and survive any
+parser ever written. There was no bit to lose, so no test could lose it.
+
+A parser that drops a bit on the *first* read is stable ever after, so a
+write-read-write comparison agrees with itself while the data is already wrong.
+Only a full-precision value can detect it, and only against the originally
+constructed value.
+
+Applies to: tool libraries, toolpath IR, NC corpus expectations, report schemas,
+machine configuration. When adding a fixture, take the awkward number from real
+geometry — `1 + 20 tan(3 deg)`, `sqrt(200^2 - 194^2)` — rather than inventing a
+bit pattern, and assert in the test that it still needs 17 digits so a later edit
+cannot quietly turn the check back into a test of `3.0`.
+
+`crates/chipbreaker-core/tests/float_roundtrip_guard.rs` holds the standing check
+that `serde_json` itself has not regressed.
+
 ## Tests
 
 - `cargo test --all` must pass on Windows, Linux and macOS.

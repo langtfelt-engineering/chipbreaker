@@ -153,6 +153,24 @@ jobs:
             'Parallelism found. It arrives at U11 behind a deterministic partition; CONTRIBUTING.md rule 4.'
           exit $fail
 
+      - name: serde_json is only ever taken from the workspace
+        run: |
+          # The workspace entry carries `float_roundtrip`, without which
+          # serde_json reads 2.0481555856608242 as 2.048155585660824 -- one ULP
+          # low. A crate that declares serde_json directly would silently opt
+          # out of the fix. `float_roundtrip_guard.rs` catches the feature being
+          # removed; this catches it being bypassed.
+          bad=$(grep -rn '^serde_json *=' crates/*/Cargo.toml                 | grep -v 'workspace *= *true' || true)
+          if [ -n "$bad" ]; then
+            echo "::error::a crate declares serde_json without inheriting the workspace entry"
+            echo "$bad"
+            exit 1
+          fi
+          if ! grep -q 'float_roundtrip' Cargo.toml; then
+            echo "::error::the workspace serde_json entry has lost float_roundtrip; CONTRIBUTING.md explains why it is not optional"
+            exit 1
+          fi
+
       - name: Every crate forbids unsafe
         run: |
           fail=0
@@ -199,6 +217,38 @@ jobs:
             fi
           done
           exit $fail
+
+  corpus-regeneration:
+    name: corpus regenerates identically
+    runs-on: ubuntu-latest
+    # A generated corpus file that nobody can regenerate is a corpus file that
+    # has been hand-edited, and a generator whose output has drifted from the
+    # committed data is a test asserting something nobody chose. This catches
+    # both, and it catches the empty-file accident that produced it: the corpus
+    # expectations were once truncated to zero bytes by a redirect that ran
+    # before its generator failed, and committed that way.
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Regenerate every generated corpus file
+        run: |
+          cargo run -q -p chipbreaker-core --example generate_tool_corpus             > tests/corpus/tool/standard-library.json
+          python3 scripts/tool_corpus_expectations.py             > tests/corpus/tool/expectations.json
+
+      - name: Nothing may have changed, and nothing may be empty
+        run: |
+          for f in tests/corpus/tool/standard-library.json                    tests/corpus/tool/expectations.json; do
+            if [ ! -s "$f" ]; then
+              echo "::error file=$f::regenerated to an empty file"
+              exit 1
+            fi
+          done
+          git diff --exit-code -- tests/corpus/ || {
+            echo "::error::a committed corpus file differs from what its generator produces"
+            exit 1
+          }
 
   licences:
     name: dependency licences
