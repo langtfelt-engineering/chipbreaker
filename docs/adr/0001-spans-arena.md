@@ -4,10 +4,12 @@
 - **Date:** 2026-08-02 (storage), amended 2026-08-02 after U2 (lattice offset)
 - **Unit:** raised in U1, recorded and amended in U2, to be acted on in U5
 
-This ADR carries two decisions for U5. The first is about where a ray's spans
-live. The second, added after Unit 2's measurements, is about **where the rays
-themselves are placed**, and it is the more urgent of the two because it is a
-correctness invariant as well as a performance one.
+This ADR carries three decisions. Part 1 is about where a ray's spans live, as
+scoped at U1. Part 2, added after Unit 2's measurements, is about **where the
+rays themselves are placed**, and it is the most urgent of the three because it
+is a correctness invariant as well as a performance one. Part 3, added at U5,
+records the arena as actually built, and how the measurement changed the design
+that Part 1 anticipated.
 
 ---
 
@@ -213,3 +215,142 @@ allocating. The arena extends that saving from "no allocation per operation" to
   where the entire product claim is that we do not silently lose material.
 - **Keeping `Vec<Span>` and accepting the cost.** Defensible if U5 turned out to
   be dominated by something else entirely. The numbers above say it will not be.
+
+---
+
+# Part 3 — The arena as built
+
+- **Status:** Accepted, implemented
+- **Date:** 2026-08-03
+- **Unit:** 5
+
+Part 1 scoped a flat arena and left the shape open. This part records what was
+built, and it differs from Part 1's plan in one significant way, because the
+measurement said so.
+
+## The measurement came first
+
+Part 1's reasoning was structural: per-ray `Vec` costs a 24-byte header and an
+allocation per ray, and 4M rays is ~96 MB of headers before a single interval
+exists. That argument is sound and unchanged. What it did *not* say is what the
+replacement should look like, and that depends entirely on the distribution of
+span counts — a fact nobody had measured. A spread-out distribution wants a
+general allocator; a degenerate one wants a flat array. Guessing would have been
+guessing at the central data structure of the product.
+
+So `examples/span_distribution.rs` was written before `arena.rs`, deliberately
+on top of the `Vec<Spans>` representation the arena is meant to replace, because
+measuring with the thing being designed would be circular. Casting a `+Z` bundle
+at 0.5 mm:
+
+| mesh | 0 spans | 1 span | 2 spans | max |
+|---|---:|---:|---:|---:|
+| box, stock at rest | — | 100% | — | 1 |
+| sphere r=20 | 21.8% | 78.2% | — | 1 |
+| torus R=20 r=6, axis along the bundle | 44.3% | 55.7% | — | 1 |
+| nested shells (a cavity) | 21.8% | 58.6% | 19.6% | 2 |
+| lattice block, integer vertices | — | 100% | — | 1 |
+
+The distribution is not merely skewed. It is nearly degenerate: **stock at rest
+is exactly one span on every ray**, and the only case reaching two is a genuine
+internal cavity. Inline capacity 2 covers 100% of every case measured; capacity
+1 covers only 80.4% of the cavity case.
+
+One result was a surprise and is recorded because it corrects a natural
+assumption: a torus whose axis lies **along** the bundle does not produce
+two-span rays. Its hole appears as 44% *empty* rays. A through hole gives two
+spans only when it runs *transverse* to the bundle. Anyone sizing storage
+against "holes give two spans" would be sizing against the wrong picture.
+
+## Decision
+
+```rust
+pub struct Arena {
+    inline: Vec<Span>,               // rays * INLINE_CAPACITY, flat
+    len:    Vec<u16>,                // spans per ray, inline or spilled
+    spill:  BTreeMap<u32, Vec<Span>>, // rays past capacity, holding ALL their spans
+}
+pub const INLINE_CAPACITY: usize = 2;
+```
+
+Two allocations for the whole field, both sized as a pure function of the ray
+count. `set(ray, &[Span])` is the only mutation.
+
+**This is not a general-purpose allocator and must not become one.** The
+distribution above is its entire justification; a design that would be better
+for a spread-out distribution would be worse for this one.
+
+### Why 2, and not 1 or 4
+
+One would cover every ray of stock at rest, and would spill on the first pocket
+cut into a block. U7 subtracts the tool from these spans millions of times, and
+subtraction **splits**: cutting a slot through a solid ray turns one span into
+two. Growth is the common mutation, not a rare one.
+
+Four would double the resting footprint — 4M rays at 16 bytes a span is 128 MB
+against 64 MB — to buy a case that has not been observed.
+
+### Why `u16` and not `u8`
+
+A ray through a honeycomb or a lattice-work part can genuinely carry hundreds of
+spans. A silent wrap at 256 would be a field that looks fine and is wrong, which
+is the worst failure mode available to a verification tool. Two bytes per ray is
+8 MB at 4M rays, against the 64 MB of inline slots; it is not worth being clever
+about.
+
+### Why `BTreeMap` for the spill
+
+Determinism. The spill is iterated when hashing, and unordered iteration
+reaching a float is exactly what the standing rules forbid. `HashMap` would be
+faster and would make the field hash depend on hasher state.
+
+### Two behaviours that are contract, not detail
+
+**A ray that shrinks releases its spill.** If it did not, a ray that split under
+cutting and later merged back would keep dead storage alive for the run, and the
+arena would only ever grow. `a_ray_that_shrinks_releases_its_spill` covers it.
+
+**The hash reads the spans a ray *has*, never the slots it was given.** Unused
+inline slots keep whatever was last written there. Hashing the raw backing array
+would make two fields with identical geometry disagree because one of them had
+been cut and restored. `the_hash_depends_on_contents_and_not_on_history` covers
+it.
+
+## Deviation from Part 1
+
+Part 1 rejected small-vector optimisation as the primary plan, on two grounds:
+it does not fix locality, and every mainstream small-vector crate uses `unsafe`,
+which this workspace forbids.
+
+What was built is, in effect, a small-vector optimisation — *and both objections
+still hold and are answered*, which is why the deviation is recorded rather than
+quietly taken.
+
+The locality objection was aimed at `Vec<SmallVec>`, where the rays are still
+scattered because each ray owns its own inline buffer inside a per-ray struct.
+Here the inline slots are **one flat array for the whole field**, so consecutive
+rays are consecutive in memory. That is Part 1's arena; the inline capacity is a
+property of the arena's layout, not a per-ray container.
+
+The `unsafe` objection was aimed at the crates. This uses none: `Vec<Span>`
+indexed by arithmetic, with `len` tracked alongside. The cost is that unused
+slots hold initialised `Span::new(0.0, 0.0)` values rather than uninitialised
+memory, which is a wasted memset at construction and nothing else.
+
+So Part 1's conclusion stands and its framing was slightly off: the two designs
+it presented as alternatives are the same design seen from different levels.
+
+## Consequences
+
+- Memory is a pure function of ray count until something spills, which
+  `memory_is_proportional_to_rays_and_free_of_per_ray_allocation` asserts.
+- `spilled_rays()` is the number that says whether `INLINE_CAPACITY` is still
+  right. If it stops being near zero on real work, revisit it against a fresh
+  measurement — not by intuition, and not by bumping the constant until the
+  number looks better.
+- `the_inline_capacity_is_two_and_the_reason_is_recorded` guards the constant
+  itself. Changing it is allowed; changing it as a tidy-up should not slip
+  through review unnoticed.
+- The Part 1 benchmark obligation (arena against per-ray `Vec` on the same
+  workload) is carried into U5's benchmark set, and remains outstanding until it
+  runs.
