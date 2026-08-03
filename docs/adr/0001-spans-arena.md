@@ -39,7 +39,21 @@ Unit 2 measured the same choice from two directions.
 | on the integer lattice | 39.83 ms |
 
 **15.8x**, on the innermost loop of the entire product, available for free by
-choosing an offset. The cause is Simulation of Simplicity: the exact-fallback
+choosing an offset.
+
+**Amended at U5 with a second measurement.** A number that decides a required
+invariant should not rest on one measurement in one place, so
+`benches/dexel.rs` repeats it against the same lattice block, cast the way
+construction actually casts: 414 us with cell centres against 2.30 ms on the
+integer lattice, or **5.5x**.
+
+That is a third of the original figure, and the gap is recorded rather than
+smoothed over. The two benchmarks sweep different ray counts over different
+extents, so they are not measuring quite the same thing; what they agree on is
+the sign and the order of magnitude. The decision does not turn on whether it is
+5x or 16x -- it turns on correctness, and the performance is the bonus. Anyone
+quoting a single number for this should quote 5.5x from the construction path,
+because that is the path the product runs. The cause is Simulation of Simplicity: the exact-fallback
 rate goes from 3.94% on generic geometry to **65.80%** when every ray strikes a
 vertex or an edge head on.
 
@@ -351,6 +365,30 @@ it presented as alternatives are the same design seen from different levels.
 - `the_inline_capacity_is_two_and_the_reason_is_recorded` guards the constant
   itself. Changing it is allowed; changing it as a tidy-up should not slip
   through review unnoticed.
-- The Part 1 benchmark obligation (arena against per-ray `Vec` on the same
-  workload) is carried into U5's benchmark set, and remains outstanding until it
-  runs.
+## The Part 1 benchmark obligation, discharged
+
+Part 1 argued the arena would win from structure rather than measurement, and
+left the benchmark as an obligation on U5. `benches/dexel.rs` runs it. Filling
+and then scanning one span per ray, release build:
+
+| rays | arena fill | `Vec<Spans>` fill | arena scan | `Vec<Spans>` scan |
+|---:|---:|---:|---:|---:|
+| 10,000 | 41.1 us | 242 us | 9.76 us | **7.46 us** |
+| 100,000 | 813 us | 2.82 ms | 104 us | 135 us |
+| 1,000,000 | 8.44 ms | 35.2 ms | 1.82 ms | 2.92 ms |
+
+Filling is **4.2x** faster at a million rays, which is the allocation argument
+holding up. Scanning is **1.6x**, which is the locality argument.
+
+The 10,000-ray scan row is bolded because the arena **loses** there, and the row
+is kept rather than dropped. At that size the whole working set fits in cache
+either way, so locality buys nothing and the arena still pays for the indirection
+through `len` on every ray. The arena is the right structure for the sizes this
+product runs at, not for every size, and a future reader benchmarking a small
+field should find that already written down rather than discover it and conclude
+the design is wrong.
+
+## Consequences
+
+- Memory is a pure function of ray count until something spills, which
+  `memory_is_proportional_to_rays_and_free_of_per_ray_allocation` asserts.

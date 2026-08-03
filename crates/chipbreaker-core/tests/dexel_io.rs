@@ -103,7 +103,10 @@ fn two_builds_of_the_same_stock_write_the_same_file() {
     };
     let (a, _) = DexelField::build(&mesh, &options).expect("builds");
     let (b, _) = DexelField::build(&mesh, &options).expect("builds");
-    assert_eq!(io::to_bytes(&a).expect("writes"), io::to_bytes(&b).expect("writes"));
+    assert_eq!(
+        io::to_bytes(&a).expect("writes"),
+        io::to_bytes(&b).expect("writes")
+    );
 }
 
 #[test]

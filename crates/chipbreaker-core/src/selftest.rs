@@ -66,6 +66,13 @@ pub const ROOT_SOLVER_CASES: usize = 3_000;
 /// fast enough that the self-test stays a thing anyone will run.
 pub const TOOL_RAYS_PER_SIDE: usize = 12;
 
+/// Cell size used by the dexel suite, in millimetres.
+///
+/// Coarse on purpose. The suite is checking that every target agrees about
+/// where the rays go and what they find, not that the volume is accurate; a
+/// finer lattice would cost time without adding a way to disagree.
+pub const DEXEL_SPACING: f64 = 0.75;
+
 /// Tessellation tolerance used by the tool suite, in millimetres.
 pub const TOOL_TESSELLATION_TOLERANCE: f64 = 0.05;
 
@@ -189,6 +196,7 @@ pub fn run_with(extra: Vec<SuiteResult>) -> SelfTestReport {
         mesh_suite(),
         root_solver_suite(),
         tool_geometry_suite(),
+        dexel_field_suite(),
         canonical_hash_suite(),
     ];
     suites.extend(extra);
@@ -740,6 +748,136 @@ fn mesh_suite() -> SuiteResult {
 /// stopped being widened, this suite's digest would differ between the native
 /// and WASM runs — which is precisely the failure it exists to surface, and the
 /// reason the checks are computed rather than merely asserted.
+/// Builds dexel fields and round-trips them through the `.dexel` format.
+///
+/// Two things have to hold on every target, and only one of them is about
+/// arithmetic.
+///
+/// The **field** must be identical: same ray origins, same crossings, same
+/// spans, in the same order. That covers the lattice offset, Unit 2's
+/// predicates, the parity pairing and the arena's traversal order all at once.
+///
+/// The **file** must be identical too, byte for byte, and must reload to a field
+/// with the same digest. ADR 0004 exists so that this cannot drift; hashing the
+/// bytes here is what would catch it if a future change put a formatter between
+/// a computed `f64` and the disk.
+fn dexel_field_suite() -> SuiteResult {
+    use crate::dexel::{BuildOptions, DexelField, io as dexel_io};
+    use crate::math::{Axis, Mat4, Vec3};
+    use crate::mesh::{TriMesh, shapes};
+
+    let mut failures = Vec::new();
+    let mut h = CanonicalHash::new();
+    h.begin("dexel");
+
+    // A placement with irrational-looking components, so the ray origins are not
+    // round numbers on any target. A field built only at the origin would agree
+    // across targets for reasons that have nothing to do with the arithmetic
+    // being right.
+    let placed = Mat4::from_translation(Vec3::new(1.0 / 3.0, -0.078_125, 2.5));
+
+    let cases: [(&str, TriMesh, Axis, Mat4); 6] = [
+        (
+            "box-z",
+            shapes::box_solid(Vec3::new(0.0, 0.0, 0.0), Vec3::new(12.0, 8.0, 5.0)),
+            Axis::Z,
+            Mat4::IDENTITY,
+        ),
+        ("sphere-z", shapes::icosphere(6.0, 3), Axis::Z, placed),
+        (
+            "sphere-x",
+            shapes::icosphere(6.0, 3),
+            Axis::X,
+            Mat4::IDENTITY,
+        ),
+        (
+            "sphere-y",
+            shapes::icosphere(6.0, 3),
+            Axis::Y,
+            Mat4::IDENTITY,
+        ),
+        (
+            "cylinder-z",
+            shapes::cylinder(5.0, 11.0, 48),
+            Axis::Z,
+            placed,
+        ),
+        (
+            "torus-z",
+            shapes::torus(7.0, 2.5, 48, 24),
+            Axis::Z,
+            Mat4::IDENTITY,
+        ),
+    ];
+
+    let mut count = 0usize;
+    for (name, mesh, axis, placement) in &cases {
+        h.begin(name);
+        let options = BuildOptions {
+            spacing: DEXEL_SPACING,
+            axis: *axis,
+            placement: *placement,
+            margin: 0.0,
+        };
+        match DexelField::build(mesh, &options) {
+            Ok((field, stats)) => {
+                count += 1;
+                field.hash_canonical(&mut h);
+                // The volume, not merely the spans: a field can hash the same
+                // and still sum differently if the traversal order changed.
+                h.f64(field.volume());
+                h.u64(stats.rays);
+                h.u64(stats.empty_rays);
+                h.u64(stats.spans);
+                h.u64(stats.spilled_rays);
+
+                match dexel_io::to_bytes(&field) {
+                    Ok(bytes) => {
+                        h.bytes(&bytes);
+                        match dexel_io::from_bytes(&bytes) {
+                            Ok(reloaded) => {
+                                let mut before = CanonicalHash::new();
+                                before.add(&field);
+                                let mut after = CanonicalHash::new();
+                                after.add(&reloaded);
+                                if before.finish() != after.finish() {
+                                    failures.push(Failure {
+                                        case: format!("roundtrip/{name}"),
+                                        detail: "a field did not survive a .dexel round trip                                                  with the same digest"
+                                            .to_owned(),
+                                    });
+                                }
+                            }
+                            Err(e) => failures.push(Failure {
+                                case: format!("read/{name}"),
+                                detail: e.to_string(),
+                            }),
+                        }
+                    }
+                    Err(e) => failures.push(Failure {
+                        case: format!("write/{name}"),
+                        detail: e.to_string(),
+                    }),
+                }
+            }
+            Err(e) => failures.push(Failure {
+                case: format!("build/{name}"),
+                detail: e.to_string(),
+            }),
+        }
+        h.end();
+    }
+    h.end();
+
+    SuiteResult {
+        name: "dexel.field",
+        description: "builds dexel fields on all three axes and round-trips them through .dexel",
+        cases: count,
+        failures,
+        digest: h.finish(),
+    }
+}
+
 fn canonical_hash_suite() -> SuiteResult {
     let mut failures = Vec::new();
     let mut h = CanonicalHash::new();

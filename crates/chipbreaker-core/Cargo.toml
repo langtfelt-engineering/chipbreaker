@@ -42,5 +42,9 @@ harness = false
 name = "tool"
 harness = false
 
+[[bench]]
+name = "dexel"
+harness = false
+
 [lints]
 workspace = true

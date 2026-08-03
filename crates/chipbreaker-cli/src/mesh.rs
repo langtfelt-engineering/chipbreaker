@@ -149,7 +149,7 @@ impl MeshCommand {
 }
 
 /// Loads, welds and returns a mesh along with what welding did.
-fn load(input: &Input) -> Result<(TriMesh, Value), String> {
+pub(crate) fn load(input: &Input) -> Result<(TriMesh, Value), String> {
     let bytes = std::fs::read(&input.file)
         .map_err(|e| format!("cannot read {}: {e}", input.file.display()))?;
     let name = input.file.file_name().and_then(|s| s.to_str());

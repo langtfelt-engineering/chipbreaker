@@ -9,6 +9,7 @@
 //! the core and there will not be one; the eventual browser demo is a consumer
 //! of the library, never a part of it.
 
+mod dexel;
 mod mesh;
 mod path;
 mod report;
@@ -62,6 +63,15 @@ enum Command {
         #[command(subcommand)]
         command: path::PathCommand,
     },
+    /// Build, inspect and measure dexel fields.
+    ///
+    /// The structure the rest of the engine operates on. `.dexel` files hold raw
+    /// IEEE bit patterns rather than text (ADR 0004), so `stat` and `slice` are
+    /// how a field is read by a human.
+    Dexel {
+        #[command(subcommand)]
+        command: dexel::DexelCommand,
+    },
     /// Solve polynomials for their real roots.
     ///
     /// The solver behind every ray-versus-tool intersection, exposed so that a
@@ -99,6 +109,11 @@ fn main() -> ExitCode {
         Command::Path { command } => {
             let as_json = command.input().json;
             let (outcome, elapsed) = mesh::timed(|| path::run(&command));
+            emit(outcome, elapsed, as_json)
+        }
+        Command::Dexel { command } => {
+            let as_json = command.json();
+            let (outcome, elapsed) = mesh::timed(|| dexel::run(&command));
             emit(outcome, elapsed, as_json)
         }
         Command::Roots { command } => {
@@ -284,6 +299,78 @@ mod tests {
             }
             other => panic!("wrong subcommand: {other:?}"),
         }
+    }
+
+    #[test]
+    fn dexel_build_requires_a_spacing_and_takes_no_default() {
+        // Accuracy depends on the ratio of cell size to the smallest feature
+        // that matters, so a default spacing would be a guess about somebody
+        // else's part. Refusing to have one is the decision; this pins it.
+        assert!(
+            Cli::try_parse_from(["chipbreaker", "dexel", "build", "part.stl", "--units", "mm"])
+                .is_err(),
+            "dexel build must require --spacing rather than defaulting"
+        );
+
+        let cli = Cli::try_parse_from([
+            "chipbreaker",
+            "dexel",
+            "build",
+            "part.stl",
+            "--units",
+            "mm",
+            "--spacing",
+            "0.25",
+            "--axis",
+            "x",
+            "--at",
+            "10,-5,0.5",
+        ])
+        .expect("valid");
+        match cli.command {
+            Command::Dexel {
+                command: dexel::DexelCommand::Build { build, out },
+            } => {
+                assert!((build.spacing - 0.25).abs() < 1e-15);
+                assert_eq!(build.axis, chipbreaker_core::math::Axis::X);
+                assert_eq!(build.at.map(|v| v.to_array()), Some([10.0, -5.0, 0.5]));
+                assert!(out.is_none());
+            }
+            other => panic!("wrong subcommand: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dexel_read_subcommands_parse() {
+        for verb in ["stat", "volume", "slice"] {
+            let cli = Cli::try_parse_from(["chipbreaker", "dexel", verb, "field.dexel"])
+                .unwrap_or_else(|e| panic!("dexel {verb}: {e}"));
+            assert!(matches!(cli.command, Command::Dexel { .. }));
+        }
+        assert!(
+            Cli::try_parse_from(["chipbreaker", "dexel", "convergence"]).is_ok(),
+            "the accuracy table must be runnable without arguments"
+        );
+    }
+
+    #[test]
+    fn an_unknown_bundle_axis_is_refused() {
+        assert!(
+            Cli::try_parse_from([
+                "chipbreaker",
+                "dexel",
+                "build",
+                "p.stl",
+                "--units",
+                "mm",
+                "--spacing",
+                "1",
+                "--axis",
+                "w",
+            ])
+            .is_err(),
+            "there are three axes; a fourth must not parse"
+        );
     }
 
     #[test]
