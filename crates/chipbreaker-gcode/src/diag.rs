@@ -488,6 +488,11 @@ pub enum GcodeWarning {
         /// The tolerance the program asked for.
         tolerance: f64,
     },
+    /// A `G73` was expanded without its chip-break retract.
+    UnmodelledRetract {
+        /// Where.
+        site: Site,
+    },
     /// Units changed mid-program.
     UnitsChanged {
         /// Where.
@@ -509,6 +514,7 @@ impl GcodeWarning {
             Self::BlockSkip { .. } => "block-skip",
             Self::ZeroLengthMove { .. } => "zero-length-move",
             Self::PathToleranceIgnored { .. } => "path-tolerance-ignored",
+            Self::UnmodelledRetract { .. } => "unmodelled-retract",
             Self::UnitsChanged { .. } => "units-changed",
         }
     }
@@ -524,6 +530,7 @@ impl GcodeWarning {
             | Self::BlockSkip { site, .. }
             | Self::ZeroLengthMove { site }
             | Self::PathToleranceIgnored { site, .. }
+            | Self::UnmodelledRetract { site }
             | Self::UnitsChanged { site, .. } => *site,
         }
     }
@@ -557,6 +564,13 @@ impl fmt::Display for GcodeWarning {
                 f,
                 "{site}: G64 P{tolerance} lets the control round corners by up to \
                  {tolerance}; the commanded path is simulated instead"
+            ),
+            Self::UnmodelledRetract { site } => write!(
+                f,
+                "{site}: G73 retracts between pecks by a machine parameter that is not \
+                 in this file, so that motion is missing from the toolpath. Harmless for \
+                 material removal, but a collision check cannot see it. Pass \
+                 --chip-break-clearance to supply it"
             ),
             Self::UnitsChanged { site, to } => {
                 write!(f, "{site}: units changed to {to} mid-program")

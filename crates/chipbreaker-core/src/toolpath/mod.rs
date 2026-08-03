@@ -189,6 +189,23 @@ pub struct ToolpathHeader {
     pub path_tolerance: Option<f64>,
     /// Whether blocks marked with a leading `/` were executed.
     pub block_skip_executed: bool,
+    /// Canned cycles expanded with motion the machine makes but this IR omits.
+    ///
+    /// Counts `G73` firings expanded without a chip-break clearance. A real
+    /// control retracts a short distance between pecks, by a machine parameter
+    /// that is not in the NC file; without it the IR contains a straight plunge
+    /// where the machine oscillates.
+    ///
+    /// **This is structural, not a warning, and that is deliberate.** A
+    /// diagnostic in a list is too easy for a downstream unit to ignore, and a
+    /// collision check that reports "no collisions found" against a path missing
+    /// motion the machine makes is the failure mode this project keeps declining
+    /// to accept. U14 must refuse to certify a program as collision-clean while
+    /// this is non-zero.
+    ///
+    /// Supplying `--chip-break-clearance` emits the real motion and leaves this
+    /// at zero.
+    pub unmodelled_retracts: u32,
 }
 
 impl Hashable for ToolpathHeader {
@@ -216,6 +233,7 @@ impl Hashable for ToolpathHeader {
             }
         }
         h.bool(self.block_skip_executed);
+        h.u64(u64::from(self.unmodelled_retracts));
         h.end();
     }
 }

@@ -49,6 +49,13 @@ pub struct Input {
     /// Skip blocks marked with a leading `/`.
     #[arg(long)]
     pub skip_optional_blocks: bool,
+    /// G73's chip-break retract distance, in millimetres.
+    ///
+    /// A machine parameter, absent from the NC file. Without it G73 expands as a
+    /// straight plunge and the omission is counted in the IR header, so a
+    /// collision check can refuse to certify a path it knows is incomplete.
+    #[arg(long, value_name = "MM")]
+    pub chip_break_clearance: Option<f64>,
     /// Emit JSON instead of text.
     #[arg(long)]
     pub json: bool,
@@ -144,6 +151,7 @@ fn options_from(input: &Input, strict: bool) -> ParseOptions {
         rapid_path: input.rapid_path,
         legacy_increment: input.legacy_increment,
         execute_block_skip: !input.skip_optional_blocks,
+        chip_break_clearance: input.chip_break_clearance,
         strict,
         ..ParseOptions::default()
     }
@@ -257,6 +265,7 @@ pub fn run(command: &PathCommand) -> Result<(Value, String, bool), String> {
                 "segments": path.segment_count(),
                 "toolpath_hash": hash,
                 "tools_used": path.tools_used(),
+                "unmodelled_retracts": path.header.unmodelled_retracts,
                 "warnings": diagnostics.len(),
             });
             if *stats && let Some(map) = results.as_object_mut() {
@@ -277,7 +286,7 @@ pub fn run(command: &PathCommand) -> Result<(Value, String, bool), String> {
                  tools    {:?}\n\
                  bounds   {:?} .. {:?} mm (tool tip)\n\
                  warnings {}\n\
-                 hash     {hash}\n",
+                 hash     {hash}\n{}",
                 path.segment_count(),
                 path.events.len(),
                 path.length(),
@@ -285,6 +294,16 @@ pub fn run(command: &PathCommand) -> Result<(Value, String, bool), String> {
                 bounds.min.to_array(),
                 bounds.max.to_array(),
                 diagnostics.len(),
+                if path.header.unmodelled_retracts > 0 {
+                    format!(
+                        "\nNOTE  {} G73 cycle(s) expanded without their chip-break retract, \
+                         so this\n      path is missing motion the machine makes. Pass \
+                         --chip-break-clearance\n      to include it.\n",
+                        path.header.unmodelled_retracts
+                    )
+                } else {
+                    String::new()
+                },
             );
             Ok((results, text, true))
         }

@@ -28,11 +28,20 @@
 //!
 //! **`G73`'s chip-break retract.** A real control retracts a small distance
 //! between pecks, set by a machine parameter that is not in the NC file. It is
-//! not modelled, and `G73` expands as a straight feed to depth. That is exact
-//! for material removal — the retract goes back into space already cut and
-//! returns, removing nothing — and the difference is visible only to timing.
-//! Inventing a clearance would put a rapid in the IR that the machine may not
-//! make.
+//! not invented: pass `--chip-break-clearance` and the real oscillation is
+//! emitted; omit it and `G73` expands as a straight feed to depth, and the
+//! omission is **counted in the toolpath header** so a downstream unit cannot
+//! overlook it.
+//!
+//! The omission is exact for material removal — the retract goes back into space
+//! already cut and returns, removing nothing. An earlier version of this comment
+//! claimed the difference was "visible only to timing", and that was wrong in a
+//! way that would have talked the next reader out of investigating: it is
+//! visible to **collision checking**, because the tool really does travel back
+//! up and this IR does not say so. Usually nothing is inside a hole the tool is
+//! already in — but deep-hole drilling breaking through into a fixture cavity is
+//! the counterexample, and that judgement belongs to the user with the fact in
+//! front of them rather than to the parser silently on their behalf.
 //!
 //! **`G83`'s re-entry clearance.** A real control rapids back down to just above
 //! the previous depth. "Just above" is again a parameter, so the rapid returns
@@ -139,6 +148,9 @@ pub struct CycleRequest {
     pub return_to_initial: bool,
     /// Peck depth in millimetres, for `G73`/`G83`.
     pub peck: Option<f64>,
+    /// `G73`'s chip-break retract distance, in millimetres, when the caller has
+    /// supplied one. `None` means the oscillation is omitted and counted.
+    pub chip_break: Option<f64>,
     /// Where the block is.
     pub site: Site,
 }
@@ -204,6 +216,24 @@ fn expand_unchecked(request: &CycleRequest) -> Vec<CycleMove> {
                     kind: MotionKind::Linear,
                     to: axis(next),
                 });
+                if next > request.bottom
+                    && request.kind == CycleKind::PeckChipBreak
+                    && let Some(clearance) = request.chip_break
+                    && clearance > 0.0
+                {
+                    // The real chip-break oscillation: up by the clearance, then
+                    // straight back down. Both moves are through space already
+                    // cut, which is why omitting them costs no material -- and
+                    // why omitting them is still wrong for a collision check.
+                    moves.push(CycleMove {
+                        kind: MotionKind::Rapid,
+                        to: axis(next + clearance),
+                    });
+                    moves.push(CycleMove {
+                        kind: MotionKind::Rapid,
+                        to: axis(next),
+                    });
+                }
                 if next > request.bottom && request.kind == CycleKind::PeckFullRetract {
                     // Full retract to clear the swarf, then back down to where
                     // the peck ended. See the module header for why there is no

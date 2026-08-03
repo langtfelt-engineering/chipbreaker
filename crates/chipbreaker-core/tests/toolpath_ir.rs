@@ -36,6 +36,7 @@ fn header() -> ToolpathHeader {
         arc_tolerance: 0.01,
         path_tolerance: None,
         block_skip_executed: true,
+        unmodelled_retracts: 0,
     }
 }
 

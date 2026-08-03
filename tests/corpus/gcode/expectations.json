@@ -61,12 +61,12 @@
       "expect": "parse"
     },
     "cycle-g73-g98": {
-      "_why": "Peck with a chip-break retract that is a machine parameter and is not modelled. G98 retracts to the initial Z, which changes every intermediate retract in a pattern.",
+      "_why": "Peck whose chip-break retract is a machine parameter absent from the file. Without --chip-break-clearance the retract is omitted and counted in the header, so a collision check can refuse to certify against it. G98 retracts to the initial Z, which changes every intermediate retract in a pattern.",
       "error": null,
       "expect": "parse"
     },
     "cycle-g73-g99": {
-      "_why": "Peck with a chip-break retract that is a machine parameter and is not modelled. G99 retracts to the R plane, which changes every intermediate retract in a pattern.",
+      "_why": "Peck whose chip-break retract is a machine parameter absent from the file. Without --chip-break-clearance the retract is omitted and counted in the header, so a collision check can refuse to certify against it. G99 retracts to the R plane, which changes every intermediate retract in a pattern.",
       "error": null,
       "expect": "parse"
     },

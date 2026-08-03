@@ -93,6 +93,13 @@ pub struct ParseOptions {
     pub strict: bool,
     /// Subprogram nesting cap.
     pub max_subprogram_depth: u32,
+    /// `G73`'s chip-break retract distance, in millimetres.
+    ///
+    /// No default, deliberately. It is a machine parameter absent from the NC
+    /// file, and inventing one would put motion in the IR that the machine may
+    /// not make. Absent, `G73` expands as a straight plunge and the omission is
+    /// counted in [`chipbreaker_core::toolpath::ToolpathHeader::unmodelled_retracts`].
+    pub chip_break_clearance: Option<f64>,
 }
 
 impl Default for ParseOptions {
@@ -105,6 +112,7 @@ impl Default for ParseOptions {
             execute_block_skip: true,
             strict: false,
             max_subprogram_depth: DEFAULT_SUBPROGRAM_DEPTH,
+            chip_break_clearance: None,
         }
     }
 }
@@ -147,6 +155,7 @@ pub struct Resolver<'a> {
     diagnostics: Diagnostics,
     stats: ParseStats,
     path_tolerance: Option<f64>,
+    unmodelled_retracts: u32,
 }
 
 impl<'a> Resolver<'a> {
@@ -183,6 +192,7 @@ impl<'a> Resolver<'a> {
             diagnostics: Diagnostics::new(),
             stats: ParseStats::default(),
             path_tolerance: None,
+            unmodelled_retracts: 0,
         }
     }
 
@@ -400,6 +410,7 @@ impl<'a> Resolver<'a> {
             arc_tolerance: self.options.arc_tolerance,
             path_tolerance: self.path_tolerance,
             block_skip_executed: self.options.execute_block_skip,
+            unmodelled_retracts: self.unmodelled_retracts,
         };
         let path =
             Toolpath::new(header, self.segments, self.events).map_err(|e| GcodeError::Ir {
@@ -936,8 +947,17 @@ impl Resolver<'_> {
                 initial_z: params.initial_z,
                 return_to_initial: self.state.cycle_return == CycleReturn::InitialZ,
                 peck: params.q,
+                chip_break: self.options.chip_break_clearance,
                 site: block.site,
             };
+            if kind == CycleKind::PeckChipBreak
+                && params.q.is_some_and(|q| q > 0.0)
+                && self.options.chip_break_clearance.is_none()
+            {
+                self.unmodelled_retracts += 1;
+                self.diagnostics
+                    .warn(GcodeWarning::UnmodelledRetract { site: block.site });
+            }
             let moves = cycles::expand(&request).map_err(|e| match e {
                 cycles::CycleError::TooManyPecks { wanted } => GcodeError::BadCycle {
                     site: block.site,

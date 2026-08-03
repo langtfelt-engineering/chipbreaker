@@ -379,3 +379,94 @@ fn execution_stops_at_m30_rather_than_falling_into_the_subprogram_bodies() {
         geometry(&path)
     );
 }
+
+// --- G73's chip-break retract ---------------------------------------------
+
+#[test]
+fn g73_without_a_clearance_omits_the_retract_and_says_so_structurally() {
+    // The omission is exact for material removal -- the retract goes into space
+    // already cut -- but it is NOT invisible to a collision check, and a warning
+    // in a list is too easy for a downstream unit to ignore. So it is counted in
+    // the header, where U14 can refuse to certify against it.
+    let path = run(&format!("{PREAMBLE}G98 G73 X20. Y30. Z-5. R2. Q3.\nG80\n"));
+    assert_eq!(
+        path.header.unmodelled_retracts, 1,
+        "the omission must be structural, not merely a warning"
+    );
+    // Geometrically a straight plunge, broken at the peck boundaries.
+    let plunges: Vec<f64> = path
+        .segments
+        .iter()
+        .filter(|s| s.kind == MotionKind::Linear)
+        .map(|s| s.end.z)
+        .collect();
+    assert_eq!(plunges, vec![-1.0, -4.0, -5.0]);
+    assert!(
+        path.segments
+            .iter()
+            .all(|s| s.kind != MotionKind::Rapid || s.end.z >= 2.0 || s.start.z >= 2.0),
+        "no intermediate rapid should appear inside the hole"
+    );
+}
+
+#[test]
+fn g73_with_a_clearance_emits_the_real_oscillation_and_the_counter_stays_zero() {
+    let path = run(&format!("{PREAMBLE}G98 G73 X20. Y30. Z-5. R2. Q3.\nG80\n"));
+    let supplied = parse(
+        &format!("{PREAMBLE}G98 G73 X20. Y30. Z-5. R2. Q3.\nG80\n"),
+        "test",
+        &ParseOptions {
+            chip_break_clearance: Some(0.5),
+            ..ParseOptions::default()
+        },
+        None,
+    )
+    .expect("parses")
+    .0;
+
+    assert_eq!(
+        supplied.header.unmodelled_retracts, 0,
+        "supplying the parameter means nothing is omitted"
+    );
+    assert!(
+        supplied.segments.len() > path.segments.len(),
+        "the oscillation is extra motion: {} against {}",
+        supplied.segments.len(),
+        path.segments.len()
+    );
+
+    // Up by the clearance from each peck bottom, then back down to it.
+    let inside: Vec<(f64, f64)> = supplied
+        .segments
+        .iter()
+        .filter(|s| s.kind == MotionKind::Rapid && s.start.z < 2.0 && s.end.z < 2.0)
+        .map(|s| (s.start.z, s.end.z))
+        .collect();
+    assert_eq!(
+        inside,
+        vec![(-1.0, -0.5), (-0.5, -1.0), (-4.0, -3.5), (-3.5, -4.0)]
+    );
+
+    // And the material removed is unchanged, which is the whole point: the
+    // difference is a collision-checking one, not a geometric one.
+    assert_eq!(
+        path.segments.last().expect("a segment").end,
+        supplied.segments.last().expect("a segment").end
+    );
+}
+
+#[test]
+fn only_g73_counts_as_an_unmodelled_retract() {
+    // G83's retract is unambiguous and is modelled, so it must not be counted.
+    for cycle in ["G81", "G83 Q3.", "G85"] {
+        let path = run(&format!("{PREAMBLE}G98 {cycle} X20. Y30. Z-5. R2.\nG80\n"));
+        assert_eq!(path.header.unmodelled_retracts, 0, "{cycle} omits nothing");
+    }
+}
+
+#[test]
+fn a_g73_without_a_q_word_is_a_plain_drill_and_omits_nothing() {
+    // No peck depth means no pecking, so there is no retract to be missing.
+    let path = run(&format!("{PREAMBLE}G98 G73 X20. Y30. Z-5. R2.\nG80\n"));
+    assert_eq!(path.header.unmodelled_retracts, 0);
+}

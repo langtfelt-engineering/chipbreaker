@@ -105,7 +105,7 @@ CYCLES = [
     ("g81", "G81", "", "Drill: position, plunge to R, feed to depth, retract."),
     ("g82", "G82", " P0.5", "Drill with a dwell, which removes no material."),
     ("g83", "G83", " Q3.", "Peck with a full retract to the R plane between pecks."),
-    ("g73", "G73", " Q3.", "Peck with a chip-break retract that is a machine parameter and is not modelled."),
+    ("g73", "G73", " Q3.", "Peck whose chip-break retract is a machine parameter absent from the file. Without --chip-break-clearance the retract is omitted and counted in the header, so a collision check can refuse to certify against it."),
     ("g85", "G85", "", "Bore: feed in, feed back out."),
     ("g86", "G86", "", "Bore with the spindle stopped: feed in, rapid out."),
     ("g84", "G84", "", "Tapping, which is geometrically a bore."),
