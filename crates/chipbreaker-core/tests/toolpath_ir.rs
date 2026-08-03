@@ -12,18 +12,21 @@ use std::collections::BTreeMap;
 use chipbreaker_core::golden::CanonicalHash;
 use chipbreaker_core::math::Vec3;
 use chipbreaker_core::toolpath::{
-    ArcData, ArcForm, ArcPlane, FeedMode, FeedSpec, MotionKind, MotionSegment, PathEvent,
-    PathEventKind, Provenance, RapidPath, TOOLPATH_SCHEMA_VERSION, Toolpath, ToolpathError,
-    ToolpathHeader, WorkOffsetId,
+    ArcData, ArcForm, ArcPlane, FeedMode, FeedSpec, MotionKind, MotionSegment, OffsetEpoch,
+    PathEvent, PathEventKind, Provenance, RapidPath, TOOLPATH_SCHEMA_VERSION, Toolpath,
+    ToolpathError, ToolpathHeader, WorkOffsetId,
 };
 
 fn header() -> ToolpathHeader {
     let mut offsets = BTreeMap::new();
     offsets.insert(
         WorkOffsetId::from_gcode(54, 0).expect("G54"),
-        // A full-precision value, per the fixture rule in CONTRIBUTING.md:
-        // round numbers survive any serializer ever written.
-        Vec3::new(-250.5, -100.25, -2.048_155_585_660_824_2),
+        vec![OffsetEpoch {
+            // A full-precision value, per the fixture rule in CONTRIBUTING.md:
+            // round numbers survive any serializer ever written.
+            value: Vec3::new(-250.5, -100.25, -2.048_155_585_660_824_2),
+            from_segment: 0,
+        }],
     );
     ToolpathHeader {
         schema_version: TOOLPATH_SCHEMA_VERSION,

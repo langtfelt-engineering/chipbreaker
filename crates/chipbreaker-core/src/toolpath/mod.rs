@@ -137,6 +137,27 @@ impl Hashable for WorkOffsetId {
     }
 }
 
+/// One value of a work offset, and the segment from which it applied.
+///
+/// Programs that never touch `G10` have exactly one epoch per offset, starting
+/// at segment zero.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OffsetEpoch {
+    /// Translation from machine origin to workpiece origin, in millimetres.
+    pub value: Vec3,
+    /// Index of the first segment for which this value was in force.
+    pub from_segment: u32,
+}
+
+impl Hashable for OffsetEpoch {
+    fn hash_canonical(&self, h: &mut CanonicalHash) {
+        h.begin("OffsetEpoch");
+        h.f64_slice(&self.value.to_array());
+        h.u64(u64::from(self.from_segment));
+        h.end();
+    }
+}
+
 /// Everything needed to interpret the segments that follow.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ToolpathHeader {
@@ -144,13 +165,19 @@ pub struct ToolpathHeader {
     pub schema_version: u32,
     /// Name of the program this came from, for reports.
     pub program: String,
-    /// Work offsets seen anywhere in the program, as translations from machine
-    /// origin to workpiece origin, in millimetres.
+    /// Work offsets seen anywhere in the program, **versioned**.
+    ///
+    /// Versioned because `G10 L2` lets a program rewrite an offset partway
+    /// through. The segments themselves are unaffected — they are in machine
+    /// coordinates, so earlier geometry stays correct — but a report rendering
+    /// into a workpiece frame must use the value that was in force *then*, not
+    /// the value the program finished with. A flat map would place every early
+    /// move wrongly and look entirely reasonable doing it.
     ///
     /// A `BTreeMap` rather than a `HashMap`: this is iterated when hashing, and
     /// an unordered iteration reaching a float is exactly what the determinism
     /// rules forbid.
-    pub offsets: BTreeMap<WorkOffsetId, Vec3>,
+    pub offsets: BTreeMap<WorkOffsetId, Vec<OffsetEpoch>>,
     /// How rapids were represented.
     pub rapid_path: RapidPath,
     /// Arc radius mismatch tolerance actually used, in millimetres.
@@ -170,9 +197,12 @@ impl Hashable for ToolpathHeader {
         h.u64(u64::from(self.schema_version));
         h.str(&self.program);
         h.usize(self.offsets.len());
-        for (id, offset) in &self.offsets {
+        for (id, epochs) in &self.offsets {
             h.add(id);
-            h.f64_slice(&offset.to_array());
+            h.usize(epochs.len());
+            for epoch in epochs {
+                h.add(epoch);
+            }
         }
         h.add(&self.rapid_path);
         h.f64(self.arc_tolerance);
