@@ -558,7 +558,7 @@ fn run_parity(mesh: &TriMesh, lattice: u32, aligned: bool) -> ParityOutcome {
     }
 }
 
-fn write_mesh(mesh: &TriMesh, out: &Path) -> Result<(usize, &'static str), String> {
+pub fn write_mesh(mesh: &TriMesh, out: &Path) -> Result<(usize, &'static str), String> {
     let extension = out
         .extension()
         .and_then(|s| s.to_str())

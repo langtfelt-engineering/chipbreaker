@@ -53,6 +53,22 @@ pub const TRANSCENDENTAL_SEED: u64 = 0x0000_C41B_0000_0004;
 /// Iterations of the transcendental parity suite.
 pub const TRANSCENDENTAL_CASES: usize = 4_000;
 
+/// Seed for the root-solver suite.
+pub const ROOT_SOLVER_SEED: u64 = 0x0000_C41B_0000_0005;
+
+/// Polynomials solved in the root-solver suite.
+pub const ROOT_SOLVER_CASES: usize = 3_000;
+
+/// Rays per side of the lattice cast at each tool, per axis.
+///
+/// Twelve gives 144 positions times three axes times nine tools, which is a few
+/// thousand rays: enough to reach every surface at a range of incidences, and
+/// fast enough that the self-test stays a thing anyone will run.
+pub const TOOL_RAYS_PER_SIDE: usize = 12;
+
+/// Tessellation tolerance used by the tool suite, in millimetres.
+pub const TOOL_TESSELLATION_TOLERANCE: f64 = 0.05;
+
 /// One failing case within a suite.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Failure {
@@ -156,6 +172,8 @@ pub fn run() -> SelfTestReport {
         math_kernel_suite(),
         transcendental_suite(),
         mesh_suite(),
+        root_solver_suite(),
+        tool_geometry_suite(),
         canonical_hash_suite(),
     ];
     let mut report = SelfTestReport {
@@ -809,6 +827,286 @@ fn canonical_hash_suite() -> SuiteResult {
         name: "hash.selfcheck",
         description: "canonical encoding known-answer checks (widening, NaN, signed zero)",
         cases: values.len() + 6,
+        failures,
+        digest: h.finish(),
+    }
+}
+
+/// Root solving must be bit-identical across targets.
+///
+/// # Why this suite exists at all
+///
+/// The solver reaches [`crate::transcendental`] for `acos`, `cos` and `cbrt` on
+/// the cubic's three-real-root branch, and it is the only place in the engine
+/// that does so inside an inner loop. A `std` call slipping in there would break
+/// WASM parity for every ray that touched a torus, and nothing else in the
+/// self-test would notice: the transcendental suite checks the functions, not
+/// their callers.
+///
+/// # Why the polynomials are built from roots rather than sampled
+///
+/// Random coefficients almost never produce a repeated root, and the repeated
+/// root is the interesting case — it is where the solver leaves the closed form
+/// and goes through the critical points of `p'`, and where the answer is
+/// determined to `sqrt(eps)` rather than to `eps`. Building from a known root
+/// set makes the hard branch the common case instead of an accident.
+///
+/// The roots are dyadic and small, so expanding the product is exact in `f64`
+/// and the coefficients the solver sees represent precisely the polynomial
+/// intended.
+fn root_solver_suite() -> SuiteResult {
+    use crate::roots::{eval, solve_cubic, solve_quadratic, solve_quartic};
+
+    let mut rng = StdRng::seed_from_u64(ROOT_SOLVER_SEED);
+    let mut failures = Vec::new();
+    let mut h = CanonicalHash::new();
+    h.begin("roots");
+
+    // Expands `a * (x - r0)(x - r1)...` into descending coefficients.
+    let from_roots = |a: f64, roots: &[f64]| -> Vec<f64> {
+        let mut c = vec![a];
+        for &r in roots {
+            let mut next = vec![0.0; c.len() + 1];
+            for (i, &v) in c.iter().enumerate() {
+                next[i] += v;
+                next[i + 1] -= v * r;
+            }
+            c = next;
+        }
+        c
+    };
+
+    for i in 0..ROOT_SOLVER_CASES {
+        // Quarters in [-8, 8]: exactly representable, and small enough that the
+        // expanded coefficients of a quartic are exact too.
+        let pick = |rng: &mut StdRng| f64::from(rng.random_range(-32i32..=32)) / 4.0;
+        let lead = if i % 7 == 0 { -2.0 } else { 1.0 };
+
+        // Every third case repeats a root, so the repeated-root path is
+        // exercised on a third of the corpus rather than by luck.
+        let degree = 2 + i % 3;
+        let mut chosen: Vec<f64> = (0..degree).map(|_| pick(&mut rng)).collect();
+        if i % 3 == 0 && !chosen.is_empty() {
+            chosen[0] = chosen[chosen.len() - 1];
+        }
+
+        let coefficients = from_roots(lead, &chosen);
+        let found = match coefficients.len() {
+            3 => solve_quadratic(coefficients[0], coefficients[1], coefficients[2]),
+            4 => solve_cubic(
+                coefficients[0],
+                coefficients[1],
+                coefficients[2],
+                coefficients[3],
+            ),
+            _ => solve_quartic(
+                coefficients[0],
+                coefficients[1],
+                coefficients[2],
+                coefficients[3],
+                coefficients[4],
+            ),
+        };
+
+        h.add(&found);
+
+        // Every root the solver found must actually be one, and every root that
+        // was built in must be found. Both directions, because either alone
+        // permits a solver that is silently half right.
+        for (value, _) in found.iter() {
+            let residual = eval(&coefficients, value).abs();
+            let scale: f64 = coefficients.iter().fold(0.0, |m, c| m.max(c.abs()));
+            let tolerance = 1.0e-6 * scale.max(1.0);
+            if residual > tolerance {
+                failures.push(Failure {
+                    case: format!("case {i}: residual"),
+                    detail: format!(
+                        "root {value} of {coefficients:?} leaves residual {residual}, above {tolerance}"
+                    ),
+                });
+            }
+        }
+        for r in &chosen {
+            let nearest = found
+                .roots()
+                .iter()
+                .fold(f64::INFINITY, |m, v| m.min((v - r).abs()));
+            // A repeated root is displaced by about sqrt(eps) relative to its
+            // own magnitude, which is the accuracy floor and not an error.
+            let allowed = 1.0e-5 * r.abs().max(1.0);
+            if nearest > allowed {
+                failures.push(Failure {
+                    case: format!("case {i}: missing root"),
+                    detail: format!(
+                        "built {coefficients:?} from {chosen:?}; {r} is {nearest} from the nearest root found"
+                    ),
+                });
+            }
+        }
+    }
+    h.end();
+
+    SuiteResult {
+        name: "roots",
+        description: "real roots of seeded polynomials built from known roots, a third of them repeated",
+        cases: ROOT_SOLVER_CASES,
+        failures,
+        digest: h.finish(),
+    }
+}
+
+/// Tool geometry, ray casting and tessellation must agree across targets.
+///
+/// # What would go wrong without it
+///
+/// The ray-versus-tool path is the whole of Unit 3 in one function: it reaches
+/// the root solver, `atan2`, `hypot` and `sin_cos`, and it decides interval
+/// membership from a containment predicate. Any of those disagreeing by one ULP
+/// on one target moves a span endpoint, and a moved span endpoint is material
+/// removed in a different place. Hashing the spans themselves — rather than a
+/// count or a total — is what makes that a CI failure rather than a slow drift.
+///
+/// The tools are the catalogue forms, so the sweep covers cylinders, cones,
+/// discs, spheres and tori, which are the five surfaces a profile can generate
+/// and the five polynomial cases the solver has to handle.
+fn tool_geometry_suite() -> SuiteResult {
+    use crate::math::{Ray, Vec3};
+    use crate::tool::catalog::{
+        HolderStage, Shank, ball_end_mill, barrel_end_mill, bull_end_mill, chamfer_mill, drill,
+        flat_end_mill, tapered_end_mill,
+    };
+    use crate::tool::profile::Profile;
+    use crate::tool::raycast::{RaycastScratch, RaycastStats};
+
+    let mut failures = Vec::new();
+    let mut h = CanonicalHash::new();
+    h.begin("tool");
+
+    let shank = Shank::plain(6.0, 50.0);
+    let held = Shank::with_holder(
+        6.0,
+        40.0,
+        [
+            HolderStage::cylinder(25.0, 20.0),
+            HolderStage::taper(25.0, 40.0, 15.0),
+        ],
+    );
+    let tools: Vec<(&str, Profile)> = vec![
+        ("flat", flat_end_mill(6.0, 20.0, &shank).expect("valid")),
+        (
+            "flat-necked",
+            flat_end_mill(10.0, 20.0, &Shank::plain(6.0, 50.0)).expect("valid"),
+        ),
+        ("ball", ball_end_mill(6.0, 20.0, &shank).expect("valid")),
+        (
+            "bull",
+            bull_end_mill(10.0, 2.0, 20.0, &Shank::plain(8.0, 50.0)).expect("valid"),
+        ),
+        (
+            "chamfer",
+            chamfer_mill(8.0, 1.0, 90.0, 20.0, &Shank::plain(8.0, 50.0)).expect("valid"),
+        ),
+        (
+            "taper",
+            tapered_end_mill(2.0, 10.0, 20.0, &Shank::plain(8.0, 50.0)).expect("valid"),
+        ),
+        ("drill", drill(6.0, 118.0, 30.0, &shank).expect("valid")),
+        (
+            "barrel",
+            barrel_end_mill(12.0, 60.0, 40.0, &Shank::plain(12.0, 70.0)).expect("valid"),
+        ),
+        ("held", flat_end_mill(6.0, 20.0, &held).expect("valid")),
+    ];
+
+    let mut cases = 0usize;
+    for (name, profile) in &tools {
+        h.str(name);
+        h.add(profile);
+        // Closed-form properties: a divergence between targets here would mean
+        // the arithmetic itself differs, before any ray is cast.
+        h.f64_slice(&[
+            profile.volume(),
+            profile.surface_area(),
+            profile.max_radius(),
+            profile.total_length(),
+        ]);
+        cases += 1;
+
+        let cylinder = profile.bounding_cylinder();
+        let radius = cylinder.radius * 1.25 + 1.0;
+        let mut scratch = RaycastScratch::with_capacity(profile.len());
+        let mut spans = crate::spans::Spans::new();
+        let mut stats = RaycastStats::default();
+
+        // A fixed lattice rather than a random one: the point is reproducibility
+        // across targets, and a seeded generator would add a second thing that
+        // could differ. Cell centres keep every ray off the axis, where a
+        // surface of revolution is met tangentially by construction.
+        for i in 0..TOOL_RAYS_PER_SIDE {
+            let u = -radius + 2.0 * radius * (i as f64 + 0.5) / TOOL_RAYS_PER_SIDE as f64;
+            for j in 0..TOOL_RAYS_PER_SIDE {
+                let v = cylinder.z_min - 0.5
+                    + (cylinder.z_max - cylinder.z_min + 1.0) * (j as f64 + 0.5)
+                        / TOOL_RAYS_PER_SIDE as f64;
+                for axis in 0..3 {
+                    let (origin, direction) = match axis {
+                        0 => (Vec3::new(-radius - 1.0, u, v), Vec3::new(1.0, 0.0, 0.0)),
+                        1 => (Vec3::new(u, -radius - 1.0, v), Vec3::new(0.0, 1.0, 0.0)),
+                        _ => (
+                            Vec3::new(u, v - cylinder.z_max, cylinder.z_min - 1.0),
+                            Vec3::new(0.0, 0.0, 1.0),
+                        ),
+                    };
+                    let Some(ray) = Ray::new_normalized(origin, direction) else {
+                        continue;
+                    };
+                    profile.intersect_ray_into(&ray, &mut scratch, &mut spans, &mut stats);
+                    // The spans themselves, not a summary of them.
+                    h.add(&spans);
+                    cases += 1;
+
+                    // A leak is the failure that matters, and it is checked here
+                    // as well as hashed: a hash only catches a *change*, and a
+                    // leak that was present from the first run would hash
+                    // consistently and still be wrong.
+                    let reach = 2.0 * (radius + cylinder.z_max + 2.0) + 2.0;
+                    for span in spans.iter() {
+                        if !span.t0.is_finite() || !span.t1.is_finite() || span.t1 > reach {
+                            failures.push(Failure {
+                                case: format!("{name}: leak on axis {axis}"),
+                                detail: format!("span {span} escapes a bound of {reach}"),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        // Tessellation: subdivision counts come from `acos`, so the mesh is a
+        // second, independent consumer of the transcendental layer.
+        let (mesh, report) = profile
+            .tessellate(TOOL_TESSELLATION_TOLERANCE)
+            .expect("valid");
+        h.add(&mesh);
+        h.usize(report.divisions);
+        h.usize(report.stations);
+        cases += 1;
+
+        let exact = profile.volume();
+        let measured = mesh.signed_volume();
+        if measured > exact * (1.0 + 1.0e-9) {
+            failures.push(Failure {
+                case: format!("{name}: tessellation is not inscribed"),
+                detail: format!("mesh volume {measured} exceeds the true {exact}"),
+            });
+        }
+    }
+    h.end();
+
+    SuiteResult {
+        name: "tool",
+        description: "tool profiles, closed-form properties, ray-cast spans and tessellation across the catalogue",
+        cases,
         failures,
         digest: h.finish(),
     }

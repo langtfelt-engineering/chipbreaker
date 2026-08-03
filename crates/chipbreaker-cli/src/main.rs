@@ -11,6 +11,8 @@
 
 mod mesh;
 mod report;
+mod roots;
+mod tool;
 
 use std::io::Write;
 use std::path::PathBuf;
@@ -49,6 +51,19 @@ enum Command {
         #[command(subcommand)]
         command: mesh::MeshCommand,
     },
+    /// Describe, tessellate and ray-cast cutting tools.
+    Tool {
+        #[command(subcommand)]
+        command: tool::ToolCommand,
+    },
+    /// Solve polynomials for their real roots.
+    ///
+    /// The solver behind every ray-versus-tool intersection, exposed so that a
+    /// surprising intersection can be reduced to the polynomial that produced it.
+    Roots {
+        #[command(subcommand)]
+        command: roots::RootsCommand,
+    },
     /// Print version information.
     Version {
         /// Emit JSON instead of a single line of text.
@@ -70,6 +85,16 @@ fn main() -> ExitCode {
     match cli.command {
         Command::Selftest { report, out } => run_selftest(report, out.as_deref()),
         Command::Mesh { command } => run_mesh(&command),
+        Command::Tool { command } => {
+            let as_json = command.source().json;
+            let (outcome, elapsed) = mesh::timed(|| tool::run(&command));
+            emit(outcome, elapsed, as_json)
+        }
+        Command::Roots { command } => {
+            let as_json = command.json();
+            let (outcome, elapsed) = mesh::timed(|| roots::run(&command));
+            emit(outcome, elapsed, as_json)
+        }
         Command::Version { json } => {
             print_version(json);
             ExitCode::SUCCESS
@@ -127,6 +152,33 @@ fn run_selftest(format: ReportFormat, out: Option<&std::path::Path>) -> ExitCode
             results.suites.iter().filter(|s| !s.passed()).count()
         );
         ExitCode::FAILURE
+    }
+}
+
+/// Prints a command's result and turns it into an exit code.
+///
+/// Shared by every subcommand that follows the results/environment convention,
+/// so that a new verb cannot accidentally render or exit differently from the
+/// ones already there.
+fn emit(
+    outcome: Result<(serde_json::Value, String, bool), String>,
+    elapsed: std::time::Duration,
+    as_json: bool,
+) -> ExitCode {
+    match outcome {
+        Ok((results, text, ok)) => {
+            print!("{}", mesh::render(&results, &text, elapsed, as_json));
+            let _ = std::io::stdout().flush();
+            if ok {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
+            }
+        }
+        Err(message) => {
+            eprintln!("chipbreaker: {message}");
+            ExitCode::FAILURE
+        }
     }
 }
 
