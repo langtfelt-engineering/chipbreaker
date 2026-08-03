@@ -1,0 +1,79 @@
+{
+  "note": "Computed from textbook formulas independently of Chipbreaker, and every volume cross-checked to 1e-9 against piecewise Simpson quadrature of pi * integral r(z)^2 dz, with arcs integrated in their own angle. A null field is one this file does not pin. Regenerate with scripts/tool_corpus_expectations.py.",
+  "schema": "chipbreaker.tool-corpus-expectations",
+  "tools": {
+    "ball-6": {
+      "area": 970.7521299592461,
+      "cutting_length": 20.0,
+      "diameter": 6.0,
+      "formula": "hemisphere r=3 + cylinder r=3 h=47",
+      "total_length": 50.0,
+      "volume": 1385.4423602330987
+    },
+    "barrel-12-r200": {
+      "area": null,
+      "cutting_length": 60.0,
+      "diameter": 12.0,
+      "formula": "arc R=200 centred at r=-194, tip to widest point, then cylinder r=6",
+      "total_length": 90.0,
+      "volume": 7625.333283551692
+    },
+    "bull-10-r2": {
+      "area": 1824.7926977239997,
+      "cutting_length": 30.0,
+      "diameter": 10.0,
+      "formula": "flat r<=3, quarter torus R=3 rho=2, cylinder r=5 to z=30, shank r=4 to z=60",
+      "total_length": 60.0,
+      "volume": 3839.600786226254
+    },
+    "chamfer-8-90": {
+      "area": 1415.3624601758231,
+      "cutting_length": 20.0,
+      "diameter": 8.0,
+      "formula": "disc r=0.5, frustum 0.5->4 over 3.5, cylinder r=4 to z=55",
+      "total_length": 55.0,
+      "volume": 2655.562090140672
+    },
+    "drill-6-118": {
+      "area": 969.7600446321326,
+      "cutting_length": 30.0,
+      "diameter": 6.0,
+      "formula": "cone r=3 h=3/tan(59), cylinder r=3 to z=50",
+      "total_length": 50.0,
+      "volume": 1379.7388265971758
+    },
+    "flat-6": {
+      "area": 999.0264638415542,
+      "cutting_length": 20.0,
+      "diameter": 6.0,
+      "formula": "cylinder r=3 h=50; area = side + two discs",
+      "total_length": 50.0,
+      "volume": 1413.7166941154069
+    },
+    "held-12": {
+      "area": null,
+      "cutting_length": 30.0,
+      "diameter": 50.0,
+      "formula": "cylinder r=6 h=60, holder cylinder r=16 h=28, holder frustum 16->25 over 22",
+      "total_length": 110.0,
+      "volume": 58816.897660508104
+    },
+    "taper-3deg": {
+      "area": 1161.923801131871,
+      "cutting_length": 20.0,
+      "diameter": 8.0,
+      "formula": "disc r=1, frustum 1->1+20 tan3 over 20, step to r=4, cylinder to z=55",
+      "total_length": 55.0,
+      "volume": 1910.9909525095325
+    },
+    "vbit-8-60": {
+      "area": 1358.972475985334,
+      "cutting_length": 20.0,
+      "diameter": 8.0,
+      "formula": "cone r=4 h=4/tan(30), cylinder r=4 to z=55",
+      "total_length": 55.0,
+      "volume": 2532.4352165370383
+    }
+  },
+  "version": 1
+}
