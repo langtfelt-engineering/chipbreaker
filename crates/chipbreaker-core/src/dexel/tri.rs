@@ -407,6 +407,15 @@ impl TriDexelField {
         self.bundles[axis.index()].as_ref()
     }
 
+    /// One bundle mutably, if it was built.
+    ///
+    /// The only way Unit 7 reaches a field's contents, and deliberately one
+    /// bundle at a time: the cut contract is that a bundle is subtracted from
+    /// independently and never compared with another.
+    pub const fn bundle_mut(&mut self, axis: Axis) -> Option<&mut DexelField> {
+        self.bundles[axis.index()].as_mut()
+    }
+
     /// Every bundle that was built, in [`AXES`] order.
     pub fn bundles(&self) -> impl Iterator<Item = (Axis, &DexelField)> {
         AXES.into_iter()

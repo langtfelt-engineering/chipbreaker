@@ -310,8 +310,22 @@ fn memory_is_proportional_to_rays_and_free_of_per_ray_allocation() {
     }
     assert_eq!(a.bytes(), b.bytes(), "filling changes no allocation");
 
+    // No ray has spilled, so the spill index has not been allocated at all and
+    // the arena costs exactly what Unit 5 measured. Unit 7 made the index lazy
+    // precisely so the bundles that never spill keep paying nothing.
     let expected = 1000 * INLINE_CAPACITY * size_of::<Span>() + 1000 * size_of::<u16>();
     assert_eq!(a.bytes(), expected);
+
+    // And a single spilled ray brings the index in, once, for the whole arena.
+    let many: Vec<Span> = (0..5)
+        .map(|k| span(f64::from(k), f64::from(k) + 0.5))
+        .collect();
+    a.set(0, &many);
+    assert_eq!(
+        a.bytes(),
+        expected + 1000 * size_of::<u32>() + many.len() * size_of::<Span>(),
+        "spilling should add the index and the spans, and nothing else"
+    );
 }
 
 // --- the U6 amendment ------------------------------------------------------

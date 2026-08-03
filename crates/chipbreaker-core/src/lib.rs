@@ -13,6 +13,7 @@ pub mod predicates;
 pub mod roots;
 pub mod selftest;
 pub mod spans;
+pub mod sweep;
 pub mod tool;
 pub mod toolpath;
 pub mod transcendental;

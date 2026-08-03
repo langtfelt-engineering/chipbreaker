@@ -28,6 +28,30 @@
 //! hole gives two spans only when it runs *transverse* to the bundle. Worth
 //! knowing before sizing anything against "holes give two spans".
 //!
+//! # Amended at U7: the spill path was the wrong half
+//!
+//! The table above is the distribution of **stock at rest**, and Unit 7 measured
+//! the population that actually matters — after cutting:
+//!
+//! | geometry | max spans | spilled rays |
+//! |---|---:|---:|
+//! | stock at rest | 1 | 0 |
+//! | one slot | 2 | 0 |
+//! | two slots either side of a rib | 3 | 4,500 |
+//! | five slots | 6 | 4,500 |
+//!
+//! And spill turned out to be **per bundle**, not per ray: on the rib the `y`
+//! bundle spilled all 4,500 of its rays while `x` and `z` spilled none, because
+//! features running along one axis are crossed by every ray of the perpendicular
+//! bundle.
+//!
+//! So the capacity was never the interesting number. Raising it to 4 would have
+//! cost 94% more memory on all three bundles to postpone a threshold two of them
+//! never approach. What needed fixing was the spill path, which allocated a
+//! `Vec` per spilled ray — the very per-ray allocation this arena exists to
+//! avoid. It is now a single chunked heap with a lazy index. See ADR 0001
+//! Part 4.
+//!
 //! # Why not `Vec<Spans>`
 //!
 //! Unit 1 measured it: 24 bytes of header per ray plus one allocation each. A
@@ -72,12 +96,32 @@ pub struct Arena {
     /// can genuinely carry hundreds, and a silent wrap at 256 would be a field
     /// that looks fine and is wrong.
     len: Vec<u16>,
-    /// Rays that outgrew the inline slots, holding **all** of their spans.
+    /// Where each spilled ray's spans begin in [`Self::heap`], or [`NO_SPILL`].
     ///
-    /// A `BTreeMap` because this is iterated when hashing, and unordered
-    /// iteration reaching a float is what the determinism rules forbid.
-    spill: BTreeMap<u32, Vec<Span>>,
+    /// One `u32` per ray rather than a map entry, and **empty until the first
+    /// ray spills**. Unit 7 measured that spill is per-bundle rather than per-
+    /// ray: cutting slots along one axis spills every ray of the perpendicular
+    /// bundle and none of the other two. Allocating this eagerly would charge
+    /// the two clean bundles 4 bytes a ray for a case they never reach.
+    spill_at: Vec<u32>,
+    /// Every spilled ray's spans, in one allocation.
+    ///
+    /// Append-only between compactions, so a ray that grows leaves its old
+    /// region behind as garbage. [`Self::garbage`] tracks how much, and
+    /// [`Self::compact`] reclaims it deterministically.
+    heap: Vec<Span>,
+    /// Spans in [`Self::heap`] that no ray points at any more.
+    garbage: usize,
 }
+
+/// [`Arena::spill_at`] entry for a ray that has not spilled.
+const NO_SPILL: u32 = u32::MAX;
+
+/// Compact once garbage reaches this share of the heap.
+///
+/// Half, so compaction is amortised `O(1)` per growth: each compaction at least
+/// halves the heap, and the work done is proportional to what survives.
+const COMPACT_AT: usize = 2;
 
 impl Arena {
     /// An arena for `rays` rays, every one empty.
@@ -94,7 +138,9 @@ impl Arena {
         Self {
             inline: vec![Span::new(0.0, 0.0); rays * INLINE_CAPACITY],
             len: vec![0; rays],
-            spill: BTreeMap::new(),
+            spill_at: Vec::new(),
+            heap: Vec::new(),
+            garbage: 0,
         }
     }
 
@@ -122,7 +168,14 @@ impl Arena {
         assert!(index < self.len.len(), "ray {ray} out of range");
         let count = self.len[index] as usize;
         if count > INLINE_CAPACITY {
-            return self.spill.get(&ray).map_or(&[], Vec::as_slice);
+            let Some(&at) = self.spill_at.get(index) else {
+                return &[];
+            };
+            if at == NO_SPILL {
+                return &[];
+            }
+            let start = at as usize;
+            return &self.heap[start..start + count];
         }
         let base = index * INLINE_CAPACITY;
         &self.inline[base..base + count]
@@ -155,20 +208,45 @@ impl Arena {
         let count = u16::try_from(spans.len())
             .unwrap_or_else(|_| panic!("ray {ray} has {} spans, more than u16", spans.len()));
 
+        let previous = self.len[index] as usize;
         if spans.len() > INLINE_CAPACITY {
-            // Spilled. The inline slots are left as they are rather than
-            // cleared: `get` never reads them while `len` exceeds the capacity,
-            // and clearing them would be work that changes nothing observable.
-            self.spill.insert(ray, spans.to_vec());
+            if self.spill_at.is_empty() {
+                self.spill_at = vec![NO_SPILL; self.len.len()];
+            }
+            let at = self.spill_at[index];
+            if at != NO_SPILL && previous >= spans.len() {
+                // Fits where it already lives. Writing in place keeps a
+                // shrinking ray from churning the heap, and the leftover tail
+                // becomes garbage that compaction will reclaim.
+                let start = at as usize;
+                self.heap[start..start + spans.len()].copy_from_slice(spans);
+                self.garbage += previous - spans.len();
+            } else {
+                if at != NO_SPILL {
+                    self.garbage += previous;
+                }
+                let start = u32::try_from(self.heap.len())
+                    .unwrap_or_else(|_| panic!("the spill heap has outgrown a u32 offset"));
+                self.heap.extend_from_slice(spans);
+                self.spill_at[index] = start;
+            }
         } else {
-            // Back within the inline slots, so any previous spill must go --
-            // otherwise a ray that shrank would keep stale storage alive and
-            // the arena would only ever grow.
-            self.spill.remove(&ray);
+            // Back within the inline slots, so any previous spill is garbage --
+            // otherwise a ray that shrank would keep stale storage alive.
+            if self.spill_at.get(index).is_some_and(|a| *a != NO_SPILL) {
+                self.garbage += previous;
+                self.spill_at[index] = NO_SPILL;
+            }
             let base = index * INLINE_CAPACITY;
             self.inline[base..base + spans.len()].copy_from_slice(spans);
         }
         self.len[index] = count;
+
+        if self.garbage > 0
+            && self.heap.len() >= COMPACT_AT * (self.heap.len() - self.garbage).max(1)
+        {
+            self.compact();
+        }
     }
 
     /// Copies one ray's spans into `out`, which is cleared first.
@@ -205,7 +283,29 @@ impl Arena {
     /// fresh measurement rather than by intuition.
     #[must_use]
     pub fn spilled_rays(&self) -> usize {
-        self.spill.len()
+        self.spill_at.iter().filter(|a| **a != NO_SPILL).count()
+    }
+
+    /// Reclaims heap space no ray points at any more.
+    ///
+    /// Walks rays in **ascending index**, so the compacted layout is a pure
+    /// function of the contents and not of the order rays happened to grow. Two
+    /// arenas holding the same spans compact to the same bytes, which is what
+    /// keeps the field hash independent of history.
+    fn compact(&mut self) {
+        let mut fresh = Vec::with_capacity(self.heap.len() - self.garbage);
+        for ray in 0..self.spill_at.len() {
+            if self.spill_at[ray] == NO_SPILL {
+                continue;
+            }
+            let start = self.spill_at[ray] as usize;
+            let count = self.len[ray] as usize;
+            let at = u32::try_from(fresh.len()).unwrap_or(NO_SPILL);
+            fresh.extend_from_slice(&self.heap[start..start + count]);
+            self.spill_at[ray] = at;
+        }
+        self.heap = fresh;
+        self.garbage = 0;
     }
 
     /// Span counts by ray, as a histogram from span count to ray count.
@@ -223,11 +323,8 @@ impl Arena {
     pub fn bytes(&self) -> usize {
         self.inline.len() * size_of::<Span>()
             + self.len.len() * size_of::<u16>()
-            + self
-                .spill
-                .values()
-                .map(|v| v.len() * size_of::<Span>() + size_of::<u32>())
-                .sum::<usize>()
+            + self.spill_at.len() * size_of::<u32>()
+            + self.heap.len() * size_of::<Span>()
     }
 }
 

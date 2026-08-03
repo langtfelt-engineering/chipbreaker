@@ -392,3 +392,90 @@ the design is wrong.
 
 - Memory is a pure function of ray count until something spills, which
   `memory_is_proportional_to_rays_and_free_of_per_ray_allocation` asserts.
+
+
+---
+
+# Part 4 — The spill path, rebuilt at U7
+
+- **Status:** Accepted, implemented
+- **Date:** 2026-08-03
+- **Unit:** 7
+- **Amends:** Part 3's `BTreeMap<u32, Vec<Span>>` spill
+
+## The measurement Part 3 could not have taken
+
+Part 3 sized `INLINE_CAPACITY = 2` on **stock at rest**, and said so: the
+distribution there is nearly degenerate, one span on every filled ray, and only
+a genuine internal cavity reaches two. It also said that if `spilled_rays()`
+stopped being near zero on real work, the number should be revisited against a
+fresh measurement rather than by intuition.
+
+Unit 7 took that measurement, on a 60x40x12 mm block at 0.4 mm cells:
+
+| geometry | max spans | spilled rays |
+|---|---:|---:|
+| stock at rest | 1 | 0 |
+| one slot (a pocket) | 2 | 0 |
+| two slots either side of a rib | **3** | **4,500** |
+| five slots (a comb) | **6** | **4,500** |
+
+The aggregate figure hides the shape of it. Per bundle, on the rib:
+
+```
+x: 3000 rays, max 1 span,  0 spilled
+y: 4500 rays, max 3 spans, 4500 spilled     <- every ray
+z: 15000 rays, max 1 span, 0 spilled
+```
+
+**Spill is not a tail. It is per bundle.** When features run parallel to one
+axis, every ray of the perpendicular bundle crosses every feature, so one bundle
+spills completely while the other two never spill at all.
+
+## Why not simply raise the capacity
+
+Because it moves a threshold rather than removing one. Capacity 4 covers the
+rib and not the comb; an eleven-slot part needs twelve. And it is paid on every
+ray of every bundle:
+
+| | bytes/ray | cube 100^3 at 0.05 mm |
+|---|---:|---:|
+| capacity 2 | 34 | 389 MiB |
+| capacity 4 | 66 | 755 MiB |
+| capacity 6 | 98 | 1121 MiB |
+
+Ninety-four percent more memory, on all three bundles, to postpone a threshold
+that two of them never approach.
+
+## Decision
+
+Keep `INLINE_CAPACITY = 2`. Replace the spill map with a chunked heap:
+
+```rust
+spill_at: Vec<u32>,   // offset into `heap`, or NO_SPILL -- LAZY
+heap:     Vec<Span>,  // every spilled ray's spans, one allocation
+garbage:  usize,      // spans no ray points at
+```
+
+- **No per-ray allocation.** 4,500 spilled rays cost one growing `Vec`, not
+  4,500 of them. A spill path that allocated per ray was exactly the per-ray
+  allocation Part 1 was written to eliminate, and Part 3 left it in place
+  because the measurement said it would be rare.
+- **The index is lazy.** `spill_at` is not allocated until a ray actually
+  spills, so the two clean bundles keep paying exactly the 34 bytes a ray Part 3
+  measured. Only the bundle that spills pays the extra 4.
+- **Compaction is deterministic.** `compact()` walks rays in ascending index, so
+  the compacted layout is a pure function of contents rather than of the order
+  rays happened to grow. Two arenas holding the same spans compact to the same
+  bytes, which is what keeps the field hash independent of history — the
+  property `the_hash_depends_on_contents_and_not_on_history` has asserted since
+  Part 3.
+- Compaction triggers at half garbage, so growth is amortised `O(1)`.
+
+## Consequences
+
+- `spilled_rays()` remains the number to watch, but it is now a cost rather than
+  a cliff: a field with every ray spilled is slower and larger, not broken.
+- Part 3's inline-capacity justification stands **for the resting distribution
+  only**, and now says so. The capacity was never the interesting number; the
+  spill path was, and Part 3 got the cheap half right.
