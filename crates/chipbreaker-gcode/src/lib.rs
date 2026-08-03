@@ -37,6 +37,7 @@
 
 pub mod arcs;
 pub mod block;
+pub mod cycles;
 pub mod diag;
 pub mod lex;
 pub mod modal;

@@ -63,10 +63,11 @@ use chipbreaker_core::toolpath::{
 
 use crate::arcs::{self, ArcRequest, DEFAULT_ARC_TOLERANCE, Turn};
 use crate::block::{Block, ModalGroup};
+use crate::cycles::{self, CycleKind, CycleRequest};
 use crate::diag::{Diagnostics, GcodeError, GcodeWarning, Site};
 use crate::modal::{
-    ArcCentreMode, CycleReturn, DistanceMode, ModalState, MotionMode, PathControl, ToolLength,
-    Units,
+    ArcCentreMode, CycleParams, CycleReturn, DistanceMode, ModalState, MotionMode, PathControl,
+    ToolLength, Units,
 };
 
 /// How deep `M98` may nest before it is called a runaway.
@@ -594,16 +595,22 @@ pub fn parse(
     let mut resolver = Resolver::new(options.clone(), tools);
     let raw = crate::lex::lex(text, 0, &mut resolver.diagnostics)?;
 
-    let mut block_index = 0u32;
+    // Assemble every line once. Subprograms are re-executed rather than
+    // re-parsed, so a call in a loop costs no lexing.
+    let mut blocks = Vec::with_capacity(raw.len());
     for line in &raw {
         if line.is_empty() {
             continue;
         }
-        let block = crate::block::assemble(line)?;
-        resolver.stats.blocks += 1;
-        resolver.execute(&block, block_index)?;
-        block_index += 1;
+        blocks.push(crate::block::assemble(line)?);
     }
+
+    let table = subprogram_table(&blocks);
+    let mut cursor = Cursor {
+        index: 0,
+        block_number: 0,
+    };
+    resolver.run_range(&blocks, &table, 0, blocks.len(), 0, &mut cursor)?;
 
     if let Some(error) = resolver.diagnostics.first_as_error(options.strict) {
         return Err(error);
@@ -785,10 +792,7 @@ impl Resolver<'_> {
         }
 
         if let MotionMode::Cycle(key) = self.state.motion {
-            return Err(GcodeError::UnsupportedCode {
-                site: block.site,
-                code: crate::block::render_code('G', key),
-            });
+            return self.fire_cycle(key, block, source);
         }
 
         // G53 is non-modal and applies to this block alone.
@@ -827,6 +831,129 @@ impl Resolver<'_> {
                 self.emit_arc(target, arc, source);
             }
             MotionMode::Cycle(_) | MotionMode::None => unreachable!("handled above"),
+        }
+        Ok(())
+    }
+
+    /// Reads or refreshes the parameters of the active canned cycle.
+    ///
+    /// They persist. Once a cycle is active, a block carrying only `X` fires it
+    /// again at the new position with the same `Z`, `R` and `Q`, which is why
+    /// they live on the modal state rather than being re-read per block.
+    fn cycle_params(&mut self, block: &Block) -> Result<CycleParams, GcodeError> {
+        let previous = self.state.cycle;
+        let mut params = previous.unwrap_or(CycleParams {
+            // The Z the cycle started from, for G98. Captured before any of this
+            // block's motion, which is what makes a G98 retract go back to where
+            // the tool was when the cycle began rather than to the last hole.
+            initial_z: self.position.z,
+            ..CycleParams::default()
+        });
+        if previous.is_none() {
+            params.initial_z = self.position.z;
+            // Without an R the cycle has no retract plane, and the sanest
+            // reading of that is the height the tool is already at.
+            params.r = self.position.z;
+            params.z = self.position.z;
+        }
+
+        if let Some(word) = &block.r {
+            let value = self.to_mm(word.value);
+            params.r = match self.state.distance {
+                // Under G91 the R word is measured from the initial Z, not from
+                // the workpiece origin. Reading it as absolute puts the retract
+                // plane somewhere else entirely.
+                DistanceMode::Incremental => params.initial_z + value,
+                DistanceMode::Absolute => value + self.frame_offset().z,
+            };
+        }
+        // **R before Z, and the order is load-bearing.** Under G91 the Z word is
+        // measured from the R plane, so reading Z first uses whatever R held
+        // before this block -- which on the cycle's first firing is the height
+        // the tool happened to be at. The differential test caught exactly this:
+        // a bolt pattern drilled to Z+3 instead of Z-5, and every motion after
+        // it was consistent with that wrong depth.
+        if let Some(word) = &block.axes[2] {
+            let value = self.axis_value(word)?;
+            params.z = match self.state.distance {
+                // Incremental Z is measured from the R plane downward, which is
+                // what every control does and what makes a bolt pattern work.
+                DistanceMode::Incremental => params.r + value,
+                DistanceMode::Absolute => value + self.frame_offset().z,
+            };
+        }
+        if let Some(word) = &block.q {
+            params.q = Some(self.to_mm(word.value).abs());
+        }
+        if let Some(word) = &block.p {
+            params.p = Some(word.value);
+        }
+        self.state.cycle = Some(params);
+        Ok(params)
+    }
+
+    /// The translation from the active workpiece frame to machine coordinates.
+    fn frame_offset(&self) -> Vec3 {
+        self.active_offset() + self.g92
+    }
+
+    /// Fires the active canned cycle once per repeat.
+    fn fire_cycle(
+        &mut self,
+        key: u32,
+        block: &Block,
+        source: Provenance,
+    ) -> Result<(), GcodeError> {
+        let Some(kind) = CycleKind::from_key(key) else {
+            return Err(GcodeError::UnsupportedCode {
+                site: block.site,
+                code: crate::block::render_code('G', key),
+            });
+        };
+        let params = self.cycle_params(block)?;
+
+        // L or K is the repeat count. L0 means do not execute -- a real case,
+        // and one that reads exactly like a typo.
+        let repeats = block
+            .l
+            .as_ref()
+            .and_then(crate::lex::Word::as_u32)
+            .unwrap_or(1);
+        if repeats == 0 {
+            return Ok(());
+        }
+
+        for _ in 0..repeats {
+            // Under G91 each repeat steps by the same X/Y increment, which is
+            // how one line becomes a bolt pattern.
+            let hole = self.target(block, false)?;
+            let request = CycleRequest {
+                kind,
+                from: self.position,
+                hole,
+                bottom: params.z,
+                r_plane: params.r,
+                initial_z: params.initial_z,
+                return_to_initial: self.state.cycle_return == CycleReturn::InitialZ,
+                peck: params.q,
+                site: block.site,
+            };
+            for (step, motion) in cycles::expand(&request).into_iter().enumerate() {
+                if motion.kind != MotionKind::Rapid && self.state.feed.is_none() {
+                    return Err(GcodeError::NoFeedRate { site: block.site });
+                }
+                self.emit_linear(
+                    motion.kind,
+                    motion.to,
+                    cycles::provenance_for(source, step),
+                    block.site,
+                );
+            }
+            if let Some(seconds) = params.p
+                && kind == CycleKind::DrillDwell
+            {
+                self.push_event(PathEventKind::Dwell { seconds }, source);
+            }
         }
         Ok(())
     }
@@ -890,6 +1017,115 @@ impl Resolver<'_> {
             // G92.3 restores a previously cancelled shift. We do not keep the
             // cancelled value, so this is a no-op and says so.
             _ => {}
+        }
+        Ok(())
+    }
+}
+
+/// Where the driver is, threaded through nested calls so that block indices
+/// stay unique across a subprogram executed more than once.
+struct Cursor {
+    /// The next block index to hand to [`Resolver::execute`].
+    index: usize,
+    /// Monotonic counter, so two executions of one subprogram body are
+    /// distinguishable in provenance.
+    block_number: u32,
+}
+
+/// Where each `O` number's body begins and ends.
+///
+/// A body runs from the block *after* its `O` label to the matching `M99`. A
+/// label with no `M99` has no body and calling it is an error rather than a
+/// silent fall-through to the end of the file.
+fn subprogram_table(blocks: &[Block]) -> BTreeMap<u32, (usize, usize)> {
+    let mut table = BTreeMap::new();
+    let mut open: Option<(u32, usize)> = None;
+    for (index, block) in blocks.iter().enumerate() {
+        if let Some(word) = &block.o
+            && let Some(number) = word.as_u32()
+        {
+            // A new label closes nothing: a body that never saw M99 is simply
+            // not callable, which is what the missing entry means.
+            open = Some((number, index + 1));
+        }
+        if block.has_m(990)
+            && let Some((number, start)) = open.take()
+        {
+            table.insert(number, (start, index));
+        }
+    }
+    table
+}
+
+impl Resolver<'_> {
+    /// Executes `blocks[start..end]`, following `M98` calls.
+    ///
+    /// # Errors
+    /// Any [`GcodeError`], including [`GcodeError::SubprogramTooDeep`] and
+    /// [`GcodeError::UnknownSubprogram`].
+    fn run_range(
+        &mut self,
+        blocks: &[Block],
+        table: &BTreeMap<u32, (usize, usize)>,
+        start: usize,
+        end: usize,
+        depth: u32,
+        cursor: &mut Cursor,
+    ) -> Result<(), GcodeError> {
+        if depth > self.options.max_subprogram_depth {
+            let site = blocks.get(start).map_or(Site::default(), |b| b.site);
+            return Err(GcodeError::SubprogramTooDeep {
+                site,
+                limit: self.options.max_subprogram_depth,
+            });
+        }
+
+        let mut index = start;
+        while index < end {
+            let block = &blocks[index];
+            cursor.index = index;
+
+            // A bare `O` label is a marker, not motion, and a body reached by
+            // falling off the end of the main program is not executed: real
+            // controls stop at M30, and so does this.
+            if block.has_m(200) || block.has_m(300) {
+                self.stats.blocks += 1;
+                self.execute(block, cursor.block_number)?;
+                cursor.block_number += 1;
+                return Ok(());
+            }
+            if block.has_m(990) {
+                return Ok(());
+            }
+
+            if block.has_m(980) {
+                let Some(number) = block.p.as_ref().and_then(crate::lex::Word::as_u32) else {
+                    index += 1;
+                    continue;
+                };
+                let Some(&(body_start, body_end)) = table.get(&number) else {
+                    return Err(GcodeError::UnknownSubprogram {
+                        site: block.site,
+                        number,
+                    });
+                };
+                let repeats = block
+                    .l
+                    .as_ref()
+                    .and_then(crate::lex::Word::as_u32)
+                    .unwrap_or(1);
+                for _ in 0..repeats {
+                    self.stats.subprogram_calls += 1;
+                    self.run_range(blocks, table, body_start, body_end, depth + 1, cursor)?;
+                }
+                index += 1;
+                continue;
+            }
+
+            self.stats.blocks += 1;
+            self.execute(block, cursor.block_number)?;
+            cursor.block_number += 1;
+            index += 1;
         }
         Ok(())
     }
