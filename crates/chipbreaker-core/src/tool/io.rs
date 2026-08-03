@@ -22,13 +22,37 @@
 //! and a saved simulation would stop matching its own recorded hash. Storing the
 //! geometry means the file says exactly what was cut with.
 //!
-//! # Round-tripping
+//! # Round-tripping, and the bit that was being lost
 //!
-//! Floats are written by `serde_json`, which uses the shortest representation
-//! that reads back to the same `f64`. Keys are emitted in sorted order because
-//! the underlying map is a `BTreeMap`. Both together mean writing a library,
-//! reading it, and writing it again produces byte-identical output — which is
-//! what lets a library be hashed and put under golden-file control.
+//! Floats are written by `serde_json`, which emits the shortest representation
+//! that reads back to the same `f64`. Keys come out sorted because the
+//! underlying map is a `BTreeMap`. So a library writes, reads and writes again
+//! byte for byte, which is what lets one be hashed and put under golden-file
+//! control.
+//!
+//! That holds **only with `serde_json`'s `float_roundtrip` feature enabled**,
+//! and the workspace turns it on for this reason. Its default parser is not
+//! correctly rounded: it reads `2.0481555856608242` — the top radius of a 3
+//! degree tapered mill — as `2.048155585660824`, one ULP low, where Rust's own
+//! `str::parse` gets it right. A tool library that loses a bit on read describes
+//! a slightly different solid from the one that was written, and a saved
+//! simulation would stop reproducing.
+//!
+//! The failure is worth describing because of how it hid. A parser that loses a
+//! bit on the *first* read is perfectly stable afterwards — the degraded value
+//! writes, reads and writes identically for ever — so any cycle that begins by
+//! *reading* agrees with itself while the geometry is already wrong. A cycle
+//! that begins with a constructed library does catch it, because the first write
+//! still carries the true value.
+//!
+//! Which is what makes the real cause embarrassing: the tests here were the
+//! right shape all along, and the fixture was wrong. Every tool in it was a
+//! flat, a ball or a bull nose, whose coordinates are 3.0 and 20.0 and survive
+//! any parser ever written. Nothing in it needed seventeen significant digits,
+//! so there was no bit to lose. A tapered mill is now in the fixture for exactly
+//! that reason, and a test asserts that its top radius still needs seventeen
+//! digits, so that a later edit cannot quietly turn the check back into a test
+//! of `3.0`.
 
 use crate::golden::{CanonicalHash, Hashable};
 use crate::math::Vec2;
@@ -483,7 +507,9 @@ fn known_keys(map: &Map<String, Value>, path: &str, allowed: &[&str]) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tool::catalog::{HolderStage, Shank, ball_end_mill, bull_end_mill, flat_end_mill};
+    use crate::tool::catalog::{
+        HolderStage, Shank, ball_end_mill, bull_end_mill, flat_end_mill, tapered_end_mill,
+    };
 
     fn library() -> ToolLibrary {
         let tools = vec![
@@ -521,8 +547,79 @@ mod tests {
                 140.0,
             )
             .expect("valid"),
+            // A tapered mill earns its place here for one reason: its top radius
+            // is `1 + 20 tan(3 degrees)`, whose shortest round-trip form needs
+            // **seventeen** significant digits. Every other tool in this fixture
+            // has coordinates like 3.0 and 20.0 that survive any parser at all,
+            // which is exactly why the fixture failed to notice that
+            // `serde_json` was reading such values one ULP low.
+            Tool::new(
+                ToolId::new("taper3").expect("valid"),
+                "2 mm tip, 6 degree included taper",
+                tapered_end_mill(2.0, 6.0, 20.0, &Shank::plain(8.0, 55.0)).expect("valid"),
+                85.0,
+            )
+            .expect("valid"),
         ];
         ToolLibrary::from_tools(tools).expect("distinct identifiers")
+    }
+
+    /// A coordinate needing seventeen significant digits must survive exactly.
+    ///
+    /// This is the test that would have caught the defect described in the
+    /// module header, and it is written to be impossible to pass accidentally:
+    /// it asserts on the *bits*, and it first asserts that the value really does
+    /// need seventeen digits, so that a future change to the geometry cannot
+    /// quietly turn it into a test of `3.0`.
+    #[test]
+    fn a_coordinate_needing_seventeen_digits_survives_bit_exactly() {
+        let library = library();
+        let taper = library.get("taper3").expect("in the fixture");
+        let top = taper.profile().elements()[1].element.end().x;
+
+        assert_eq!(
+            format!("{top:?}").split('.').nth(1).map_or(0, str::len),
+            16,
+            "this test is only meaningful while {top:?} needs seventeen \
+             significant digits; pick another value if the geometry changes"
+        );
+
+        let parsed = ToolLibrary::from_json(&library.to_json()).expect("valid");
+        let back = parsed
+            .get("taper3")
+            .expect("in the fixture")
+            .profile()
+            .elements()[1]
+            .element
+            .end()
+            .x;
+
+        assert_eq!(
+            top.to_bits(),
+            back.to_bits(),
+            "a coordinate must come back with the same bits: wrote {top:?} \
+             ({:016x}), read {back:?} ({:016x}), a difference of {} ULP",
+            top.to_bits(),
+            back.to_bits(),
+            top.to_bits().abs_diff(back.to_bits())
+        );
+    }
+
+    /// The first parse must reproduce what was constructed.
+    ///
+    /// A parser that loses a bit on the first read is stable afterwards, so any
+    /// comparison that begins by *reading* a file agrees with itself while the
+    /// geometry is already wrong. This one begins with the constructed library,
+    /// where the true value still is.
+    #[test]
+    fn a_library_survives_the_first_read_not_merely_every_read_after_it() {
+        let original = library();
+        let once = ToolLibrary::from_json(&original.to_json()).expect("valid");
+        assert_eq!(
+            original, once,
+            "the first parse must reproduce the constructed library, not just \
+             agree with subsequent parses of its own output"
+        );
     }
 
     #[test]

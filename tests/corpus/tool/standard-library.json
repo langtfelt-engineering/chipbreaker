@@ -1,0 +1,492 @@
+{
+  "schema": "chipbreaker.tool-library",
+  "tools": [
+    {
+      "description": "6 mm flat end mill, 20 mm flute, plain 6 mm shank",
+      "gauge_length": 80.0,
+      "id": "flat-6",
+      "profile": [
+        {
+          "end": [
+            3.0,
+            0.0
+          ],
+          "kind": "segment",
+          "role": "cutting",
+          "start": [
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "end": [
+            3.0,
+            20.0
+          ],
+          "kind": "segment",
+          "role": "cutting",
+          "start": [
+            3.0,
+            0.0
+          ]
+        },
+        {
+          "end": [
+            3.0,
+            50.0
+          ],
+          "kind": "segment",
+          "role": "non-cutting",
+          "start": [
+            3.0,
+            20.0
+          ]
+        }
+      ]
+    },
+    {
+      "description": "6 mm ball nose, 20 mm flute",
+      "gauge_length": 80.0,
+      "id": "ball-6",
+      "profile": [
+        {
+          "center": [
+            0.0,
+            3.0
+          ],
+          "direction": "ccw",
+          "end": [
+            3.0,
+            3.0
+          ],
+          "kind": "arc",
+          "role": "cutting",
+          "start": [
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "end": [
+            3.0,
+            20.0
+          ],
+          "kind": "segment",
+          "role": "cutting",
+          "start": [
+            3.0,
+            3.0
+          ]
+        },
+        {
+          "end": [
+            3.0,
+            50.0
+          ],
+          "kind": "segment",
+          "role": "non-cutting",
+          "start": [
+            3.0,
+            20.0
+          ]
+        }
+      ]
+    },
+    {
+      "description": "10 mm bull nose, 2 mm corner, on an 8 mm shank",
+      "gauge_length": 95.0,
+      "id": "bull-10-r2",
+      "profile": [
+        {
+          "end": [
+            3.0,
+            0.0
+          ],
+          "kind": "segment",
+          "role": "cutting",
+          "start": [
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "center": [
+            3.0,
+            2.0
+          ],
+          "direction": "ccw",
+          "end": [
+            5.0,
+            2.0
+          ],
+          "kind": "arc",
+          "role": "cutting",
+          "start": [
+            3.0,
+            0.0
+          ]
+        },
+        {
+          "end": [
+            5.0,
+            30.0
+          ],
+          "kind": "segment",
+          "role": "cutting",
+          "start": [
+            5.0,
+            2.0
+          ]
+        },
+        {
+          "end": [
+            4.0,
+            30.0
+          ],
+          "kind": "segment",
+          "role": "non-cutting",
+          "start": [
+            5.0,
+            30.0
+          ]
+        },
+        {
+          "end": [
+            4.0,
+            60.0
+          ],
+          "kind": "segment",
+          "role": "non-cutting",
+          "start": [
+            4.0,
+            30.0
+          ]
+        }
+      ]
+    },
+    {
+      "description": "8 mm chamfer mill, 1 mm flat tip, 90 degree included",
+      "gauge_length": 85.0,
+      "id": "chamfer-8-90",
+      "profile": [
+        {
+          "end": [
+            0.5,
+            0.0
+          ],
+          "kind": "segment",
+          "role": "cutting",
+          "start": [
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "end": [
+            4.0,
+            3.5000000000000004
+          ],
+          "kind": "segment",
+          "role": "cutting",
+          "start": [
+            0.5,
+            0.0
+          ]
+        },
+        {
+          "end": [
+            4.0,
+            20.0
+          ],
+          "kind": "segment",
+          "role": "cutting",
+          "start": [
+            4.0,
+            3.5000000000000004
+          ]
+        },
+        {
+          "end": [
+            4.0,
+            55.0
+          ],
+          "kind": "segment",
+          "role": "non-cutting",
+          "start": [
+            4.0,
+            20.0
+          ]
+        }
+      ]
+    },
+    {
+      "description": "8 mm V-bit, 60 degree included, pointed",
+      "gauge_length": 85.0,
+      "id": "vbit-8-60",
+      "profile": [
+        {
+          "end": [
+            4.0,
+            6.92820323027551
+          ],
+          "kind": "segment",
+          "role": "cutting",
+          "start": [
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "end": [
+            4.0,
+            20.0
+          ],
+          "kind": "segment",
+          "role": "cutting",
+          "start": [
+            4.0,
+            6.92820323027551
+          ]
+        },
+        {
+          "end": [
+            4.0,
+            55.0
+          ],
+          "kind": "segment",
+          "role": "non-cutting",
+          "start": [
+            4.0,
+            20.0
+          ]
+        }
+      ]
+    },
+    {
+      "description": "2 mm tip, 6 degree included taper, 20 mm flute",
+      "gauge_length": 85.0,
+      "id": "taper-3deg",
+      "profile": [
+        {
+          "end": [
+            1.0,
+            0.0
+          ],
+          "kind": "segment",
+          "role": "cutting",
+          "start": [
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "end": [
+            2.0481555856608242,
+            20.0
+          ],
+          "kind": "segment",
+          "role": "cutting",
+          "start": [
+            1.0,
+            0.0
+          ]
+        },
+        {
+          "end": [
+            4.0,
+            20.0
+          ],
+          "kind": "segment",
+          "role": "non-cutting",
+          "start": [
+            2.0481555856608242,
+            20.0
+          ]
+        },
+        {
+          "end": [
+            4.0,
+            55.0
+          ],
+          "kind": "segment",
+          "role": "non-cutting",
+          "start": [
+            4.0,
+            20.0
+          ]
+        }
+      ]
+    },
+    {
+      "description": "6 mm twist drill, 118 degree point",
+      "gauge_length": 90.0,
+      "id": "drill-6-118",
+      "profile": [
+        {
+          "end": [
+            3.0,
+            1.802581857082682
+          ],
+          "kind": "segment",
+          "role": "cutting",
+          "start": [
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "end": [
+            3.0,
+            30.0
+          ],
+          "kind": "segment",
+          "role": "cutting",
+          "start": [
+            3.0,
+            1.802581857082682
+          ]
+        },
+        {
+          "end": [
+            3.0,
+            50.0
+          ],
+          "kind": "segment",
+          "role": "non-cutting",
+          "start": [
+            3.0,
+            30.0
+          ]
+        }
+      ]
+    },
+    {
+      "description": "12 mm barrel cutter on a 200 mm arc",
+      "gauge_length": 120.0,
+      "id": "barrel-12-r200",
+      "profile": [
+        {
+          "center": [
+            -194.0,
+            48.620983124572874
+          ],
+          "direction": "ccw",
+          "end": [
+            6.0,
+            48.620983124572874
+          ],
+          "kind": "arc",
+          "role": "cutting",
+          "start": [
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "end": [
+            6.0,
+            60.0
+          ],
+          "kind": "segment",
+          "role": "cutting",
+          "start": [
+            6.0,
+            48.620983124572874
+          ]
+        },
+        {
+          "end": [
+            6.0,
+            90.0
+          ],
+          "kind": "segment",
+          "role": "non-cutting",
+          "start": [
+            6.0,
+            60.0
+          ]
+        }
+      ]
+    },
+    {
+      "description": "12 mm flat in a shrink holder, for holder-collision work",
+      "gauge_length": 160.0,
+      "id": "held-12",
+      "profile": [
+        {
+          "end": [
+            6.0,
+            0.0
+          ],
+          "kind": "segment",
+          "role": "cutting",
+          "start": [
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "end": [
+            6.0,
+            30.0
+          ],
+          "kind": "segment",
+          "role": "cutting",
+          "start": [
+            6.0,
+            0.0
+          ]
+        },
+        {
+          "end": [
+            6.0,
+            60.0
+          ],
+          "kind": "segment",
+          "role": "non-cutting",
+          "start": [
+            6.0,
+            30.0
+          ]
+        },
+        {
+          "end": [
+            16.0,
+            60.0
+          ],
+          "kind": "segment",
+          "role": "holder",
+          "start": [
+            6.0,
+            60.0
+          ]
+        },
+        {
+          "end": [
+            16.0,
+            88.0
+          ],
+          "kind": "segment",
+          "role": "holder",
+          "start": [
+            16.0,
+            60.0
+          ]
+        },
+        {
+          "end": [
+            25.0,
+            110.0
+          ],
+          "kind": "segment",
+          "role": "holder",
+          "start": [
+            16.0,
+            88.0
+          ]
+        }
+      ]
+    }
+  ],
+  "version": 1
+}

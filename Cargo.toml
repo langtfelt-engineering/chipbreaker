@@ -30,7 +30,14 @@ rand = { version = "=0.9.3", default-features = false, features = [
 
 # --- Non-determinism-critical dependencies -----------------------------------
 clap = { version = "4", features = ["derive"] }
-serde_json = "1"
+
+# `float_roundtrip` is NOT optional, and serde_json is only in this section
+# because its *output* is already exact. Its default float **parser** is not:
+# it reads 2.0481555856608242 as 2.048155585660824, one ULP low, where Rust's
+# own str::parse is correctly rounded. A tool library that loses a bit on read
+# describes a different solid from the one that was written, and a saved
+# simulation would stop reproducing. The feature makes parsing bit-exact.
+serde_json = { version = "1", features = ["float_roundtrip"] }
 
 # --- Dev/bench ---------------------------------------------------------------
 proptest = "1"
