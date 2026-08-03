@@ -425,3 +425,153 @@ fn a_mesh_with_no_interior_edges_estimates_nothing_rather_than_guessing() {
     assert_eq!(e.percentile_sagitta_mm, 0.0);
     assert!(!e.is_finer_than_the_mesh_supports(1e-6));
 }
+
+// --- deviation: the assertion metric ---------------------------------------
+
+#[test]
+fn best_of_three_deviation_falls_monotonically_and_is_bounded_by_c_times_h() {
+    // The definition of done, and the thing volume could not give us. ADR 0005
+    // has the argument; this is the assertion.
+    use chipbreaker_core::dexel::deviation::{measure, sample_mesh_budget};
+
+    let cases: [(&str, TriMesh); 3] = [
+        ("sphere", shapes::icosphere(10.0, 4)),
+        ("cylinder", shapes::cylinder(8.0, 24.0, 128)),
+        (
+            "box",
+            shapes::box_solid(Vec3::new(0.0, 0.0, 0.0), Vec3::new(30.0, 20.0, 10.0)),
+        ),
+    ];
+    for (name, mesh) in &cases {
+        let (samples, _) = sample_mesh_budget(mesh, 4_000);
+        let mut previous = f64::INFINITY;
+        for spacing in [1.6, 0.8, 0.4, 0.2] {
+            let (field, _) = TriDexelField::build(
+                mesh,
+                &TriBuildOptions {
+                    spacing,
+                    ..TriBuildOptions::default()
+                },
+            )
+            .expect("builds");
+            let report = measure(&field, &samples);
+
+            assert!(
+                report.best_max < previous,
+                "{name}: deviation must FALL as cells shrink -- {} at h={spacing} is not \
+                 below {previous} at the coarser step. Monotonicity is the property \
+                 that lets a customer be told a finer simulation is a safer one, and \
+                 it is exactly what volume could not provide.",
+                report.best_max
+            );
+            // The measured constant runs about 0.67 to 0.81 across the corpus.
+            // Bounded generously at 1.5 so this catches a regression rather than
+            // ordinary variation between shapes.
+            assert!(
+                report.constant() < 1.5,
+                "{name} at h={spacing}: deviation {} is {:.3} times the cell size, \
+                 outside the C*h envelope",
+                report.best_max,
+                report.constant()
+            );
+            previous = report.best_max;
+        }
+    }
+}
+
+#[test]
+fn the_worst_sampling_angle_never_falls_below_the_bound() {
+    // The direct check on §2, over real surfaces rather than synthetic normals.
+    use chipbreaker_core::dexel::deviation::coverage;
+    for (name, mesh) in [
+        ("sphere", shapes::icosphere(10.0, 4)),
+        ("torus", shapes::torus(12.0, 4.0, 64, 32)),
+        ("cylinder", shapes::cylinder(8.0, 24.0, 128)),
+        ("octahedron (1,1,1) faces", octahedron()),
+    ] {
+        let (worst, normal) = coverage(&mesh, AxisSet::XYZ);
+        assert!(
+            worst >= WORST_CASE_COSINE - 1e-12,
+            "{name}: a face with normal {normal:?} is sampled at only {worst}, below \
+             the 1/sqrt(3) bound"
+        );
+    }
+    // And the octahedron ATTAINS it: its faces are exactly the body diagonals,
+    // so it is the worst case a closed solid can present.
+    let (worst, _) = coverage(&octahedron(), AxisSet::XYZ);
+    assert!(
+        (worst - WORST_CASE_COSINE).abs() < 1e-12,
+        "the octahedron should sit exactly on the bound, got {worst}"
+    );
+}
+
+#[test]
+fn a_single_bundle_is_visibly_worse_than_three_and_that_is_the_point() {
+    // The measurement that justifies the unit. A box's side faces are parallel
+    // to a Z bundle, so its Z endpoints lie only on the top and bottom -- the
+    // worst point on a side face is half the depth away, and REFINING DOES NOT
+    // HELP. Best-of-three fixes it because every face is normal to some axis.
+    use chipbreaker_core::dexel::deviation::{measure, sample_mesh_budget};
+    let mesh = shapes::box_solid(Vec3::new(0.0, 0.0, 0.0), Vec3::new(30.0, 20.0, 10.0));
+    let (samples, _) = sample_mesh_budget(&mesh, 4_000);
+
+    let mut per_axis_at = Vec::new();
+    let mut best_at = Vec::new();
+    for spacing in [0.8, 0.2] {
+        let (field, _) = TriDexelField::build(
+            &mesh,
+            &TriBuildOptions {
+                spacing,
+                ..TriBuildOptions::default()
+            },
+        )
+        .expect("builds");
+        let report = measure(&field, &samples);
+        per_axis_at.push(report.per_axis_max[2].expect("Z built"));
+        best_at.push(report.best_max);
+    }
+
+    // Four times the resolution barely moves the single bundle...
+    assert!(
+        per_axis_at[1] > per_axis_at[0] * 0.9,
+        "a single bundle should stay stuck near half the depth: {per_axis_at:?}"
+    );
+    // ...and cuts best-of-three by about four.
+    assert!(
+        best_at[1] < best_at[0] * 0.35,
+        "best-of-three should fall with h: {best_at:?}"
+    );
+    assert!(
+        per_axis_at[1] > best_at[1] * 20.0,
+        "at fine cells the single bundle should be an order of magnitude worse: \
+         {per_axis_at:?} vs {best_at:?}"
+    );
+}
+
+/// The worst case a closed solid can present: every face normal is a body
+/// diagonal, so all eight sit exactly on the `1/sqrt(3)` bound.
+fn octahedron() -> TriMesh {
+    let r = 10.0;
+    TriMesh::new(
+        vec![
+            Vec3::new(r, 0.0, 0.0),
+            Vec3::new(-r, 0.0, 0.0),
+            Vec3::new(0.0, r, 0.0),
+            Vec3::new(0.0, -r, 0.0),
+            Vec3::new(0.0, 0.0, r),
+            Vec3::new(0.0, 0.0, -r),
+        ],
+        vec![
+            [0, 2, 4],
+            [2, 1, 4],
+            [1, 3, 4],
+            [3, 0, 4],
+            [2, 0, 5],
+            [1, 2, 5],
+            [3, 1, 5],
+            [0, 3, 5],
+        ],
+        MeshMeta::synthetic(),
+    )
+    .expect("valid")
+}

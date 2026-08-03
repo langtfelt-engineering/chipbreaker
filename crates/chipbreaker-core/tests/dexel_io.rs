@@ -230,9 +230,13 @@ fn trailing_bytes_do_not_change_what_is_read() {
 fn a_corrupted_span_total_is_caught() {
     let field = a_field();
     let mut bytes = io::to_bytes(&field).expect("writes");
-    // The span total sits immediately after the ray count, which follows the
-    // 8-byte magic, four u32s, and 21 f64s.
-    let offset = 8 + 4 * 4 + 21 * 8 + 4;
+    // The span total sits immediately after the ray count. Derived from the
+    // layout rather than written as one number: this was `21 * 8` until the
+    // format grew two transverse extents at U6, and a stale literal made the
+    // test corrupt a placement matrix instead of the field it meant to.
+    const U32S: usize = 4; // version, axis, two counts
+    const F64S: usize = 3 + 1 + 1 + 2 + 16; // origin, spacing, length, extents, placement
+    let offset = MAGIC.len() + U32S * 4 + F64S * 8 + size_of::<u32>();
     let corrupted = (field.total_spans() as u64 + 1).to_le_bytes();
     bytes[offset..offset + 8].copy_from_slice(&corrupted);
     match io::from_bytes(&bytes) {

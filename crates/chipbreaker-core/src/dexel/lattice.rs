@@ -18,6 +18,31 @@
 //! The half-cell offset makes that unreachable for axis-aligned stock, which is
 //! most stock.
 //!
+//! # Amended at U6: the lattice is CENTRED on the workspace
+//!
+//! The half-cell offset alone is not enough, and Unit 6 found the counterexample
+//! by casting along X and Y where Unit 5 had only cast along Z.
+//!
+//! Anchoring cells at `min` puts centre `i` at `min + (i + 0.5) * h`. For a
+//! 20 mm box at 1.6 mm cells that is 13 cells, and the last centre lands at
+//! **exactly 20.0** — the stock's own face. Every ray on it is coplanar with
+//! that face, which construction treats as a hard error, so `dexel build` simply
+//! refused a plain box at a perfectly ordinary spacing.
+//!
+//! The fix is to centre the lattice on the workspace: with `pad = (n*h - E)/2`,
+//! centre `i` sits at `min - pad + (i + 0.5) * h`. Since `n*h - E` is in
+//! `[0, h)`, `pad` is in `[0, h/2)`, and therefore
+//!
+//! ```text
+//! first centre = min - pad + 0.5h  >  min     because 0.5h > pad
+//! last  centre = max + pad - 0.5h  <  max     for the same reason
+//! ```
+//!
+//! **Every cell centre is strictly inside the workspace on both transverse
+//! axes**, so no ray can be coplanar with a bounding face of axis-aligned stock.
+//! That is a proof rather than the empirical "integers are avoided" the original
+//! invariant rested on, and it subsumes it.
+//!
 //! `origins_are_never_on_the_integer_lattice` enforces it. Somebody will
 //! eventually simplify `min + (i + 0.5) * spacing` to `min + i * spacing`,
 //! because the second is obviously tidier and the reason the first exists is two
@@ -99,6 +124,13 @@ pub struct Lattice {
     spacing: f64,
     /// Ray counts along the two lattice axes, in `axis.cyclic()` order.
     counts: [u32; 2],
+    /// Workspace extents along the two lattice axes.
+    ///
+    /// Stored rather than derived because `counts * spacing` is the *covered*
+    /// extent, which is at least the real one and usually more. The difference
+    /// is what [`Lattice::pad`] centres, and without the true extent it cannot
+    /// be recovered on read.
+    extent: [f64; 2],
     /// Extent along the ray axis, so a ray knows where to start and stop.
     length: f64,
 }
@@ -145,8 +177,53 @@ impl Lattice {
                 u32::try_from(counts[0]).unwrap_or(u32::MAX),
                 u32::try_from(counts[1]).unwrap_or(u32::MAX),
             ],
+            extent: [extent[u], extent[v]],
             length: extent[w],
         })
+    }
+
+    /// Rebuilds a lattice from stored parts, for the `.dexel` reader.
+    ///
+    /// Takes the true transverse extents rather than deriving them, because
+    /// `counts * spacing` rounds up and the remainder is exactly what
+    /// [`Self::pad`] needs.
+    #[must_use]
+    pub const fn from_parts(
+        axis: Axis,
+        origin: Vec3,
+        spacing: f64,
+        counts: [u32; 2],
+        extent: [f64; 2],
+        length: f64,
+    ) -> Self {
+        Self {
+            axis,
+            origin,
+            spacing,
+            counts,
+            extent,
+            length,
+        }
+    }
+
+    /// Half the slack between the covered extent and the real one, per lattice
+    /// axis.
+    ///
+    /// **This is what keeps ray origins off the stock's own faces.** See the
+    /// module header.
+    #[must_use]
+    pub fn pad(&self) -> [f64; 2] {
+        [
+            (f64::from(self.counts[0]) * self.spacing - self.extent[0]) / 2.0,
+            (f64::from(self.counts[1]) * self.spacing - self.extent[1]) / 2.0,
+        ]
+    }
+
+    /// The workspace extents along the two lattice axes.
+    #[inline]
+    #[must_use]
+    pub const fn extent(&self) -> [f64; 2] {
+        self.extent
     }
 
     /// Which axis the rays run along.
@@ -218,9 +295,10 @@ impl Lattice {
     #[must_use]
     pub fn origin_of(&self, i: u32, j: u32) -> Vec3 {
         let [u, v, w] = self.axis.cyclic();
+        let pad = self.pad();
         let mut point = self.origin.to_array();
-        point[u] += (f64::from(i) + 0.5) * self.spacing;
-        point[v] += (f64::from(j) + 0.5) * self.spacing;
+        point[u] += (f64::from(i) + 0.5) * self.spacing - pad[0];
+        point[v] += (f64::from(j) + 0.5) * self.spacing - pad[1];
         // Start behind the workspace, so a surface exactly on the lower bound is
         // still crossed rather than begun upon.
         point[w] -= self.spacing;
@@ -248,12 +326,13 @@ impl Lattice {
     #[must_use]
     pub fn covered_bounds(&self) -> Aabb3 {
         let [u, v, w] = self.axis.cyclic();
+        let pad = self.pad();
         let mut lo = self.origin.to_array();
         let mut hi = self.origin.to_array();
-        lo[u] += 0.5 * self.spacing;
-        lo[v] += 0.5 * self.spacing;
-        hi[u] += (f64::from(self.counts[0]) - 0.5) * self.spacing;
-        hi[v] += (f64::from(self.counts[1]) - 0.5) * self.spacing;
+        lo[u] += 0.5 * self.spacing - pad[0];
+        lo[v] += 0.5 * self.spacing - pad[1];
+        hi[u] += (f64::from(self.counts[0]) - 0.5) * self.spacing - pad[0];
+        hi[v] += (f64::from(self.counts[1]) - 0.5) * self.spacing - pad[1];
         hi[w] += self.length;
         Aabb3::from_min_max(Vec3::from_array(lo), Vec3::from_array(hi))
     }
@@ -267,6 +346,7 @@ impl Hashable for Lattice {
         h.f64(self.spacing);
         h.u64(u64::from(self.counts[0]));
         h.u64(u64::from(self.counts[1]));
+        h.f64_slice(&self.extent);
         h.f64(self.length);
         h.end();
     }

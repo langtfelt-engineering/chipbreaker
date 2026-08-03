@@ -50,7 +50,7 @@
 use std::io::{Read, Write};
 
 use crate::golden::Digest;
-use crate::math::{Aabb3, Axis, Mat4, Vec3};
+use crate::math::{Axis, Mat4, Vec3};
 use crate::spans::Span;
 
 use super::arena::Arena;
@@ -64,7 +64,14 @@ pub const MAGIC: [u8; 8] = *b"CBDEXEL\0";
 
 /// Format version. Bumped whenever the layout changes; a reader refuses any
 /// version it does not know rather than misinterpreting the bytes.
-pub const FORMAT_VERSION: u32 = 1;
+///
+/// **2** added the two transverse workspace extents. Unit 6 found that anchoring
+/// cells at the workspace minimum could put a cell centre exactly on the stock's
+/// own face, so the lattice is now centred; recovering the centring offset on
+/// read needs the true extent, because `counts * spacing` has already rounded
+/// up. Version 1 files are refused rather than read with the wrong ray
+/// positions.
+pub const FORMAT_VERSION: u32 = 2;
 
 /// Why a `.dexel` file could not be read or written.
 #[derive(Debug)]
@@ -172,6 +179,10 @@ pub fn write<W: Write>(field: &DexelField, w: &mut W) -> Result<(), FormatError>
     // The workspace extent along the ray axis, recovered from the ray length so
     // the lattice reconstructs exactly rather than approximately.
     put_f64(w, lattice.ray_length() - 2.0 * lattice.spacing())?;
+    // The true transverse extents, which `counts * spacing` cannot recover.
+    for value in lattice.extent() {
+        put_f64(w, value)?;
+    }
     for row in &field.placement().m {
         for value in row {
             put_f64(w, *value)?;
@@ -223,6 +234,10 @@ pub fn read<R: Read>(r: &mut R) -> Result<DexelField, FormatError> {
     );
     let spacing = get_f64(r, "the spacing")?;
     let length = get_f64(r, "the length")?;
+    let extent = [
+        get_f64(r, "the transverse extents")?,
+        get_f64(r, "the transverse extents")?,
+    ];
     let mut placement = Mat4::ZERO;
     for row in 0..4 {
         for column in 0..4 {
@@ -230,22 +245,15 @@ pub fn read<R: Read>(r: &mut R) -> Result<DexelField, FormatError> {
         }
     }
 
-    // Rebuild the lattice from a box that reproduces exactly these counts. The
-    // header stores the workspace rather than the counts alone so that a
-    // reloaded field agrees with a freshly built one about where every ray is.
-    let [u, v, wax] = axis.cyclic();
-    let mut max = origin.to_array();
-    max[u] += f64::from(counts[0]) * spacing;
-    max[v] += f64::from(counts[1]) * spacing;
-    max[wax] += length;
-    let bounds = Aabb3::from_min_max(origin, Vec3::from_array(max));
-    let lattice = Lattice::new(bounds, spacing, axis).map_err(|e| FormatError::BadHeader {
-        detail: e.to_string(),
-    })?;
+    // Rebuilt from the stored parts rather than from a reconstructed box: the
+    // centring offset depends on the TRUE extent, and `counts * spacing` has
+    // already rounded up, so a box inferred from the counts would place every
+    // ray slightly wrong.
+    let lattice = Lattice::from_parts(axis, origin, spacing, counts, extent, length);
     if lattice.counts() != counts {
         return Err(FormatError::BadHeader {
             detail: format!(
-                "the header says {counts:?} rays but its workspace and spacing give {:?}",
+                "the header says {counts:?} rays but the lattice gives {:?}",
                 lattice.counts()
             ),
         });

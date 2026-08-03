@@ -313,3 +313,169 @@ fn memory_is_proportional_to_rays_and_free_of_per_ray_allocation() {
     let expected = 1000 * INLINE_CAPACITY * size_of::<Span>() + 1000 * size_of::<u16>();
     assert_eq!(a.bytes(), expected);
 }
+
+// --- the U6 amendment ------------------------------------------------------
+
+#[test]
+fn a_cell_centre_never_lands_on_the_workspace_boundary() {
+    // The bug Unit 6 found, and it had been there since Unit 5.
+    //
+    // Anchoring cells at `min` puts centre i at `min + (i + 0.5) * h`. A 20 mm
+    // box at 1.6 mm cells is 13 cells, and the last centre lands on EXACTLY
+    // 20.0 -- the stock's own face. Every ray on it is coplanar with that face,
+    // which construction treats as a hard error, so `dexel build` refused a
+    // plain box at a perfectly ordinary spacing. Unit 5 never saw it because it
+    // only ever cast along Z on meshes whose transverse extents happened not to
+    // land that way.
+    //
+    // Centring the lattice fixes it provably rather than empirically: with
+    // pad = (n*h - E)/2 in [0, h/2), the first centre exceeds min and the last
+    // falls short of max, on every axis, for every extent and spacing.
+    let awkward: [(f64, f64); 5] = [
+        (20.0, 1.6), // the original failure: 12.5 cells
+        (10.0, 0.8), // 12.5 again
+        (7.5, 0.5),  // 15 exactly -- no slack at all
+        (30.0, 4.0), // 7.5 cells
+        (1.0, 0.3),  // 3.33 cells, large relative slack
+    ];
+    for (extent, spacing) in awkward {
+        let bounds =
+            Aabb3::from_min_max(Vec3::new(0.0, 0.0, 0.0), Vec3::new(extent, extent, extent));
+        for axis in [Axis::X, Axis::Y, Axis::Z] {
+            let lattice = Lattice::new(bounds, spacing, axis).expect("valid");
+            let [u, v, _] = axis.cyclic();
+            let [nx, ny] = lattice.counts();
+            for (i, j) in [(0, 0), (nx - 1, ny - 1), (nx / 2, ny / 2)] {
+                let origin = lattice.origin_of(i, j).to_array();
+                for k in [u, v] {
+                    assert!(
+                        origin[k] > 0.0 && origin[k] < extent,
+                        "extent {extent} at {spacing} mm on {axis:?}: ray ({i}, {j}) has \
+                         transverse coordinate {} on axis {k}, which is on or outside the \
+                         workspace boundary. A ray there is coplanar with the stock's own \
+                         face and construction will refuse to build.",
+                        origin[k]
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn the_centring_pad_is_under_half_a_cell() {
+    // The step the proof turns on. If `pad` could reach h/2, the first centre
+    // would land exactly on `min` and the guarantee would be lost.
+    for extent in [1.0, 7.5, 10.0, 20.0, 33.3, 99.99] {
+        for spacing in [0.1, 0.3, 0.5, 0.8, 1.6, 4.0] {
+            let bounds =
+                Aabb3::from_min_max(Vec3::new(0.0, 0.0, 0.0), Vec3::new(extent, extent, extent));
+            let lattice = Lattice::new(bounds, spacing, Axis::Z).expect("valid");
+            for pad in lattice.pad() {
+                assert!(
+                    (0.0..spacing / 2.0).contains(&pad),
+                    "extent {extent} at {spacing}: pad {pad} is outside [0, h/2)"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn a_box_builds_at_the_spacing_that_used_to_abort() {
+    use chipbreaker_core::dexel::{BuildOptions, DexelField};
+    let mesh = chipbreaker_core::mesh::shapes::box_solid(
+        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::new(30.0, 20.0, 10.0),
+    );
+    // 1.6 mm divides none of 30, 20 or 10, which is what made a cell centre
+    // land on a face. Building at all is the regression this pins.
+    for axis in [Axis::X, Axis::Y, Axis::Z] {
+        let (_field, stats) = DexelField::build(
+            &mesh,
+            &BuildOptions {
+                spacing: 1.6,
+                axis,
+                ..BuildOptions::default()
+            },
+        )
+        .unwrap_or_else(|e| panic!("{axis:?} must build: {e}"));
+        assert_eq!(stats.predicates.coplanar_rejected, 0, "{axis:?}");
+        assert_eq!(stats.empty_rays, 0, "{axis:?}: every ray meets the box");
+    }
+}
+
+#[test]
+fn a_lattice_that_does_not_divide_the_stock_over_counts_volume_by_a_known_factor() {
+    // NOT a defect, and worth a test so nobody "fixes" it into one.
+    //
+    // Every cell claims a full h^2 of cross-section. When the spacing does not
+    // divide the transverse extent, `ceil` gives cells that stick out past the
+    // stock -- and because the lattice is centred, their ray centres are still
+    // INSIDE the stock, so they report a full chord. The volume is therefore
+    // over-counted by exactly (covered area / true area).
+    //
+    // For a 30x20x10 box at 1.6 mm the Z bundle is 19x13 cells covering
+    // 632.32 mm^2 against a true 600, so it reports 6323.2 against 6000 -- a
+    // 5.4% bias that is arithmetic, not sampling. It jumps discontinuously
+    // whenever `ceil` steps, which is a third reason volume is unfit as an
+    // accuracy metric. See ADR 0005.
+    use chipbreaker_core::dexel::{BuildOptions, DexelField};
+    let mesh = chipbreaker_core::mesh::shapes::box_solid(
+        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::new(30.0, 20.0, 10.0),
+    );
+    let extents = [30.0, 20.0, 10.0];
+    for axis in [Axis::X, Axis::Y, Axis::Z] {
+        let (field, _) = DexelField::build(
+            &mesh,
+            &BuildOptions {
+                spacing: 1.6,
+                axis,
+                ..BuildOptions::default()
+            },
+        )
+        .expect("builds");
+        let [u, v, w] = axis.cyclic();
+        let [nu, nv] = field.lattice().counts();
+        let covered = f64::from(nu) * 1.6 * f64::from(nv) * 1.6;
+        let predicted = covered * extents[w];
+        assert!(
+            (field.volume() - predicted).abs() / predicted < 1e-12,
+            "{axis:?}: volume {} is not the covered area {covered} times the depth              {}; the over-count should be exactly explained by cell quantisation",
+            field.volume(),
+            extents[w]
+        );
+        // And it really is an over-count, never an under-count.
+        let truth = extents[u] * extents[v] * extents[w];
+        assert!(field.volume() >= truth, "{axis:?}");
+    }
+}
+
+#[test]
+fn a_lattice_that_divides_the_stock_is_exact() {
+    // The other side: when the spacing divides the extents there is no slack,
+    // the pad is zero, and the box is captured to machine precision.
+    use chipbreaker_core::dexel::{BuildOptions, DexelField};
+    let mesh = chipbreaker_core::mesh::shapes::box_solid(
+        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::new(30.0, 20.0, 10.0),
+    );
+    for axis in [Axis::X, Axis::Y, Axis::Z] {
+        let (field, _) = DexelField::build(
+            &mesh,
+            &BuildOptions {
+                spacing: 0.5,
+                axis,
+                ..BuildOptions::default()
+            },
+        )
+        .expect("builds");
+        assert_eq!(field.lattice().pad(), [0.0, 0.0], "{axis:?}");
+        let expected = 30.0 * 20.0 * 10.0;
+        assert!(
+            (field.volume() - expected).abs() / expected < 1e-12,
+            "{axis:?}"
+        );
+    }
+}

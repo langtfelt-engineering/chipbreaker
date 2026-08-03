@@ -23,6 +23,7 @@
 
 pub mod arena;
 pub mod convergence;
+pub mod deviation;
 pub mod field;
 pub mod io;
 pub mod lattice;
@@ -30,6 +31,7 @@ pub mod tessellation;
 pub mod tri;
 
 pub use arena::{Arena, INLINE_CAPACITY};
+pub use deviation::{DeviationReport, SurfacePoint};
 pub use field::{BuildError, BuildOptions, BuildStats, DexelField};
 pub use io::{FORMAT_VERSION, FieldFormat, FormatError, TDX_FORMAT_VERSION};
 pub use lattice::{Lattice, LatticeError};

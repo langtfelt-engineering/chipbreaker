@@ -13,10 +13,10 @@ is the metric that accuracy assertions and customer-facing claims are made
 against.**
 
 Do not reintroduce a volume-based accuracy assertion. It is not a weaker version
-of a deviation assertion; it is a different quantity with two properties that
-make it unfit, both of them measured rather than argued.
+of a deviation assertion; it is a different quantity with three properties that
+make it unfit, every one of them measured rather than argued.
 
-## Why: volume fails twice, and neither failure is a bug
+## Why: volume fails three times, and none of them is a bug
 
 ### 1. It does not fall monotonically
 
@@ -59,6 +59,34 @@ actually see *rises* and then parks on the mesh's own error. Below about
 `h/R = 1/40` a finer field buys nothing measurable in volume, so volume cannot
 distinguish a good tri-dexel field from a mediocre one on ordinary corpus
 geometry.
+
+### 3. It carries a quantisation bias that jumps discontinuously
+
+Found at Unit 6, and the simplest of the three to state.
+
+Every cell claims a full `h^2` of cross-section. When the spacing does not
+divide the transverse extent, `ceil` produces cells that stick out past the
+stock — and because the lattice is centred (see the U6 amendment in
+`dexel::lattice`), their ray centres are still *inside* the stock, so each
+reports a full chord. The volume is over-counted by exactly
+`covered area / true area`.
+
+A 30x20x10 mm box at 1.6 mm cells:
+
+| bundle | cells | covered mm² | true mm² | reported | truth | bias |
+|---|---|---:|---:|---:|---:|---:|
+| X | 13x7 | 232.96 | 200 | 6988.8 | 6000 | 1.165x |
+| Y | 7x19 | 340.48 | 300 | 6809.6 | 6000 | 1.135x |
+| Z | 19x13 | 632.32 | 600 | 6323.2 | 6000 | 1.054x |
+
+**A 16.5% volume error on a plain box, from arithmetic rather than sampling**,
+and it jumps discontinuously every time `ceil` steps. It vanishes exactly when
+the spacing divides the extents, which is why Unit 5 never saw it: every test
+there used a spacing that happened to divide.
+
+Deviation is untouched by this. The rays are in the right places and their
+endpoints are exact; only the *area attributed to each ray* is quantised, and
+deviation never attributes area to anything.
 
 ## Why deviation works
 

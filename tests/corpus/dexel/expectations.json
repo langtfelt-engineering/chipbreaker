@@ -13,9 +13,9 @@
       "spilled_rays": 0,
       "volume_mm3": 6.00000000000000000e3,
       "span_distribution": [[1, 2400]],
-      "file_bytes": 48204,
-      "file_digest": "e197ef53de4eedc8cd06f4cb49a0d9fe2d516edc7def5bffd704942692b7c750",
-      "digest": "6af0945d38660b213be3833b51470927c651f0d120c1b66637cb2bd0f234ef5d"
+      "file_bytes": 48220,
+      "file_digest": "108e271172f5a84e99d1f2cbebb0883b1fff9446774de2fe5ff1b800324b8fc6",
+      "digest": "e2a70095557139420e2ab7a3cfd4583b418d1e464a6ab715e760099d1c7be8eb"
     },
     {
       "id": "lattice-block-integer-vertices",
@@ -28,9 +28,9 @@
       "spilled_rays": 0,
       "volume_mm3": 1.25000000000000000e2,
       "span_distribution": [[1, 100]],
-      "file_bytes": 2204,
-      "file_digest": "2755e25c7cc20bf4eadea0e3b8518e933a1dc9016a67ba6a9583a17f6e13b458",
-      "digest": "3a6ab069f0f4a900480f19cbe8a225fcf046542ed0ef524ea469727a8460f448"
+      "file_bytes": 2220,
+      "file_digest": "71fdc3c6a9b6d942543d9db791493152fa6a20a43db5555cba9c8f70b49cf1c4",
+      "digest": "cab5ac30c4a5fecc8660a448b0c8def0a7e1d2da5e0fc207ffa99653b9008ff2"
     },
     {
       "id": "sphere",
@@ -43,9 +43,9 @@
       "spilled_rays": 0,
       "volume_mm3": 7.22603202835589764e3,
       "span_distribution": [[0, 772], [1, 2828]],
-      "file_bytes": 59852,
-      "file_digest": "adb533735afb33a5c4a68e5dc16eb1db9e746d3a5b78964b5f7d002fabfe11e4",
-      "digest": "2af5858a355e94fe7363abeb086b1be33e75672a37aa3b3c94a482a6cbd83f93"
+      "file_bytes": 59868,
+      "file_digest": "45c381a4b4252fb84c2f8bd930b63e8ca8b8de9fa8c1822b95b094d0944d85e1",
+      "digest": "cc929b714ab05ede1ddc8ef8cb3c188b6f05f75fcd3329af5dde1b1db1576a34"
     },
     {
       "id": "nested-shells-cavity",
@@ -58,9 +58,9 @@
       "spilled_rays": 0,
       "volume_mm3": 3.63345059120186625e3,
       "span_distribution": [[0, 344], [1, 940], [2, 316]],
-      "file_bytes": 31756,
-      "file_digest": "8099e57c2b0acb271d12b4f19e1672528dc72fdbc8865a62cb6de6bd2fa1ebe6",
-      "digest": "0b641839198ddc5ecdf4b0afe087a734cf5c4dee7b72887d896e19603c666ea2"
+      "file_bytes": 31772,
+      "file_digest": "1ee667ff8a11da67ab42a9ea38325f325d0afb6998d3ff96ec672279a82e8deb",
+      "digest": "1e9e51e04ea9e6cde255ff353da1111751575a92de481db83b029dd53ae9ecdc"
     },
     {
       "id": "torus-hole-along-the-bundle",
@@ -73,9 +73,9 @@
       "spilled_rays": 0,
       "volume_mm3": 4.72283025308309789e3,
       "span_distribution": [[0, 2764], [1, 3012]],
-      "file_bytes": 71500,
-      "file_digest": "c460a4ebce160abf12c93d48b85d467858a171adcf9e0e9378089a0d8714a92d",
-      "digest": "8d334a9c349619e38bfcf00eaedad7fe1c84bccbbea50671167895909d1e8802"
+      "file_bytes": 71516,
+      "file_digest": "0b3b1e5715cfc66357443a743d2d923cc19248430a660432e28d7ff105c1ecef",
+      "digest": "b4c0e93dd62ff45c03d6b468e6b13386253cb7fd67eece68a8b1a4a59a8b619e"
     },
     {
       "id": "torus-hole-across-the-bundle",
@@ -88,9 +88,9 @@
       "spilled_rays": 0,
       "volume_mm3": 4.74652712940955826e3,
       "span_distribution": [[0, 48], [1, 416], [2, 752]],
-      "file_bytes": 35788,
-      "file_digest": "92a1370d01078cabf5353a990024b3488716f3f0a997794c5020450ebcab4e63",
-      "digest": "a1549b6df50ab0ec0bd75cd94afccb3579844a9ff2345ff118e8369e18047906"
+      "file_bytes": 35804,
+      "file_digest": "b1c2b39d7426ba1a14efcb697e9ffaa42680cf9aa0172e1fc16219ac5dbe2609",
+      "digest": "9d74cd65b43631e2a13d357592b987c84ad1565bcf441fc4732f47dcc9e9d186"
     },
     {
       "id": "cylinder-axis-along-bundle",
@@ -103,9 +103,9 @@
       "spilled_rays": 0,
       "volume_mm3": 6.32000000000000000e3,
       "span_distribution": [[0, 336], [1, 1264]],
-      "file_bytes": 26828,
-      "file_digest": "607d1cce42a4ef5d794216b959c01248e8df6a98171f3d2396af4ca0d696875b",
-      "digest": "ad3394f2a91f25929d5782dd8acdb0c4ef3a99f9bde1b09c8bedece137cf7bd3"
+      "file_bytes": 26844,
+      "file_digest": "dbbb88be962122336d946ed2641c5f507ba6a118948a968878b6973ec1656d57",
+      "digest": "9d1a7c997351e03f7784a501c078c3b397a4e10200b342e8a0f67bb802a10e73"
     },
     {
       "id": "cylinder-axis-across-bundle",
@@ -118,9 +118,9 @@
       "spilled_rays": 0,
       "volume_mm3": 6.28829701188839317e3,
       "span_distribution": [[1, 1600]],
-      "file_bytes": 32204,
-      "file_digest": "71fcedd47401892e6f2460a173c2287d117ea9b231b6fdc546b43384ab7c533a",
-      "digest": "679c260fd5138989389512136e8e0cd2ed69b9c022fd15ec378e018ca4d0cbcc"
+      "file_bytes": 32220,
+      "file_digest": "1be069ef84d3c6fb8d5f6c3ba81aabf18a05551c28b7904312e61a2f0ece5480",
+      "digest": "a2b04e36acba12947d838e3a524179d31ef45a629f73fc269b8d5e6cfec65d3c"
     },
     {
       "id": "sphere-bundle-along-x",
@@ -133,9 +133,9 @@
       "spilled_rays": 0,
       "volume_mm3": 7.22603202835589764e3,
       "span_distribution": [[0, 772], [1, 2828]],
-      "file_bytes": 59852,
-      "file_digest": "e340a57cbd1df53f0d4c5d8eb26bdf7683cd2ad0417e8ea94b9713f7876238ec",
-      "digest": "ba49a21dd45bb82c1a466af1770738b883dc77f36645cae985735a6c6609e1d9"
+      "file_bytes": 59868,
+      "file_digest": "c707f62f9a06ab31c21d1e7dac2985e61a5bfc7be71ba3760cdf619261468bab",
+      "digest": "c4685f5fe4cf3b9e1c56956215a055a011a0a3fc2a9f93a72a9315ada7d5191b"
     },
     {
       "id": "sphere-placed-off-origin",
@@ -148,9 +148,9 @@
       "spilled_rays": 0,
       "volume_mm3": 7.22603202835589764e3,
       "span_distribution": [[0, 772], [1, 2828]],
-      "file_bytes": 59852,
-      "file_digest": "dc712076517bc56556ceeaecd531b4bf8cfefd5b811ac875ac3b8bc0ba8b34d6",
-      "digest": "084c5fbbc0c782ecea5533b0dfb5e906a74fb4ec99689dcc20ab540afed14e86"
+      "file_bytes": 59868,
+      "file_digest": "a8ce0ed611573df4fc7296ec292a635e6d24b5006a6f81563ff10aee99a1e46e",
+      "digest": "c135a19def4647c1e2a42fcb7bff4348e623625be2e16261876770a8b7bca498"
     }
   ]
 }
