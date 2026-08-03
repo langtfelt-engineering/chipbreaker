@@ -77,6 +77,14 @@ allow = ["GPL-3.0-or-later"]
 name = "chipbreaker-cli"
 allow = ["GPL-3.0-or-later"]
 
+# The G-code parser. First-party, so the same reasoning applies as for the other
+# two: GPL-3.0-or-later for the open distribution, and the commercial licence
+# covers it because copyright title is held in one place. It links only
+# chipbreaker-core, which carries the same terms.
+[[licenses.exceptions]]
+name = "chipbreaker-gcode"
+allow = ["GPL-3.0-or-later"]
+
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
