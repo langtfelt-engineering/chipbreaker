@@ -7,10 +7,12 @@ answers: **what shape is left at the end, and does it match the part we
 intended?** It finds gouges, leftover stock and tool-holder collisions before a
 real machine drives into a real workpiece.
 
-> **Status: Unit 1 of 20.** The numeric foundation and the determinism harness
-> are in place: exact geometric predicates, interval spans, canonical hashing,
-> and native/WASM parity in CI. There is no mesh I/O, no G-code parser and no
-> dexel field yet. See [Roadmap](#roadmap).
+> **Status: Unit 3 of 20, in progress.** The numeric foundation, the determinism
+> harness, the triangle mesh core with its I/O and BVH, and tool geometry are in
+> place: exact geometric predicates, interval spans, canonical hashing, a
+> deterministic root solver validated against an exact Sturm oracle, ray casting
+> against tool solids of revolution, and native/WASM parity in CI. There is no
+> G-code parser and no dexel field yet. See [Roadmap](#roadmap).
 
 ## The guarantee
 
@@ -93,7 +95,9 @@ in the engine bottoms out there, so its tolerance policy is documented at length
 | Units | Content | Status |
 |---|---|---|
 | U1 | Workspace, determinism harness, numeric core | **done** |
-| U2–U4 | Triangle mesh + I/O + BVH, tool geometry, G-code parser and toolpath IR | |
+| U2 | Triangle mesh, I/O, validation, BVH | **done** |
+| U3 | Tool and holder geometry, root solver, ray versus solid of revolution | in progress |
+| U4 | G-code parser and toolpath IR | |
 | U5–U8 | Dexel field, tri-dexel, 3-axis material removal, arcs | |
 | U9–U11 | Dual contouring, adaptive resolution, deterministic parallelism | |
 | U12–U15 | Deviation fields, gouge classification, collision detection, multi-setup | |
