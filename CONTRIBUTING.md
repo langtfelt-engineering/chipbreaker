@@ -181,6 +181,21 @@ units. A bare `1e-9` at a call site will be rejected in review: it carries no
 units, no justification, and no way to audit what happens when the workspace scale
 changes.
 
+## Architecture decision records
+
+Decisions that outlive the code that implements them live in [`docs/adr/`](docs/adr/),
+one file each, numbered. A decision belongs there when reversing it later would
+look like a reasonable simplification to somebody who was not present for it —
+which is precisely when a comment in the code is not enough.
+
+| ADR | Decision |
+|---|---|
+| [0001](docs/adr/0001-spans-arena.md) | Dexel span storage, and the ray lattice offset that U5 must not "simplify" away |
+| [0002](docs/adr/0002-branch-protection.md) | Branch protection on `main`: deferred, why, and what guards the branch meanwhile |
+
+Add the new file *and* a row here. An ADR nothing links to is a file nobody
+reads.
+
 ## Tests
 
 - `cargo test --all` must pass on Windows, Linux and macOS.
