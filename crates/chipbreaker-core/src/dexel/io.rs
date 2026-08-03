@@ -176,9 +176,11 @@ pub fn write<W: Write>(field: &DexelField, w: &mut W) -> Result<(), FormatError>
         put_f64(w, value)?;
     }
     put_f64(w, lattice.spacing())?;
-    // The workspace extent along the ray axis, recovered from the ray length so
-    // the lattice reconstructs exactly rather than approximately.
-    put_f64(w, lattice.ray_length() - 2.0 * lattice.spacing())?;
+    // The value itself, not `ray_length() - 2 * spacing`. That reconstruction
+    // is not exact -- a 30 mm extent at 1.6 mm cells returned
+    // 30.000000000000004 -- so a file reloaded to a lattice that was not the
+    // one written. Caught by the tri-dexel corpus round-trip.
+    put_f64(w, lattice.length())?;
     // The true transverse extents, which `counts * spacing` cannot recover.
     for value in lattice.extent() {
         put_f64(w, value)?;

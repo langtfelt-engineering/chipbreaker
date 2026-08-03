@@ -88,6 +88,21 @@ Deviation is untouched by this. The rays are in the right places and their
 endpoints are exact; only the *area attributed to each ray* is quantised, and
 deviation never attributes area to anything.
 
+### Does averaging three bundles rescue it? Measured at U6: no.
+
+Three independent oscillating terms might have cancelled. The upright cylinder,
+relative error against truth:
+
+| h/R | X bundle | Y bundle | Z bundle | mean of three |
+|---:|---:|---:|---:|---:|
+| 1/40 | 4.23e-4 | 4.23e-4 | 4.07e-4 | **1.46e-4** |
+| 1/80 | 1.60e-4 | 1.60e-4 | 1.90e-4 | **1.70e-4** |
+| 1/160 | 5.18e-5 | 5.18e-5 | 4.39e-4 | **1.81e-4** |
+| 1/320 | 2.37e-5 | 2.37e-5 | 1.62e-5 | 2.12e-5 |
+
+The mean rises across two successive refinements. Averaging a diagnostic three
+times gives a better diagnostic, not a metric.
+
 ## Why deviation works
 
 Maximum surface deviation is a **supremum over points**, not an integral. It has

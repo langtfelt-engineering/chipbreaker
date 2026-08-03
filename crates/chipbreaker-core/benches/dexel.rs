@@ -266,6 +266,84 @@ criterion_group!(
     cell_centres_versus_corners,
     serialization,
     volume,
-    lattice
+    lattice,
+    tri,
+    tessellation
 );
 criterion_main!(benches);
+
+/// Three bundles: build, serialize, and measure deviation.
+///
+/// The numbers Unit 7 budgets against. Note that three bundles is **not** three
+/// times one: they cover `(WD + DH + HW) / h^2` rays between them, so the cost
+/// tracks half the bounding-box surface area rather than any single face.
+fn tri(c: &mut Criterion) {
+    use chipbreaker_core::dexel::deviation::{measure, sample_mesh_budget};
+    use chipbreaker_core::dexel::tri::{TriBuildOptions, TriDexelField};
+
+    let mesh = part();
+    let mut group = c.benchmark_group("tridexel");
+
+    for spacing in [1.0, 0.5, 0.25] {
+        let options = TriBuildOptions {
+            spacing,
+            ..TriBuildOptions::default()
+        };
+        let (field, stats) = TriDexelField::build(&mesh, &options).expect("builds");
+        group.throughput(Throughput::Elements(stats.rays));
+        group.bench_with_input(
+            BenchmarkId::new("build", format!("{spacing}mm/{}rays", stats.rays)),
+            &options,
+            |b, options| {
+                b.iter(|| black_box(TriDexelField::build(black_box(&mesh), options).is_ok()));
+            },
+        );
+
+        let bytes = dexel_io::tri_to_bytes(&field).expect("writes");
+        group.throughput(Throughput::Bytes(bytes.len() as u64));
+        group.bench_with_input(
+            BenchmarkId::new("write", format!("{spacing}mm")),
+            &field,
+            |b, field| b.iter(|| black_box(dexel_io::tri_to_bytes(field).map(|v| v.len()))),
+        );
+        group.bench_with_input(
+            BenchmarkId::new("read", format!("{spacing}mm")),
+            &bytes,
+            |b, bytes| b.iter(|| black_box(dexel_io::tri_from_bytes(bytes).is_ok())),
+        );
+    }
+
+    // Deviation, which is the accuracy metric and therefore the measurement a
+    // customer will actually run. Its cost is what decides whether it can be a
+    // default or has to be opt-in.
+    let (field, _) = TriDexelField::build(
+        &mesh,
+        &TriBuildOptions {
+            spacing: 0.5,
+            ..TriBuildOptions::default()
+        },
+    )
+    .expect("builds");
+    let (samples, _) = sample_mesh_budget(&mesh, 20_000);
+    group.throughput(Throughput::Elements(samples.len() as u64));
+    group.bench_function("deviation/20k-samples", |b| {
+        b.iter(|| black_box(measure(black_box(&field), black_box(&samples)).best_max));
+    });
+    group.finish();
+}
+
+/// The tessellation estimate, which `dexel build` runs on every invocation.
+fn tessellation(c: &mut Criterion) {
+    use chipbreaker_core::dexel::tessellation;
+    let mut group = c.benchmark_group("tridexel/tessellation");
+    for (name, mesh) in [
+        ("sphere-4", shapes::icosphere(10.0, 4)),
+        ("sphere-5", shapes::icosphere(10.0, 5)),
+    ] {
+        group.throughput(Throughput::Elements(u64::from(mesh.triangle_count())));
+        group.bench_function(name, |b| {
+            b.iter(|| black_box(tessellation::estimate(black_box(&mesh)).percentile_sagitta_mm));
+        });
+    }
+    group.finish();
+}

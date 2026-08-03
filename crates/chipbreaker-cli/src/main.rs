@@ -302,14 +302,14 @@ mod tests {
     }
 
     #[test]
-    fn dexel_build_requires_a_spacing_and_takes_no_default() {
+    fn dexel_build_requires_a_resolution_and_takes_no_default() {
         // Accuracy depends on the ratio of cell size to the smallest feature
-        // that matters, so a default spacing would be a guess about somebody
-        // else's part. Refusing to have one is the decision; this pins it.
+        // that matters, so a default would be a guess about somebody else's
+        // part. Refusing to have one is the decision; this pins it.
         assert!(
             Cli::try_parse_from(["chipbreaker", "dexel", "build", "part.stl", "--units", "mm"])
                 .is_err(),
-            "dexel build must require --spacing rather than defaulting"
+            "dexel build must require --res rather than defaulting"
         );
 
         let cli = Cli::try_parse_from([
@@ -319,10 +319,10 @@ mod tests {
             "part.stl",
             "--units",
             "mm",
-            "--spacing",
+            "--res",
             "0.25",
-            "--axis",
-            "x",
+            "--axes",
+            "xz",
             "--at",
             "10,-5,0.5",
         ])
@@ -331,8 +331,8 @@ mod tests {
             Command::Dexel {
                 command: dexel::DexelCommand::Build { build, out },
             } => {
-                assert!((build.spacing - 0.25).abs() < 1e-15);
-                assert_eq!(build.axis, chipbreaker_core::math::Axis::X);
+                assert!((build.res - 0.25).abs() < 1e-15);
+                assert_eq!(build.axes.as_str(), "xz");
                 assert_eq!(build.at.map(|v| v.to_array()), Some([10.0, -5.0, 0.5]));
                 assert!(out.is_none());
             }
@@ -341,16 +341,78 @@ mod tests {
     }
 
     #[test]
-    fn dexel_read_subcommands_parse() {
-        for verb in ["stat", "volume", "slice"] {
-            let cli = Cli::try_parse_from(["chipbreaker", "dexel", verb, "field.dexel"])
-                .unwrap_or_else(|e| panic!("dexel {verb}: {e}"));
-            assert!(matches!(cli.command, Command::Dexel { .. }));
+    fn dexel_defaults_to_all_three_bundles() {
+        // Two bundles carry no 1/sqrt(3) guarantee, so the default must be the
+        // set that does.
+        let cli = Cli::try_parse_from([
+            "chipbreaker",
+            "dexel",
+            "build",
+            "p.stl",
+            "--units",
+            "mm",
+            "--res",
+            "1",
+        ])
+        .expect("valid");
+        match cli.command {
+            Command::Dexel {
+                command: dexel::DexelCommand::Build { build, .. },
+            } => assert_eq!(build.axes.as_str(), "xyz"),
+            other => panic!("wrong subcommand: {other:?}"),
         }
-        assert!(
-            Cli::try_parse_from(["chipbreaker", "dexel", "convergence"]).is_ok(),
-            "the accuracy table must be runnable without arguments"
-        );
+    }
+
+    #[test]
+    fn dexel_read_subcommands_parse() {
+        for args in [
+            vec!["chipbreaker", "dexel", "stat", "f.tdx"],
+            vec!["chipbreaker", "dexel", "stat", "f.tdx", "--per-axis"],
+            vec!["chipbreaker", "dexel", "volume", "f.tdx"],
+            vec!["chipbreaker", "dexel", "convergence"],
+            vec!["chipbreaker", "dexel", "slice", "f.tdx", "--at", "Z=12.5"],
+            vec![
+                "chipbreaker",
+                "dexel",
+                "deviation",
+                "f.tdx",
+                "--mesh",
+                "p.stl",
+            ],
+            vec![
+                "chipbreaker",
+                "dexel",
+                "coverage",
+                "f.tdx",
+                "--mesh",
+                "p.stl",
+            ],
+        ] {
+            let joined = args.join(" ");
+            assert!(Cli::try_parse_from(args).is_ok(), "should parse: {joined}");
+        }
+    }
+
+    #[test]
+    fn a_slice_plane_must_name_an_axis_and_a_coordinate() {
+        let cli = Cli::try_parse_from(["chipbreaker", "dexel", "slice", "f.tdx", "--at", "Z=12.5"])
+            .expect("valid");
+        match cli.command {
+            Command::Dexel {
+                command: dexel::DexelCommand::Slice { at, .. },
+            } => {
+                assert_eq!(at.0, chipbreaker_core::math::Axis::Z);
+                assert!((at.1 - 12.5).abs() < 1e-15);
+            }
+            other => panic!("wrong subcommand: {other:?}"),
+        }
+        for bad in ["12.5", "W=1", "Z=", "Z=nope"] {
+            assert!(
+                Cli::try_parse_from(["chipbreaker", "dexel", "slice", "f.tdx", "--at", bad])
+                    .is_err(),
+                "{bad:?} must not parse as a cutting plane"
+            );
+        }
     }
 
     #[test]
@@ -363,9 +425,9 @@ mod tests {
                 "p.stl",
                 "--units",
                 "mm",
-                "--spacing",
+                "--res",
                 "1",
-                "--axis",
+                "--axes",
                 "w",
             ])
             .is_err(),

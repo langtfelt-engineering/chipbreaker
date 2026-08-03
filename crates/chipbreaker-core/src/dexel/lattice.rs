@@ -305,6 +305,19 @@ impl Lattice {
         Vec3::from_array(point)
     }
 
+    /// Workspace extent along the ray axis.
+    ///
+    /// Exposed because the `.dexel` writer needs the value itself. It used to
+    /// reconstruct it as `ray_length() - 2 * spacing`, which is not exact: a
+    /// 30 mm extent at 1.6 mm cells came back as `30.000000000000004`, so the
+    /// lattice a file reloaded to was not the one written. Round-tripping a
+    /// stored number through arithmetic is never worth it.
+    #[inline]
+    #[must_use]
+    pub const fn length(&self) -> f64 {
+        self.length
+    }
+
     /// How far a ray must travel to clear the workspace.
     #[inline]
     #[must_use]

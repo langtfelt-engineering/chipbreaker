@@ -255,3 +255,48 @@ fn an_unknown_axis_code_is_refused() {
         other => panic!("{other:?}"),
     }
 }
+
+#[test]
+fn the_lattice_round_trips_exactly_for_awkward_extents() {
+    // The bug the tri-dexel corpus caught. The writer used to store the ray
+    // length and let the reader subtract two cells to recover the workspace
+    // extent; `(30.0 + 3.2) - 3.2` is `30.000000000000004`, so a file reloaded
+    // to a lattice whose rays sat a few ULP from where they were written.
+    //
+    // The values here are chosen so the spacing divides none of them, which is
+    // when the arithmetic goes wrong.
+    use chipbreaker_core::dexel::{BuildOptions, DexelField};
+    use chipbreaker_core::math::Axis;
+    let mesh = chipbreaker_core::mesh::shapes::box_solid(
+        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::new(30.0, 20.0, 10.0),
+    );
+    for axis in [Axis::X, Axis::Y, Axis::Z] {
+        for spacing in [1.6, 0.7, 0.3] {
+            let (field, _) = DexelField::build(
+                &mesh,
+                &BuildOptions {
+                    spacing,
+                    axis,
+                    ..BuildOptions::default()
+                },
+            )
+            .expect("builds");
+            let reloaded = io::from_bytes(&io::to_bytes(&field).expect("writes")).expect("reads");
+            assert_eq!(
+                field.lattice(),
+                reloaded.lattice(),
+                "{axis:?} at {spacing} mm: the lattice did not survive the round trip"
+            );
+            // And the rays really are in the same places, on the bits.
+            let rays = u32::try_from(field.arena().rays()).expect("small");
+            for ray in [0, rays / 2, rays - 1] {
+                let a = field.lattice().ray_at(ray).origin.to_array();
+                let b = reloaded.lattice().ray_at(ray).origin.to_array();
+                for (x, y) in a.iter().zip(&b) {
+                    assert_eq!(x.to_bits(), y.to_bits(), "{axis:?} at {spacing}, ray {ray}");
+                }
+            }
+        }
+    }
+}

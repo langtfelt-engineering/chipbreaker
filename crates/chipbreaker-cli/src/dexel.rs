@@ -9,23 +9,35 @@
 //! contract depend on float formatting — on the understanding that debuggability
 //! becomes a tooling problem. This module is that tooling.
 //!
-//! `stat` answers "what is in this file", `slice` answers "what does it look
-//! like there", and `volume` answers "how much material". `convergence` runs the
-//! accuracy measurement so a customer can reproduce the published table on their
-//! own geometry rather than taking ours on faith.
+//! `stat` answers "what is in this file", `slice` draws a cross-section, and
+//! `volume` answers "how much material" — though ADR 0005 is emphatic that
+//! volume is a **diagnostic**, not an accuracy metric. `deviation` and
+//! `coverage` are the accuracy commands: the first regenerates the deviation
+//! table, the second checks the `1/sqrt(3)` sampling guarantee directly.
 
 use std::path::PathBuf;
 
 use chipbreaker_core::dexel::convergence::{
-    ErrorModel, GAUSS_CIRCLE_EXPONENT, measure, standard_cases, standard_ratios,
+    ErrorModel, GAUSS_CIRCLE_EXPONENT, measure as measure_convergence, standard_cases,
+    standard_ratios,
 };
-use chipbreaker_core::dexel::{BuildOptions, BuildStats, DexelField, io as dexel_io};
+use chipbreaker_core::dexel::deviation::{
+    coverage as measure_coverage, measure as measure_deviation, sample_mesh_budget,
+};
+use chipbreaker_core::dexel::tri::{
+    AXES, AxisSet, TriBuildOptions, TriDexelField, WORST_CASE_COSINE,
+};
+use chipbreaker_core::dexel::{DexelField, FieldFormat, TriBuildStats, io as dexel_io};
 use chipbreaker_core::golden::CanonicalHash;
 use chipbreaker_core::math::{Axis, Mat4, Vec3};
+use chipbreaker_core::mesh::TriMesh;
 use clap::{Args, Subcommand};
 use serde_json::{Value, json};
 
 use crate::mesh::Input;
+
+/// Surface points used by `deviation`. Enough to find the worst region.
+const DEVIATION_SAMPLES: usize = 20_000;
 
 /// Options shared by every subcommand that builds a field.
 #[derive(Debug, Args)]
@@ -37,11 +49,14 @@ pub struct BuildArgs {
     /// No default. Accuracy depends on the ratio of this to the smallest feature
     /// that matters, not on the number itself, so a default would be a guess
     /// about the customer's part.
-    #[arg(long, value_name = "MM")]
-    pub spacing: f64,
-    /// Axis the rays run along.
-    #[arg(long, default_value = "z", value_parser = parse_axis)]
-    pub axis: Axis,
+    #[arg(long = "res", alias = "spacing", value_name = "MM")]
+    pub res: f64,
+    /// Which bundles to build, as a subset of `xyz`.
+    ///
+    /// Only `xyz` carries the `1/sqrt(3)` sampling guarantee: with two bundles a
+    /// surface normal perpendicular to both is sampled by neither.
+    #[arg(long, default_value = "xyz", value_parser = parse_axes)]
+    pub axes: AxisSet,
     /// Where the stock sits in machine coordinates, as `x,y,z` millimetres.
     #[arg(long, value_parser = parse_vec3)]
     pub at: Option<Vec3>,
@@ -51,10 +66,10 @@ pub struct BuildArgs {
 }
 
 impl BuildArgs {
-    fn options(&self) -> BuildOptions {
-        BuildOptions {
-            spacing: self.spacing,
-            axis: self.axis,
+    fn options(&self) -> TriBuildOptions {
+        TriBuildOptions {
+            spacing: self.res,
+            axes: self.axes,
             placement: self.at.map_or(Mat4::IDENTITY, Mat4::from_translation),
             margin: self.margin,
         }
@@ -64,7 +79,7 @@ impl BuildArgs {
 /// `chipbreaker dexel ...`
 #[derive(Debug, Subcommand)]
 pub enum DexelCommand {
-    /// Build a field from a stock mesh and write it as `.dexel`.
+    /// Build a field from a stock mesh and write it as `.tdx` (or `.dexel`).
     Build {
         #[command(flatten)]
         build: BuildArgs,
@@ -72,41 +87,87 @@ pub enum DexelCommand {
         #[arg(long, value_name = "FILE")]
         out: Option<PathBuf>,
     },
-    /// Describe a `.dexel` file: lattice, occupancy, span distribution.
+    /// Describe a field file: lattice, occupancy, span distribution.
     Stat {
         /// The field to read.
         file: PathBuf,
+        /// Break the report down per bundle.
+        #[arg(long)]
+        per_axis: bool,
         /// Emit JSON instead of text.
         #[arg(long)]
         json: bool,
     },
     /// Report the material volume of a field.
-    Volume {
-        /// A `.dexel` file to read.
-        file: PathBuf,
-        /// Emit JSON instead of text.
-        #[arg(long)]
-        json: bool,
-    },
-    /// Print one row of the lattice as text, so a field can be eyeballed.
     ///
-    /// The answer to "the binary format is not human-readable". A slice shows
-    /// where material starts and stops along each ray in a single row, which is
-    /// enough to see a hole in the wrong place.
-    Slice {
-        /// A `.dexel` file to read.
+    /// **A diagnostic, not an accuracy metric.** See ADR 0005 and `deviation`.
+    Volume {
+        /// A field file to read.
         file: PathBuf,
-        /// Which row of the lattice, along the first lattice axis.
-        ///
-        /// Defaults to the middle, which is where the interesting geometry
-        /// usually is.
-        #[arg(long)]
-        row: Option<u32>,
         /// Emit JSON instead of text.
         #[arg(long)]
         json: bool,
     },
-    /// Run the convergence measurement and print the accuracy table.
+    /// Draw a cross-section of a field as SVG.
+    ///
+    /// The answer to "the binary format is not human-readable".
+    Slice {
+        /// A field file to read.
+        file: PathBuf,
+        /// The cutting plane, as `Z=12.5`.
+        #[arg(long, value_name = "AXIS=MM", value_parser = parse_plane)]
+        at: (Axis, f64),
+        /// Which bundle to draw from. Defaults to the plane's own axis.
+        #[arg(long, value_parser = parse_axis)]
+        axis: Option<Axis>,
+        /// Where to write the SVG.
+        #[arg(long, value_name = "FILE")]
+        out: Option<PathBuf>,
+        /// Emit JSON instead of text.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Measure surface deviation against the mesh the field was built from.
+    ///
+    /// **The accuracy metric.** Regenerates the published table rather than
+    /// asserting it, so the numbers are reproducible on a customer's own part.
+    Deviation {
+        /// A field file to read.
+        file: PathBuf,
+        /// The mesh to measure against.
+        #[arg(long, value_name = "FILE")]
+        mesh: PathBuf,
+        /// Unit the mesh's coordinates are in.
+        #[arg(long)]
+        units: Option<String>,
+        /// Show the per-bundle columns, which make the anisotropy visible.
+        #[arg(long)]
+        per_axis: bool,
+        /// Emit JSON instead of text.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Report the worst-case sampling angle over a mesh's surface.
+    ///
+    /// The direct check on the `1/sqrt(3)` guarantee: no surface normal should
+    /// be sampled worse than 54.7356 degrees by the best of three bundles.
+    Coverage {
+        /// A field file to read, for its axis set.
+        file: PathBuf,
+        /// The mesh whose surface to check.
+        #[arg(long, value_name = "FILE")]
+        mesh: PathBuf,
+        /// Unit the mesh's coordinates are in.
+        #[arg(long)]
+        units: Option<String>,
+        /// Emit JSON instead of text.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Run the volume convergence measurement.
+    ///
+    /// Kept because it is a useful diagnostic and because its non-monotonicity
+    /// is the evidence behind ADR 0005.
     Convergence {
         /// Emit JSON instead of text.
         #[arg(long)]
@@ -123,6 +184,8 @@ impl DexelCommand {
             Self::Stat { json, .. }
             | Self::Volume { json, .. }
             | Self::Slice { json, .. }
+            | Self::Deviation { json, .. }
+            | Self::Coverage { json, .. }
             | Self::Convergence { json } => *json,
         }
     }
@@ -130,6 +193,28 @@ impl DexelCommand {
 
 fn parse_axis(s: &str) -> Result<Axis, String> {
     Axis::from_name(s).ok_or_else(|| format!("expected x, y or z; got {s:?}"))
+}
+
+fn parse_axes(s: &str) -> Result<AxisSet, String> {
+    AxisSet::parse(s)
+        .ok_or_else(|| format!("expected a subset of xyz, such as xyz or xz; got {s:?}"))
+}
+
+fn parse_plane(s: &str) -> Result<(Axis, f64), String> {
+    let (name, value) = s
+        .split_once('=')
+        .ok_or_else(|| format!("expected AXIS=VALUE, such as Z=12.5; got {s:?}"))?;
+    let axis = parse_axis(name.trim())?;
+    let at = value
+        .trim()
+        .parse::<f64>()
+        .map_err(|e| format!("{value:?}: {e}"))?;
+    if !at.is_finite() {
+        return Err(format!(
+            "the cutting plane must be at a finite coordinate, got {at}"
+        ));
+    }
+    Ok((axis, at))
 }
 
 fn parse_vec3(s: &str) -> Result<Vec3, String> {
@@ -148,232 +233,595 @@ fn parse_vec3(s: &str) -> Result<Vec3, String> {
 pub fn run(command: &DexelCommand) -> Result<(Value, String, bool), String> {
     match command {
         DexelCommand::Build { build, out } => run_build(build, out.as_deref()),
-        DexelCommand::Stat { file, .. } => run_stat(file),
+        DexelCommand::Stat { file, per_axis, .. } => run_stat(file, *per_axis),
         DexelCommand::Volume { file, .. } => run_volume(file),
-        DexelCommand::Slice { file, row, .. } => run_slice(file, *row),
+        DexelCommand::Slice {
+            file,
+            at,
+            axis,
+            out,
+            ..
+        } => run_slice(file, *at, *axis, out.as_deref()),
+        DexelCommand::Deviation {
+            file,
+            mesh,
+            units,
+            per_axis,
+            ..
+        } => run_deviation(file, mesh, units.as_deref(), *per_axis),
+        DexelCommand::Coverage {
+            file, mesh, units, ..
+        } => run_coverage(file, mesh, units.as_deref()),
         DexelCommand::Convergence { .. } => run_convergence(),
     }
 }
 
-fn read_field(file: &std::path::Path) -> Result<DexelField, String> {
+/// Either kind of field file, so both formats stay usable everywhere.
+enum Loaded {
+    Single(Box<DexelField>),
+    Tri(Box<TriDexelField>),
+}
+
+impl Loaded {
+    fn as_tri(&self) -> Option<&TriDexelField> {
+        match self {
+            Self::Tri(f) => Some(f),
+            Self::Single(_) => None,
+        }
+    }
+
+    fn bundles(&self) -> Vec<(Axis, &DexelField)> {
+        match self {
+            Self::Single(f) => vec![(f.lattice().axis(), f.as_ref())],
+            Self::Tri(f) => f.bundles().collect(),
+        }
+    }
+
+    fn axes(&self) -> AxisSet {
+        match self {
+            Self::Single(f) => AxisSet::parse(f.lattice().axis().as_str()).unwrap_or(AxisSet::XYZ),
+            Self::Tri(f) => f.axes(),
+        }
+    }
+
+    fn digest(&self) -> String {
+        let mut h = CanonicalHash::new();
+        match self {
+            Self::Single(f) => h.add(f.as_ref()),
+            Self::Tri(f) => h.add(f.as_ref()),
+        };
+        h.finish().to_hex()
+    }
+}
+
+fn read_field(file: &std::path::Path) -> Result<Loaded, String> {
     let bytes = std::fs::read(file).map_err(|e| format!("cannot read {}: {e}", file.display()))?;
-    dexel_io::from_bytes(&bytes).map_err(|e| format!("{}: {e}", file.display()))
+    match dexel_io::detect(&bytes) {
+        Some(FieldFormat::Single) => dexel_io::from_bytes(&bytes)
+            .map(|f| Loaded::Single(Box::new(f)))
+            .map_err(|e| format!("{}: {e}", file.display())),
+        Some(FieldFormat::Tri) => dexel_io::tri_from_bytes(&bytes)
+            .map(|f| Loaded::Tri(Box::new(f)))
+            .map_err(|e| format!("{}: {e}", file.display())),
+        None => Err(format!(
+            "{} is not a Chipbreaker field file: it starts with neither the .dexel \
+             nor the .tdx magic",
+            file.display()
+        )),
+    }
 }
 
-fn digest_of(field: &DexelField) -> String {
-    let mut h = CanonicalHash::new();
-    h.add(field);
-    h.finish().to_hex()
+fn load_mesh(path: &std::path::Path, units: Option<&str>) -> Result<TriMesh, String> {
+    let input = Input {
+        file: path.to_path_buf(),
+        units: units
+            .map(|u| {
+                chipbreaker_core::mesh::units::Unit::from_name(u)
+                    .ok_or_else(|| format!("unknown unit {u:?}"))
+            })
+            .transpose()?,
+        weld_tol: chipbreaker_core::eps::EPS_WELD,
+        json: false,
+    };
+    crate::mesh::load(&input).map(|(mesh, _)| mesh)
 }
 
-fn lattice_json(field: &DexelField) -> Value {
-    let lattice = field.lattice();
-    let [nx, ny] = lattice.counts();
-    json!({
-        "axis": lattice.axis().as_str(),
-        "cell_area_mm2": lattice.cell_area(),
-        "counts": [nx, ny],
-        "origin_mm": lattice.origin().to_array(),
-        "ray_count": lattice.ray_count(),
-        "ray_length_mm": lattice.ray_length(),
-        "spacing_mm": lattice.spacing(),
-    })
-}
+// --- build -----------------------------------------------------------------
 
 fn run_build(
     args: &BuildArgs,
     out: Option<&std::path::Path>,
 ) -> Result<(Value, String, bool), String> {
-    if !args.spacing.is_finite() || args.spacing <= 0.0 {
+    if !args.res.is_finite() || args.res <= 0.0 {
         return Err(format!(
-            "--spacing must be a positive length in millimetres, got {}",
-            args.spacing
+            "--res must be a positive length in millimetres, got {}",
+            args.res
         ));
     }
     let (mesh, mesh_summary) = crate::mesh::load(&args.input)?;
-    let (field, stats) = DexelField::build(&mesh, &args.options()).map_err(|e| e.to_string())?;
+    let (field, stats) = TriDexelField::build(&mesh, &args.options()).map_err(|e| e.to_string())?;
+
+    // The tessellation adequacy warning. A customer asking for 0.05 mm on a
+    // coarse STL is buying precision their data cannot carry, and delivering it
+    // silently produces a confident-looking answer whose real error is a
+    // hundred times the cell size.
+    let advice = field.provenance().tessellation.advice(args.res);
 
     let mut written = None;
     if let Some(path) = out {
-        let bytes = dexel_io::to_bytes(&field).map_err(|e| e.to_string())?;
+        let bytes = if field.is_complete() || field.axes().len() > 1 {
+            dexel_io::tri_to_bytes(&field).map_err(|e| e.to_string())?
+        } else {
+            // A single bundle round-trips through the older, simpler format, so
+            // `--axes z` still produces something a .dexel reader understands.
+            let (axis, bundle) = field.bundles().next().ok_or("no bundle was built")?;
+            let _ = axis;
+            dexel_io::to_bytes(bundle).map_err(|e| e.to_string())?
+        };
         std::fs::write(path, &bytes)
             .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
         written = Some((path.display().to_string(), bytes.len()));
     }
 
-    let text = format!(
-        "{}\n\n{}{}",
-        describe_lattice(&field),
-        describe_occupancy(&field, Some(&stats)),
-        written.as_ref().map_or_else(String::new, |(p, n)| format!(
-            "\nwrote {p} ({n} bytes, {:.2} MiB)\n",
-            *n as f64 / (1024.0 * 1024.0)
-        ))
-    );
+    let mut text = describe_tri(&field, Some(&stats));
+    if let Some((path, bytes)) = &written {
+        text.push_str(&format!(
+            "\nwrote {path} ({bytes} bytes, {:.2} MiB)\n",
+            *bytes as f64 / (1024.0 * 1024.0)
+        ));
+    }
+    if let Some(advice) = &advice {
+        text.push_str(&format!("\nWARNING: {advice}\n"));
+    }
+
+    let t = &field.provenance().tessellation;
+    let digest = {
+        let mut h = CanonicalHash::new();
+        h.add(&field);
+        h.finish().to_hex()
+    };
     let results = json!({
+        "axes": field.axes().as_str(),
         "command": "build",
-        "digest": digest_of(&field),
-        "lattice": lattice_json(&field),
+        "digest": digest,
         "mesh": mesh_summary,
-        "occupancy": occupancy_json(&field, Some(&stats)),
+        "per_axis": per_axis_json(&field, Some(&stats)),
+        "tessellation": {
+            "advice": advice,
+            "edges": t.edges,
+            "max_sagitta_mm": t.max_sagitta_mm,
+            "mean_edge_mm": t.mean_edge_mm,
+            "percentile_sagitta_mm": t.percentile_sagitta_mm,
+            "sharp_edges": t.sharp_edges,
+        },
+        "totals": {
+            "bytes": field.bytes(),
+            "degenerate_triangles": stats.degenerate_triangles,
+            "rays": stats.rays,
+            "spans": stats.spans,
+            "volume_mm3_mean": field.volume(),
+        },
         "written": written.map(|(p, n)| json!({ "bytes": n, "path": p })),
     });
     Ok((results, text, true))
 }
 
-fn run_stat(file: &std::path::Path) -> Result<(Value, String, bool), String> {
-    let field = read_field(file)?;
-    let text = format!(
-        "{}\n\n{}\n{}",
-        describe_lattice(&field),
-        describe_occupancy(&field, None),
-        describe_distribution(&field)
+// --- stat, volume ----------------------------------------------------------
+
+fn run_stat(file: &std::path::Path, per_axis: bool) -> Result<(Value, String, bool), String> {
+    let loaded = read_field(file)?;
+    let mut text = String::new();
+    for (axis, bundle) in loaded.bundles() {
+        let lattice = bundle.lattice();
+        let [nx, ny] = lattice.counts();
+        text.push_str(&format!(
+            "bundle {}   {nx} x {ny} = {} rays, {} mm cells, origin {:?}\n",
+            axis.as_str(),
+            lattice.ray_count(),
+            lattice.spacing(),
+            lattice.origin().to_array(),
+        ));
+        text.push_str(&format!(
+            "            {} filled, {} spans, {} spilled, {:.2} MiB, volume {} mm^3\n",
+            bundle.filled_rays(),
+            bundle.total_spans(),
+            bundle.arena().spilled_rays(),
+            bundle.arena().bytes() as f64 / (1024.0 * 1024.0),
+            bundle.volume(),
+        ));
+        if per_axis {
+            for (spans, rays) in bundle.arena().distribution() {
+                text.push_str(&format!(
+                    "              {spans:>3} span(s)  {rays:>10} rays\n"
+                ));
+            }
+        }
+    }
+    if let Some(tri) = loaded.as_tri() {
+        let p = tri.provenance();
+        text.push_str(&format!(
+            "\nprovenance  source {} triangles, digest {}\n            requested {} mm cells\n",
+            p.source_triangles,
+            &p.source_digest.to_hex()[..16],
+            p.requested_spacing_mm,
+        ));
+        text.push_str(&format!(
+            "            mesh's own deviation ~{:.5} mm (95th pct of {} edges, worst {:.5})\n",
+            p.tessellation.percentile_sagitta_mm,
+            p.tessellation.edges,
+            p.tessellation.max_sagitta_mm
+        ));
+        if !tri.is_complete() {
+            text.push_str(
+                "\nNOTE: this field has fewer than three bundles, so the 1/sqrt(3)\n\
+                 sampling guarantee does NOT hold. A surface normal perpendicular to\n\
+                 both missing axes is sampled by neither.\n",
+            );
+        }
+    }
+    text.push_str(
+        "\nvolume is a DIAGNOSTIC, not an accuracy metric (ADR 0005). Use `deviation`.\n",
     );
+
     let results = json!({
         "command": "stat",
-        "digest": digest_of(&field),
+        "complete": loaded.as_tri().is_some_and(TriDexelField::is_complete),
+        "digest": loaded.digest(),
         "file": file.display().to_string(),
-        "lattice": lattice_json(&field),
-        "occupancy": occupancy_json(&field, None),
+        "per_axis": bundles_json(&loaded),
     });
     Ok((results, text, true))
 }
 
 fn run_volume(file: &std::path::Path) -> Result<(Value, String, bool), String> {
-    let field = read_field(file)?;
-    let volume = field.volume();
-    let text = format!(
-        "{volume} mm^3   ({:.6} cm^3)\n\n\
-         Accuracy depends on the ratio of cell size to the smallest feature that\n\
-         matters, not on the cell size alone. This field's cells are {} mm.\n",
-        volume / 1000.0,
-        field.lattice().spacing()
+    let loaded = read_field(file)?;
+    let volumes: Vec<(Axis, f64)> = loaded
+        .bundles()
+        .into_iter()
+        .map(|(a, b)| (a, b.volume()))
+        .collect();
+    let mean = volumes.iter().map(|(_, v)| *v).sum::<f64>() / volumes.len().max(1) as f64;
+
+    let mut text = String::new();
+    for (axis, volume) in &volumes {
+        text.push_str(&format!("  {} bundle   {volume} mm^3\n", axis.as_str()));
+    }
+    text.push_str(&format!(
+        "  mean        {mean} mm^3   ({:.6} cm^3)\n",
+        mean / 1000.0
+    ));
+    text.push_str(
+        "\nThe bundles will NOT agree closely, and they are not supposed to. They\n\
+         disagree at O(h^2) with independent signs, and every cell claims a full\n\
+         h^2 of cross-section, so a spacing that does not divide the stock\n\
+         over-counts by exactly the covered-to-true area ratio. Volume is a\n\
+         construction diagnostic; `deviation` is the accuracy metric (ADR 0005).\n",
     );
+
     let results = json!({
         "command": "volume",
-        "digest": digest_of(&field),
-        "spacing_mm": field.lattice().spacing(),
-        "volume_mm3": volume,
+        "digest": loaded.digest(),
+        "mean_mm3": mean,
+        "per_axis": volumes
+            .iter()
+            .map(|(a, v)| json!({ "axis": a.as_str(), "volume_mm3": v }))
+            .collect::<Vec<_>>(),
     });
     Ok((results, text, true))
 }
 
-fn run_slice(file: &std::path::Path, row: Option<u32>) -> Result<(Value, String, bool), String> {
-    let field = read_field(file)?;
-    let lattice = field.lattice();
-    let [nx, ny] = lattice.counts();
-    let row = row.unwrap_or(nx / 2);
-    if row >= nx {
-        return Err(format!(
-            "row {row} is outside the lattice, which has {nx} rows along its first axis"
-        ));
+// --- slice -----------------------------------------------------------------
+
+fn run_slice(
+    file: &std::path::Path,
+    at: (Axis, f64),
+    axis: Option<Axis>,
+    out: Option<&std::path::Path>,
+) -> Result<(Value, String, bool), String> {
+    let (plane_axis, plane_at) = at;
+    let loaded = read_field(file)?;
+    // Default to the plane's own axis: those rays cross the plane exactly once
+    // per span, so occupancy is a simple in-span test per cell and the picture
+    // is a clean raster of the cross-section.
+    let want = axis.unwrap_or(plane_axis);
+    let bundle = loaded
+        .bundles()
+        .into_iter()
+        .find(|(a, _)| *a == want)
+        .map(|(_, b)| b)
+        .ok_or_else(|| {
+            format!(
+                "this field has no {} bundle; it carries {}",
+                want.as_str(),
+                loaded.axes().as_str()
+            )
+        })?;
+
+    let lattice = bundle.lattice();
+    let [u, v, w] = lattice.axis().cyclic();
+    let [nu, nv] = lattice.counts();
+    let spacing = lattice.spacing();
+    let base_w = lattice.origin().to_array()[w] - spacing;
+
+    let mut cells: Vec<(u32, u32)> = Vec::new();
+    if want == plane_axis {
+        // The plane is perpendicular to the rays: test each ray for material at
+        // the plane's coordinate.
+        let t = plane_at - base_w;
+        for i in 0..nu {
+            for j in 0..nv {
+                let ray = lattice.index(i, j);
+                if bundle
+                    .arena()
+                    .get(ray)
+                    .iter()
+                    .any(|s| s.t0 <= t && t <= s.t1)
+                {
+                    cells.push((i, j));
+                }
+            }
+        }
+    } else {
+        // The plane is parallel to the rays: keep the row of rays whose own
+        // transverse coordinate lands in the plane's cell.
+        let axes = lattice.axis().cyclic();
+        let which = if axes[0] == plane_axis.index() { 0 } else { 1 };
+        for i in 0..nu {
+            for j in 0..nv {
+                let origin = lattice.origin_of(i, j).to_array();
+                let coordinate = origin[if which == 0 { u } else { v }];
+                if (coordinate - plane_at).abs() <= spacing / 2.0
+                    && !bundle.arena().get(lattice.index(i, j)).is_empty()
+                {
+                    cells.push((i, j));
+                }
+            }
+        }
     }
 
-    let mut text = format!(
-        "row {row} of {nx}, {ny} rays along the second lattice axis, rays run along {}\n\n",
-        lattice.axis().as_str()
+    let text = format!(
+        "slice {}={} from the {} bundle: {} of {} cells carry material\n",
+        plane_axis.as_str(),
+        plane_at,
+        want.as_str(),
+        cells.len(),
+        lattice.ray_count(),
     );
-    let mut entries = Vec::new();
-    for column in 0..ny {
-        let ray = lattice.index(row, column);
-        let spans = field.arena().get(ray);
-        let origin = lattice.origin_of(row, column);
-        let rendered = if spans.is_empty() {
-            "empty".to_owned()
-        } else {
-            spans
-                .iter()
-                .map(|s| format!("[{:.4}, {:.4}]", s.t0, s.t1))
-                .collect::<Vec<_>>()
-                .join(" ")
-        };
-        text.push_str(&format!("  {column:>5}  {rendered}\n"));
-        entries.push(json!({
-            "column": column,
-            "origin_mm": origin.to_array(),
-            "spans": spans.iter().map(|s| json!([s.t0, s.t1])).collect::<Vec<_>>(),
-        }));
+
+    let mut written = None;
+    if let Some(path) = out {
+        let svg = render_svg(bundle, &cells, plane_axis, plane_at);
+        std::fs::write(path, svg.as_bytes())
+            .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+        written = Some(path.display().to_string());
     }
 
     let results = json!({
+        "at": plane_at,
+        "axis": want.as_str(),
+        "cells_with_material": cells.len(),
         "command": "slice",
-        "digest": digest_of(&field),
-        "rays": entries,
-        "row": row,
+        "digest": loaded.digest(),
+        "plane_axis": plane_axis.as_str(),
+        "total_cells": lattice.ray_count(),
+        "written": written,
     });
     Ok((results, text, true))
 }
+
+/// A self-contained SVG of the occupied cells.
+///
+/// No external references of any kind: this is a debugging artefact that has to
+/// open in a browser with no network and no stylesheet.
+fn render_svg(bundle: &DexelField, cells: &[(u32, u32)], plane_axis: Axis, at: f64) -> String {
+    let lattice = bundle.lattice();
+    let [u, v, _] = lattice.axis().cyclic();
+    let [nu, nv] = lattice.counts();
+    let spacing = lattice.spacing();
+    let names = ["x", "y", "z"];
+
+    // A pixel scale that keeps the picture readable whatever the lattice size.
+    let scale = (900.0 / f64::from(nu.max(nv)).max(1.0)).clamp(0.5, 12.0);
+    let width = f64::from(nu) * scale;
+    let height = f64::from(nv) * scale;
+
+    let mut out = String::with_capacity(cells.len() * 48 + 512);
+    out.push_str(&format!(
+        // The viewBox must include the caption strip, or the label renders
+        // outside the visible area and the picture looks fine while silently
+        // losing which plane it is of.
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w:.0}\" height=\"{h:.0}\" \
+         viewBox=\"0 0 {w:.3} {h:.3}\">\n",
+        w = width.max(1.0),
+        h = height.max(1.0) + 26.0,
+    ));
+    out.push_str("<rect width=\"100%\" height=\"100%\" fill=\"#ffffff\"/>\n");
+    out.push_str("<g fill=\"#2b6cb0\" shape-rendering=\"crispEdges\">\n");
+    for (i, j) in cells {
+        // Y is flipped so the picture reads the way the axes do, with the
+        // lattice origin at the bottom left rather than the top left.
+        let x = f64::from(*i) * scale;
+        let y = height - f64::from(*j + 1) * scale;
+        out.push_str(&format!(
+            "<rect x=\"{x:.3}\" y=\"{y:.3}\" width=\"{scale:.3}\" height=\"{scale:.3}\"/>\n"
+        ));
+    }
+    out.push_str("</g>\n");
+    out.push_str(&format!(
+        "<text x=\"2\" y=\"{:.1}\" font-family=\"monospace\" font-size=\"12\" \
+         fill=\"#333333\">{}={} | {} bundle | {} mm cells | horizontal {}, vertical {}</text>\n",
+        height + 16.0,
+        names[plane_axis.index()],
+        at,
+        names[lattice.axis().index()],
+        spacing,
+        names[u],
+        names[v],
+    ));
+    out.push_str("</svg>\n");
+    out
+}
+
+// --- deviation, coverage ---------------------------------------------------
+
+fn run_deviation(
+    file: &std::path::Path,
+    mesh_path: &std::path::Path,
+    units: Option<&str>,
+    per_axis: bool,
+) -> Result<(Value, String, bool), String> {
+    let loaded = read_field(file)?;
+    let tri = loaded
+        .as_tri()
+        .ok_or("deviation needs a .tdx field; a single bundle has no best-of-three")?;
+    let mesh = load_mesh(mesh_path, units)?;
+    let (samples, sample_spacing) = sample_mesh_budget(&mesh, DEVIATION_SAMPLES);
+    let report = measure_deviation(tri, &samples);
+
+    let mut text = format!(
+        "deviation against {} ({} surface samples, ~{:.4} mm apart)\n\n",
+        mesh_path.display(),
+        report.samples,
+        sample_spacing,
+    );
+    if per_axis {
+        for axis in AXES {
+            if let Some(max) = report.per_axis_max[axis.index()] {
+                text.push_str(&format!(
+                    "  bundle {}   worst {max:.6} mm   rms {:.6} mm\n",
+                    axis.as_str(),
+                    report.per_axis_rms[axis.index()].unwrap_or(0.0),
+                ));
+            }
+        }
+        text.push('\n');
+    }
+    text.push_str(&format!(
+        "  BEST-OF-3  worst {:.6} mm   rms {:.6} mm   C = worst/h = {:.4}\n",
+        report.best_max,
+        report.best_rms,
+        report.constant(),
+    ));
+    text.push_str(&format!(
+        "  coverage   worst sampling cosine {:.9} (bound {WORST_CASE_COSINE:.9}) {}\n",
+        report.worst_cosine,
+        if report.coverage_holds() {
+            "OK"
+        } else {
+            "VIOLATED"
+        }
+    ));
+    text.push_str(
+        "\nThis is a COVERAGE deviation: the distance from a point on the true\n\
+         surface to the nearest place the field sampled it. Span endpoints are\n\
+         exact ray-surface intersections, so this carries no error of its own.\n\
+         It is not a reconstruction deviation -- extracting a surface is U9, and\n\
+         U9 must re-measure against its own output.\n",
+    );
+
+    let results = json!({
+        "best_max_mm": report.best_max,
+        "best_rms_mm": report.best_rms,
+        "command": "deviation",
+        "constant": report.constant(),
+        "coverage_holds": report.coverage_holds(),
+        "digest": loaded.digest(),
+        "per_axis": AXES
+            .iter()
+            .map(|a| json!({
+                "axis": a.as_str(),
+                "max_mm": report.per_axis_max[a.index()],
+                "rms_mm": report.per_axis_rms[a.index()],
+            }))
+            .collect::<Vec<_>>(),
+        "samples": report.samples,
+        "spacing_mm": report.spacing,
+        "worst_cosine": report.worst_cosine,
+    });
+    Ok((results, text, report.coverage_holds()))
+}
+
+fn run_coverage(
+    file: &std::path::Path,
+    mesh_path: &std::path::Path,
+    units: Option<&str>,
+) -> Result<(Value, String, bool), String> {
+    let loaded = read_field(file)?;
+    let axes = loaded.axes();
+    let mesh = load_mesh(mesh_path, units)?;
+    let (worst, normal) = measure_coverage(&mesh, axes);
+    let holds = worst >= WORST_CASE_COSINE - 1e-12;
+    let degrees =
+        chipbreaker_core::transcendental::acos(worst.min(1.0)) * 180.0 / core::f64::consts::PI;
+
+    let text = format!(
+        "axes {}\nworst sampling cosine {worst:.9} ({degrees:.4} deg) at n = \
+         [{:.6}, {:.6}, {:.6}]\nbound 1/sqrt(3) = {WORST_CASE_COSINE:.9} (54.7356 deg)\n\n{}\n",
+        axes.as_str(),
+        normal[0],
+        normal[1],
+        normal[2],
+        if holds {
+            "OK: every surface is met by some bundle at 54.7356 degrees or better."
+        } else if axes.len() < 3 {
+            "VIOLATED, and expected to be: fewer than three bundles carries no such \
+             guarantee. A normal perpendicular to every present axis is sampled by none."
+        } else {
+            "VIOLATED with three bundles present. This should be impossible -- the bound \
+             follows from |n| = 1 -- so either the normals are not unit or something is \
+             very wrong."
+        }
+    );
+
+    let results = json!({
+        "axes": axes.as_str(),
+        "bound": WORST_CASE_COSINE,
+        "command": "coverage",
+        "degrees": degrees,
+        "holds": holds,
+        "worst_cosine": worst,
+        "worst_normal": normal,
+    });
+    Ok((results, text, holds))
+}
+
+// --- convergence -----------------------------------------------------------
 
 fn run_convergence() -> Result<(Value, String, bool), String> {
     let ratios = standard_ratios();
     let mut text = String::from(
-        "Two error columns. Against the MESH isolates dexel sampling error and is\n\
-         what the tests assert on; against the ANALYTIC solid adds tessellation\n\
-         error and is the total distance from reality.\n\n",
+        "Volume convergence. A DIAGNOSTIC (ADR 0005): non-monotone, floored by\n\
+         tessellation, and biased by cell quantisation. Use `deviation` for accuracy.\n\n",
     );
     let mut cases = Vec::new();
     let mut ok = true;
 
     for case in standard_cases() {
-        let result = measure(&case, &ratios);
+        let result = measure_convergence(&case, &ratios);
         text.push_str(&format!("=== {} ===\n", result.name));
-        text.push_str(&format!(
-            "  {:>8}  {:>10}  {:>12}  {:>12}\n",
-            "h/R", "h (mm)", "vs mesh", "vs analytic"
-        ));
-        let mut samples = Vec::new();
         for sample in &result.samples {
-            let analytic = sample
-                .analytic_error()
-                .map_or_else(|| "          --".to_owned(), |e| format!("{e:>12.3e}"));
             text.push_str(&format!(
-                "  {:>8.5}  {:>10.4}  {:>12.3e}  {analytic}\n",
+                "  h/R {:>8.5}   vs mesh {:>11.3e}   vs analytic {}\n",
                 sample.ratio,
-                sample.spacing,
-                sample.mesh_error()
+                sample.mesh_error(),
+                sample
+                    .analytic_error()
+                    .map_or_else(|| "--".to_owned(), |e| format!("{e:.3e}")),
             ));
-            samples.push(json!({
-                "analytic_error": sample.analytic_error(),
-                "mesh_error": sample.mesh_error(),
-                "rays": sample.rays,
-                "ratio": sample.ratio,
-                "signed_mesh_error": sample.signed_mesh_error(),
-                "spacing_mm": sample.spacing,
-                "volume_mm3": sample.measured,
-            }));
         }
-
-        let (model, claim) = match result.model {
-            ErrorModel::Quadrature => {
-                let p = result.exponent().unwrap_or(f64::NAN);
-                let c = result.envelope_constant(1.5);
-                text.push_str(&format!(
-                    "  quadrature; fitted p = {p:.3}; error <= {c:.4} * (h/R)^1.5\n"
-                ));
-                (
-                    "quadrature",
-                    json!({ "envelope_1_5": c, "fitted_exponent": p }),
-                )
-            }
-            ErrorModel::LatticeCount => {
-                let c = result.envelope_constant(GAUSS_CIRCLE_EXPONENT);
-                text.push_str(&format!(
-                    "  lattice-point counting (Gauss circle); no meaningful fitted rate;\n  \
-                     error <= {c:.4} * (h/R)^{GAUSS_CIRCLE_EXPONENT:.5}\n"
-                ));
-                (
-                    "lattice_count",
-                    json!({ "envelope_gauss": c, "fitted_exponent": Value::Null }),
-                )
-            }
+        let (model, envelope) = match result.model {
+            ErrorModel::Quadrature => ("quadrature", result.envelope_constant(1.5)),
+            ErrorModel::LatticeCount => (
+                "lattice_count",
+                result.envelope_constant(GAUSS_CIRCLE_EXPONENT),
+            ),
         };
         if !result.is_monotone() {
-            text.push_str("  NOT monotone: a finer lattice made the answer worse at least once\n");
+            text.push_str("  NOT monotone: a finer lattice made the answer worse\n");
         }
         if let Some(finest) = result.finest_within(1.0 / 200.0) {
             text.push_str(&format!(
-                "  at h <= R/200 (h/R = {:.5}): {:.5}%\n",
-                finest.ratio,
+                "  at h <= R/200: {:.5}%\n",
                 finest.mesh_error() * 100.0
             ));
             if finest.mesh_error() >= 1e-3 {
@@ -381,26 +829,13 @@ fn run_convergence() -> Result<(Value, String, bool), String> {
             }
         }
         text.push('\n');
-
         cases.push(json!({
-            "claim": claim,
+            "envelope": envelope,
             "model": model,
             "monotone": result.is_monotone(),
             "name": result.name,
-            "observed_orders": result.observed_orders(),
-            "samples": samples,
         }));
     }
-
-    text.push_str(
-        "The two cylinder rows are the argument for Unit 6. An axis-parallel\n\
-         cylinder's chord is a hard indicator, so its volume is exactly a count of\n\
-         lattice points inside a disc, and that error is erratic -- refining the\n\
-         lattice is not reliably an improvement. Lying down, the same cylinder is a\n\
-         smooth quadrature and converges predictably. The fix for a vertical wall is\n\
-         a bundle along another axis, not a finer lattice.\n",
-    );
-
     Ok((
         json!({ "cases": cases, "command": "convergence" }),
         text,
@@ -410,75 +845,83 @@ fn run_convergence() -> Result<(Value, String, bool), String> {
 
 // --- shared rendering ------------------------------------------------------
 
-fn describe_lattice(field: &DexelField) -> String {
-    let lattice = field.lattice();
-    let [nx, ny] = lattice.counts();
-    format!(
-        "lattice   {nx} x {ny} = {} rays along {}, {} mm cells\n\
-         origin    {:?} mm\n\
-         ray span  {} mm",
-        lattice.ray_count(),
-        lattice.axis().as_str(),
-        lattice.spacing(),
-        lattice.origin().to_array(),
-        lattice.ray_length(),
-    )
-}
-
-fn describe_occupancy(field: &DexelField, stats: Option<&BuildStats>) -> String {
-    let rays = field.arena().rays();
-    let filled = field.filled_rays();
-    let mut out = format!(
-        "rays      {rays}, {filled} carrying material ({:.1}%)\n\
-         spans     {}, {} spilled past the inline capacity\n\
-         volume    {} mm^3\n\
-         bytes     {:.2} MiB\n",
-        filled as f64 / rays.max(1) as f64 * 100.0,
+fn describe_tri(field: &TriDexelField, stats: Option<&TriBuildStats>) -> String {
+    let mut out = format!("axes      {}\n", field.axes().as_str());
+    for (axis, bundle) in field.bundles() {
+        let lattice = bundle.lattice();
+        let [nx, ny] = lattice.counts();
+        out.push_str(&format!(
+            "bundle {}  {nx} x {ny} = {} rays, {} spans, {:.2} MiB, volume {} mm^3\n",
+            axis.as_str(),
+            lattice.ray_count(),
+            bundle.total_spans(),
+            bundle.arena().bytes() as f64 / (1024.0 * 1024.0),
+            bundle.volume(),
+        ));
+    }
+    out.push_str(&format!(
+        "total     {} rays, {} spans, {:.2} MiB\n",
+        field.rays(),
         field.total_spans(),
-        field.arena().spilled_rays(),
-        field.volume(),
-        field.arena().bytes() as f64 / (1024.0 * 1024.0),
-    );
-    if let Some(stats) = stats {
+        field.bytes() as f64 / (1024.0 * 1024.0),
+    ));
+    if let Some(stats) = stats
+        && stats.degenerate_triangles > 0
+    {
         out.push_str(&format!(
-            "predicates {} tests, {:.4}% took the exact path, {} SoS resolutions\n",
-            stats.predicates.triangle_tests,
-            stats.predicates.exact_fraction() * 100.0,
-            stats.predicates.sos_resolutions,
+            "note      dropped {} degenerate triangle(s) before casting\n",
+            stats.degenerate_triangles
         ));
     }
     out
 }
 
-fn occupancy_json(field: &DexelField, stats: Option<&BuildStats>) -> Value {
-    json!({
-        "bytes": field.arena().bytes(),
-        "filled_rays": field.filled_rays(),
-        "predicates": stats.map(|s| json!({
-            "exact_path": s.predicates.exact_path,
-            "sos_resolutions": s.predicates.sos_resolutions,
-            "triangle_tests": s.predicates.triangle_tests,
-        })),
-        "spilled_rays": field.arena().spilled_rays(),
-        "total_spans": field.total_spans(),
-        "volume_mm3": field.volume(),
-    })
+fn per_axis_json(field: &TriDexelField, stats: Option<&TriBuildStats>) -> Value {
+    let entries: Vec<Value> = field
+        .bundles()
+        .map(|(axis, bundle)| {
+            let lattice = bundle.lattice();
+            let [nx, ny] = lattice.counts();
+            json!({
+                "axis": axis.as_str(),
+                "bytes": bundle.arena().bytes(),
+                "counts": [nx, ny],
+                "filled_rays": bundle.filled_rays(),
+                "origin_mm": lattice.origin().to_array(),
+                "rays": lattice.ray_count(),
+                "spacing_mm": lattice.spacing(),
+                "spans": bundle.total_spans(),
+                "spilled_rays": bundle.arena().spilled_rays(),
+                "volume_mm3": bundle.volume(),
+                "coplanar_rejected": stats
+                    .and_then(|s| s.per_axis[axis.index()])
+                    .map(|s| s.predicates.coplanar_rejected),
+            })
+        })
+        .collect();
+    Value::Array(entries)
 }
 
-fn describe_distribution(field: &DexelField) -> String {
-    let mut out = String::from("span distribution\n");
-    let total = field.arena().rays().max(1);
-    for (spans, rays) in field.arena().distribution() {
-        let share = rays as f64 / total as f64 * 100.0;
-        #[allow(
-            clippy::cast_possible_truncation,
-            clippy::cast_sign_loss,
-            reason = "a bar length, clamped to 50"
-        )]
-        let bar = "#".repeat(((share / 2.0).round() as usize).min(50));
-        out.push_str(&format!(
-            "  {spans:>3} span(s)  {rays:>10} rays  {share:>6.2}%  {bar}\n"
-        ));
-    }
-    out
+fn bundles_json(loaded: &Loaded) -> Value {
+    let entries: Vec<Value> = loaded
+        .bundles()
+        .into_iter()
+        .map(|(axis, bundle)| {
+            let lattice = bundle.lattice();
+            let [nx, ny] = lattice.counts();
+            json!({
+                "axis": axis.as_str(),
+                "bytes": bundle.arena().bytes(),
+                "counts": [nx, ny],
+                "filled_rays": bundle.filled_rays(),
+                "origin_mm": lattice.origin().to_array(),
+                "rays": lattice.ray_count(),
+                "spacing_mm": lattice.spacing(),
+                "spans": bundle.total_spans(),
+                "spilled_rays": bundle.arena().spilled_rays(),
+                "volume_mm3": bundle.volume(),
+            })
+        })
+        .collect();
+    Value::Array(entries)
 }
