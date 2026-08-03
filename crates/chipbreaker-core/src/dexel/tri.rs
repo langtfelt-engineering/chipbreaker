@@ -37,28 +37,101 @@
 //! three bundles, and never worse. [`WORST_CASE_COSINE`] is that bound and
 //! `dexel coverage` measures against it.
 //!
-//! # The corollary the bound implies, which is the one U12 will quote
+//! # Two different constants, and conflating them would misreport gouges
 //!
-//! Take a plane with normal `n`, sampled by a bundle along `d`, cells of size
-//! `h`. Expressed as a height over the transverse plane the surface has gradient
-//! `tan(theta)`, `theta` being the angle between `n` and `d`. Over one cell the
-//! height moves by `h * tan(theta)`, and the **perpendicular** distance from the
-//! true plane to the sampled one is that times `cos(theta)`:
+//! "Deviation" can mean two things here and they differ by up to `3/sqrt(2)`.
+//! Both are derived below; both are exported; the harness asserts on the first
+//! and U9 will need the second.
+//!
+//! Throughout, `t` is the transverse distance from a surface point to the
+//! nearest ray of a bundle. The transverse cells tile the plane, so
+//! `t <= h/sqrt(2)` -- **half the cell DIAGONAL**, not half a cell.
+//!
+//! ## 1. Sample distance: how far is the nearest place the field sampled?
+//!
+//! This is what [`super::deviation`] measures, and it is the sampling-adequacy
+//! question the `1/sqrt(3)` bound is about.
+//!
+//! A span endpoint `E` is an exact ray-surface intersection, so for a planar
+//! patch both `E` and the surface point `P` lie on the same plane. Their
+//! transverse separation is `t`; moving `t` transversely along a plane moves
+//! `t * tan(theta)` along the ray axis, so
 //!
 //! ```text
-//! deviation  ~  (h / 2) * sin(theta)
+//! |PE|^2 = t^2 + (t tan(theta))^2 = t^2 / cos^2(theta)
+//! |PE|   = t / cos(theta)   <=   (h / sqrt(2)) / cos(theta)
 //! ```
 //!
-//! Zero when the ray is normal to the surface, worst when it is parallel. Taking
-//! the best of three axes, `sin(theta)` is at most `sqrt(1 - 1/3)`, so
+//! Best of three axes gives `cos(theta) >= 1/sqrt(3)`, so
 //!
 //! ```text
-//! best-of-three deviation  <=  (h / 2) * sqrt(2/3)  ~=  0.408 * h
+//! sample distance  <=  h * sqrt(3/2)  ~=  1.224745 * h
 //! ```
 //!
-//! That is [`DEVIATION_CONSTANT`]. It converts "bounded by a constant times `h`"
-//! into a specific constant, and it has no cancellation and no oscillation in
-//! it — which is the whole reason deviation replaced volume as the metric.
+//! That is [`SAMPLE_DISTANCE_CONSTANT`], and it is **tight**: a dense sweep of
+//! an octahedron -- every face normal is a body diagonal -- attains
+//! `1.224745 * h` exactly, at a vertex. An axis-aligned box, where the best
+//! bundle has `cos(theta) = 1`, attains exactly `h/sqrt(2) = 0.707107 * h`.
+//! Both measured to nine digits.
+//!
+//! **This distance is almost entirely lateral -- along the surface, not through
+//! it.** For a plane the component along the surface normal is exactly zero,
+//! because both ends of the displacement lie on the surface.
+//!
+//! ## 2. Perpendicular deviation: how far is a reconstruction from the truth?
+//!
+//! A different quantity, and the one that resembles gouge depth. It is **not a
+//! property of the field at all** -- the field's samples sit exactly on the
+//! surface -- but of whatever rule fills the space *between* samples.
+//!
+//! For the simplest rule, a flat top per cell at its ray's height, the error at
+//! transverse offset `t` is `t * sin(theta)`, so
+//!
+//! ```text
+//! perpendicular  <=  (h / sqrt(2)) * sin(theta)
+//! best of three  <=  (h / sqrt(2)) * sqrt(2/3)  =  h / sqrt(3)  ~=  0.577350 * h
+//! ```
+//!
+//! That is [`PERPENDICULAR_CONSTANT`]. Its value coincides numerically with
+//! [`WORST_CASE_COSINE`] -- both reduce to `1/sqrt(3)` -- which is arithmetic
+//! rather than a duplicated line, and is noted because it looks like one.
+//!
+//! ## Do not substitute one for the other
+//!
+//! The ratio of the two bounds is `3/sqrt(2) ~= 2.12`. Pointwise it is
+//! `1/(sin(theta) cos(theta))`, which is **unbounded**: a face exactly normal to
+//! a bundle has zero perpendicular error and a sample distance of up to
+//! `h/sqrt(2)`. Unit 12 reports gouge depth, a perpendicular quantity; quoting
+//! the sample-distance figure there would overstate it without limit on exactly
+//! the surfaces that are best sampled.
+//!
+//! ## Neither bounds Unit 9
+//!
+//! [`PERPENDICULAR_CONSTANT`] is the bound for *nearest-neighbour*
+//! reconstruction. A rule that interpolates between adjacent ray endpoints
+//! should do better on smooth surfaces and worse across a sharp edge. Unit 9
+//! must measure its own output; neither constant here is a substitute.
+//!
+//! # Cutting does not accumulate error across operations
+//!
+//! Stated here because Unit 7 depends on it and it is not obvious.
+//!
+//! A cut is **exact along each ray**: subtracting the swept tool from a ray's
+//! spans is interval arithmetic on exact intersection parameters, not a
+//! resampling. So after a thousand cuts, bundle X's field is still exactly the
+//! true remaining solid sampled on X's lattice. The only error is the fixed
+//! transverse sampling, set by `h` and unchanged by how many operations
+//! preceded it.
+//!
+//! Two consequences:
+//!
+//! - The three bundles stay **independently correct** rather than drifting
+//!   apart. Unit 7 should subtract per bundle and never compare them;
+//!   reconciling them is Unit 9's job, and doing it earlier would mean
+//!   reconstructing a surface two units ahead of schedule.
+//! - Unit 15's "a thousand chained cuts equal one monolithic cut" test is
+//!   achievable rather than aspirational, because there is no accumulation term
+//!   for it to fight.
 //!
 //! # Registration
 //!
@@ -90,10 +163,33 @@ pub const AXES: [Axis; 3] = [Axis::X, Axis::Y, Axis::Z];
 /// nearest the real value on every target.
 pub const WORST_CASE_COSINE: f64 = 0.577_350_269_189_625_7;
 
-/// `sqrt(2/3) / 2`: the constant in `deviation <= C * h` for a planar surface.
+/// `sqrt(3/2)`: the bound on **sample distance**, in units of `h`.
 ///
-/// See the corollary in the module header.
-pub const DEVIATION_CONSTANT: f64 = 0.408_248_290_463_863;
+/// The metric [`super::deviation`] measures and asserts on. Tight: attained
+/// exactly at an octahedron's vertices, where every face normal is a body
+/// diagonal. See the module header for the derivation.
+///
+/// Do **not** use this for gouge depth or any other perpendicular quantity --
+/// see [`PERPENDICULAR_CONSTANT`].
+pub const SAMPLE_DISTANCE_CONSTANT: f64 = 1.224_744_871_391_589;
+
+/// `1/sqrt(2)`: sample distance where the best bundle is normal to the surface.
+///
+/// The `cos(theta) = 1` case of [`SAMPLE_DISTANCE_CONSTANT`]. Attained exactly
+/// at an axis-aligned box's vertices, so it is the floor for the metric rather
+/// than a convenience.
+pub const AXIS_ALIGNED_SAMPLE_CONSTANT: f64 = core::f64::consts::FRAC_1_SQRT_2;
+
+/// `1/sqrt(3)`: the bound on **perpendicular** deviation, in units of `h`.
+///
+/// For a nearest-neighbour reconstruction -- a flat top per cell. Not a
+/// property of the field, which samples the surface exactly; a property of the
+/// rule that fills the gaps. This is the shape of the number Unit 12's gouge
+/// depth needs, though Unit 9 must re-derive it for its own reconstruction.
+///
+/// Numerically equal to [`WORST_CASE_COSINE`]. Arithmetic, not a duplicated
+/// line: both reduce to `1/sqrt(3)`.
+pub const PERPENDICULAR_CONSTANT: f64 = 0.577_350_269_189_625_7;
 
 /// Where a field came from, and how good its input was.
 ///

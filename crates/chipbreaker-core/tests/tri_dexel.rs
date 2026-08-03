@@ -5,8 +5,8 @@
 
 use chipbreaker_core::dexel::io as dexel_io;
 use chipbreaker_core::dexel::tri::{
-    AXES, AxisSet, DEVIATION_CONSTANT, TriBuildOptions, TriDexelField, WORST_CASE_COSINE,
-    best_cosine,
+    AXES, AXIS_ALIGNED_SAMPLE_CONSTANT, AxisSet, PERPENDICULAR_CONSTANT, SAMPLE_DISTANCE_CONSTANT,
+    TriBuildOptions, TriDexelField, WORST_CASE_COSINE, best_cosine,
 };
 use chipbreaker_core::golden::CanonicalHash;
 use chipbreaker_core::math::{Axis, Mat4, Vec3};
@@ -84,14 +84,41 @@ fn the_bound_is_tight_at_the_body_diagonal() {
 }
 
 #[test]
-fn the_deviation_constant_follows_from_the_bound() {
-    // (h/2) * sqrt(1 - 1/3). Pinned so the two constants cannot drift apart:
-    // they are one derivation, not two numbers.
-    let expected = (1.0 - WORST_CASE_COSINE * WORST_CASE_COSINE).sqrt() / 2.0;
+fn both_deviation_constants_follow_from_the_bound() {
+    // Two DIFFERENT quantities from the same cosine bound, differing by
+    // 3/sqrt(2). Pinned together so they cannot drift apart and, more
+    // importantly, so nobody substitutes one for the other: Unit 12 reports
+    // gouge depth, which is perpendicular, and the sample-distance figure would
+    // overstate it without limit on well-sampled surfaces.
+    //
+    // `t` is the transverse distance to the nearest ray, at most HALF THE CELL
+    // DIAGONAL, h/sqrt(2). An earlier version of this used h/2 -- half a cell
+    // along one axis -- and understated the perpendicular bound by sqrt(2).
+    let half_diagonal = 1.0 / 2.0_f64.sqrt();
+    let worst_sin = (1.0 - WORST_CASE_COSINE * WORST_CASE_COSINE).sqrt();
+
+    let expected_sample = half_diagonal / WORST_CASE_COSINE;
     assert!(
-        (DEVIATION_CONSTANT - expected).abs() < 1e-15,
-        "DEVIATION_CONSTANT {DEVIATION_CONSTANT} does not follow from \
-         WORST_CASE_COSINE {WORST_CASE_COSINE}: expected {expected}"
+        (SAMPLE_DISTANCE_CONSTANT - expected_sample).abs() < 1e-15,
+        "SAMPLE_DISTANCE_CONSTANT {SAMPLE_DISTANCE_CONSTANT} should be (h/sqrt2)/cos = {expected_sample}"
+    );
+    assert!(
+        (AXIS_ALIGNED_SAMPLE_CONSTANT - half_diagonal).abs() < 1e-15,
+        "the cos = 1 case is just the half diagonal"
+    );
+
+    let expected_perp = half_diagonal * worst_sin;
+    assert!(
+        (PERPENDICULAR_CONSTANT - expected_perp).abs() < 1e-15,
+        "PERPENDICULAR_CONSTANT {PERPENDICULAR_CONSTANT} should be (h/sqrt2)*sin = {expected_perp}"
+    );
+    // And it really is 1/sqrt(3), which is why it equals WORST_CASE_COSINE.
+    assert!((PERPENDICULAR_CONSTANT - WORST_CASE_COSINE).abs() < 1e-15);
+
+    let ratio = SAMPLE_DISTANCE_CONSTANT / PERPENDICULAR_CONSTANT;
+    assert!(
+        (ratio - 3.0 / 2.0_f64.sqrt()).abs() < 1e-12,
+        "the bounds differ by 3/sqrt(2); measured {ratio}"
     );
 }
 
@@ -464,13 +491,13 @@ fn best_of_three_deviation_falls_monotonically_and_is_bounded_by_c_times_h() {
                  it is exactly what volume could not provide.",
                 report.best_max
             );
-            // The measured constant runs about 0.67 to 0.81 across the corpus.
-            // Bounded generously at 1.5 so this catches a regression rather than
-            // ordinary variation between shapes.
+            // The bound for THIS metric is h*sqrt(3/2), derived in `dexel::tri`
+            // and attained exactly at an octahedron's vertices. NOT the
+            // perpendicular constant, which is smaller by 3/sqrt(2) and belongs
+            // to a reconstruction rather than to the field.
             assert!(
-                report.constant() < 1.5,
-                "{name} at h={spacing}: deviation {} is {:.3} times the cell size, \
-                 outside the C*h envelope",
+                report.constant() <= SAMPLE_DISTANCE_CONSTANT + 1e-9,
+                "{name} at h={spacing}: sample distance {} is {:.6} times the cell                  size, past the h*sqrt(3/2) bound of {SAMPLE_DISTANCE_CONSTANT:.6}",
                 report.best_max,
                 report.constant()
             );
@@ -574,4 +601,130 @@ fn octahedron() -> TriMesh {
         MeshMeta::synthetic(),
     )
     .expect("valid")
+}
+
+// --- the two constants, measured ------------------------------------------
+
+#[test]
+fn the_sample_distance_bound_is_tight_at_a_body_diagonal_vertex() {
+    // The bound is not merely respected, it is ATTAINED -- which is what makes
+    // it the right number to assert on rather than a convenient over-estimate.
+    //
+    // The maximum lives at a VERTEX, not in the middle of a face. Sweeping one
+    // face and concluding the bound was slack is a mistake this test exists to
+    // prevent, because it is the mistake that was made while deriving it: a
+    // 900x900 sweep of the (1,1,1) face returned 0.707h and looked like a
+    // refutation, when the 1.225h point was at the vertex the sweep excluded.
+    use chipbreaker_core::dexel::deviation::nearest_endpoint;
+
+    let spacing = 0.5;
+    let mesh = octahedron();
+    let (field, _) = TriDexelField::build(
+        &mesh,
+        &TriBuildOptions {
+            spacing,
+            ..TriBuildOptions::default()
+        },
+    )
+    .expect("builds");
+
+    let mut worst = 0.0f64;
+    for t in 0..mesh.triangle_count() {
+        let [a, b, c] = mesh.triangle(t);
+        let n = 40u32;
+        for i in 0..=n {
+            for j in 0..=(n - i) {
+                let p = a
+                    + (b - a) * (f64::from(i) / f64::from(n))
+                    + (c - a) * (f64::from(j) / f64::from(n));
+                let d = AXES
+                    .iter()
+                    .filter_map(|axis| field.bundle(*axis))
+                    .map(|bundle| nearest_endpoint(bundle, p))
+                    .fold(f64::INFINITY, f64::min);
+                worst = worst.max(d);
+            }
+        }
+    }
+    let constant = worst / spacing;
+    assert!(
+        (constant - SAMPLE_DISTANCE_CONSTANT).abs() < 1e-9,
+        "an octahedron should ATTAIN h*sqrt(3/2) = {SAMPLE_DISTANCE_CONSTANT}; measured \
+         {constant}. Below means the sweep stopped reaching the vertices; above means \
+         the derivation is wrong."
+    );
+}
+
+#[test]
+fn an_axis_aligned_box_attains_the_cos_one_floor() {
+    // The other end of the same derivation: with cos(theta) = 1 the bound
+    // collapses to half a cell diagonal, and a stock corner attains it.
+    use chipbreaker_core::dexel::deviation::nearest_endpoint;
+
+    let spacing = 0.5;
+    let mesh = shapes::box_solid(Vec3::new(0.0, 0.0, 0.0), Vec3::new(30.0, 20.0, 10.0));
+    let (field, _) = TriDexelField::build(
+        &mesh,
+        &TriBuildOptions {
+            spacing,
+            ..TriBuildOptions::default()
+        },
+    )
+    .expect("builds");
+
+    let corner = Vec3::new(0.0, 0.0, 0.0);
+    let d = AXES
+        .iter()
+        .filter_map(|axis| field.bundle(*axis))
+        .map(|bundle| nearest_endpoint(bundle, corner))
+        .fold(f64::INFINITY, f64::min);
+    let constant = d / spacing;
+    assert!(
+        (constant - AXIS_ALIGNED_SAMPLE_CONSTANT).abs() < 1e-12,
+        "a box corner should sit exactly h/sqrt(2) from the nearest sample; measured \
+         {constant} against {AXIS_ALIGNED_SAMPLE_CONSTANT}"
+    );
+}
+
+#[test]
+fn the_fields_own_samples_have_zero_perpendicular_error() {
+    // The claim that separates the two constants, and the reason the measured
+    // metric is lateral rather than perpendicular: a span endpoint is an EXACT
+    // ray-surface intersection, so it lies ON the surface. For a planar face the
+    // whole sample-to-endpoint displacement lies in the plane and its component
+    // along the normal is zero.
+    //
+    // If this fails, the endpoints have stopped being exact and both constants
+    // are void.
+    use chipbreaker_core::dexel::deviation::endpoint_position;
+
+    let mesh = octahedron();
+    let (field, _) = TriDexelField::build(
+        &mesh,
+        &TriBuildOptions {
+            spacing: 0.5,
+            ..TriBuildOptions::default()
+        },
+    )
+    .expect("builds");
+
+    // Every endpoint must satisfy |x| + |y| + |z| = 10 exactly, which is the
+    // octahedron's surface.
+    let mut worst = 0.0f64;
+    for (_, bundle) in field.bundles() {
+        let rays = u32::try_from(bundle.arena().rays()).expect("small");
+        for ray in 0..rays {
+            for span in bundle.arena().get(ray) {
+                for upper in [false, true] {
+                    let p = endpoint_position(bundle, ray, *span, upper).to_array();
+                    worst = worst.max((p[0].abs() + p[1].abs() + p[2].abs() - 10.0).abs());
+                }
+            }
+        }
+    }
+    assert!(
+        worst < 1e-12,
+        "span endpoints must lie ON the surface; worst residual {worst} mm. \
+         Perpendicular error belongs to a reconstruction, not to the field."
+    );
 }

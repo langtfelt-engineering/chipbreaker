@@ -13,7 +13,10 @@
 
 use chipbreaker_core::dexel::deviation::{Analytic, coverage, measure, sample_mesh_budget};
 use chipbreaker_core::dexel::tri::{AXES, AxisSet, TriBuildOptions, TriDexelField};
-use chipbreaker_core::dexel::tri::{DEVIATION_CONSTANT, WORST_CASE_COSINE};
+use chipbreaker_core::dexel::tri::{
+    AXIS_ALIGNED_SAMPLE_CONSTANT, PERPENDICULAR_CONSTANT, SAMPLE_DISTANCE_CONSTANT,
+    WORST_CASE_COSINE,
+};
 use chipbreaker_core::math::{Axis, Vec3};
 use chipbreaker_core::mesh::{TriMesh, shapes};
 use chipbreaker_core::transcendental::acos;
@@ -236,7 +239,8 @@ fn main() {
         if all_monotone { "yes" } else { "NO" }
     );
     println!("  largest observed C in deviation <= C*h: {worst_constant:.4}");
-    println!("  planar bound from the theorem: (h/2)*sqrt(2/3) = {DEVIATION_CONSTANT:.4} * h");
+    println!("  bound for this metric: h*sqrt(3/2) = {SAMPLE_DISTANCE_CONSTANT:.6} * h");
+    println!("  cos=1 floor:           h/sqrt(2)   = {AXIS_ALIGNED_SAMPLE_CONSTANT:.6} * h");
     println!("  worst sampling cosine anywhere: {worst_cosine_seen:.9}");
     println!("  bound: {WORST_CASE_COSINE:.9}");
     println!();
@@ -245,9 +249,23 @@ fn main() {
     println!("reporting only the worst bundle would make a tri-dexel field look as bad");
     println!("as its weakest axis, which is exactly what the third bundle removes.");
     println!();
-    println!("NOTE on C: the measured constant exceeds the planar {DEVIATION_CONSTANT:.3}");
-    println!("because a curved surface's sample points are not all on a plane through a");
-    println!("ray, and because the sample set is finite. The theorem bounds the planar");
-    println!("case; this measures the whole surface. Both are reported.");
+    println!("The metric here is SAMPLE DISTANCE -- how far a surface point is from the");
+    println!("nearest place the field sampled the surface. It is bounded by");
+    println!(
+        "h*sqrt(3/2) = {SAMPLE_DISTANCE_CONSTANT:.6}*h and that bound is TIGHT: an octahedron,"
+    );
+    println!("whose every face normal is a body diagonal, attains it exactly at a vertex.");
+    println!(
+        "An axis-aligned box attains exactly h/sqrt(2) = {AXIS_ALIGNED_SAMPLE_CONSTANT:.6}*h."
+    );
+    println!();
+    println!("It is NOT perpendicular deviation. Span endpoints are exact ray-surface");
+    println!("intersections, so for a plane the component of this distance along the");
+    println!("surface normal is exactly zero -- the whole of it is lateral. Perpendicular");
+    println!("error belongs to a RECONSTRUCTION, not to the field: for a flat top per cell");
+    println!(
+        "it is bounded by h/sqrt(3) = {PERPENDICULAR_CONSTANT:.6}*h. Unit 12's gouge depth is a"
+    );
+    println!("perpendicular quantity, so quoting this column there would overstate it.");
     let _ = AXES;
 }
