@@ -30,6 +30,7 @@ Regenerate with:
 
 import json
 import math
+import sys
 
 PI = math.pi
 
@@ -285,4 +286,9 @@ doc = {
     ),
     "tools": {k: tools[k] for k in sorted(tools)},
 }
+# Write LF explicitly. Python's `print` translates to CRLF on Windows, and a
+# corpus file whose line endings depend on who generated it is a corpus file
+# that churns in every diff.
+sys.stdout.reconfigure(newline="
+")
 print(json.dumps(doc, indent=2, sort_keys=True))
