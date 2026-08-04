@@ -142,6 +142,11 @@ impl CutStats {
 /// Reusable buffers for cutting, so the inner loop allocates nothing.
 #[derive(Debug, Default)]
 pub struct CutScratch {
+    /// Whether the profile fills continuously from its axis outward.
+    ///
+    /// A property of the profile, computed once here rather than per ray. It was
+    /// per ray, and cost 180 times Case A's whole span computation.
+    radially_convex: bool,
     raycast: RaycastScratch,
     swept: Spans,
     material: Spans,
@@ -153,6 +158,7 @@ impl CutScratch {
     #[must_use]
     pub fn new(profile: &Profile) -> Self {
         Self {
+            radially_convex: plunge::is_radially_convex(profile),
             raycast: RaycastScratch::with_capacity(profile.len()),
             swept: Spans::new(),
             material: Spans::new(),
@@ -270,6 +276,7 @@ pub fn cut_bundle(
                         profile,
                         motion,
                         &ray,
+                        scratch.radially_convex,
                         &mut scratch.raycast,
                         &mut scratch.swept,
                         &mut stats.raycast,

@@ -170,6 +170,13 @@ pub fn is_radially_convex(profile: &Profile) -> bool {
 
 /// Intervals of `ray` inside a plunge-swept tool.
 ///
+/// `radially_convex` is [`is_radially_convex`] for this profile, and is a
+/// **parameter rather than a check** because it is a property of the profile and
+/// not of the ray. Computing it here cost 42.6 microseconds a ray against Case
+/// A's 233 nanoseconds -- 180 times slower on the case that should be the
+/// cheapest -- because it walks a 64 by 64 grid of containment tests. The caller
+/// computes it once per profile; [`super::cut::CutScratch`] is where.
+///
 /// Returns `false` without touching `out` when the ray is neither along the
 /// plunge nor across it, or when the profile is not radially convex. The caller
 /// then falls back to bounded sub-stepping.
@@ -180,6 +187,7 @@ pub fn swept_spans_into(
     profile: &Profile,
     motion: &LinearMove,
     ray: &Ray,
+    radially_convex: bool,
     scratch: &mut RaycastScratch,
     out: &mut Spans,
     stats: &mut RaycastStats,
@@ -189,7 +197,7 @@ pub fn swept_spans_into(
         dz.abs() > 0.0,
         "a plunge sweep needs vertical motion; dispatch on LinearMove::case first"
     );
-    if !is_radially_convex(profile) {
+    if !radially_convex {
         return false;
     }
 

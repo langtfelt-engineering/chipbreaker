@@ -129,6 +129,8 @@ fn plunges_match_the_dense_reference() {
             plunge::is_radially_convex(&profile),
             "{name} should be radially convex"
         );
+        // Once per profile, as the cut path does.
+        let convex = plunge::is_radially_convex(&profile);
         for (label, motion) in [
             (
                 "down",
@@ -162,6 +164,7 @@ fn plunges_match_the_dense_reference() {
                     &profile,
                     &motion,
                     &ray,
+                    convex,
                     &mut scratch,
                     &mut analytic,
                     &mut stats,
@@ -264,6 +267,7 @@ fn a_ray_that_is_neither_along_nor_across_is_declined_rather_than_guessed() {
         &profile,
         &motion,
         &diagonal,
+        plunge::is_radially_convex(&profile),
         &mut RaycastScratch::default(),
         &mut out,
         &mut RaycastStats::default(),

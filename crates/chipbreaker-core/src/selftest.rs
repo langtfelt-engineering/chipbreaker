@@ -982,6 +982,8 @@ fn sweep_suite() -> SuiteResult {
             });
             continue;
         };
+        // Once per profile, not once per ray.
+        let convex = plunge::is_radially_convex(profile);
         for (motion_name, motion) in &motions {
             h.begin(tool_name);
             h.str(motion_name);
@@ -1002,6 +1004,7 @@ fn sweep_suite() -> SuiteResult {
                             profile,
                             motion,
                             ray,
+                            convex,
                             &mut scratch,
                             &mut spans,
                             &mut stats,
