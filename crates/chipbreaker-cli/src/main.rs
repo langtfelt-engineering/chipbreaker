@@ -14,6 +14,7 @@ mod mesh;
 mod path;
 mod report;
 mod roots;
+mod run;
 mod tool;
 
 use std::io::Write;
@@ -80,6 +81,10 @@ enum Command {
         #[command(subcommand)]
         command: roots::RootsCommand,
     },
+    /// Simulate material removal: cut a stock field with an NC program.
+    Run(run::RunArgs),
+    /// Describe a field after cutting: volume, spans, spill, per bundle.
+    CutStat(run::CutStatArgs),
     /// Print version information.
     Version {
         /// Emit JSON instead of a single line of text.
@@ -119,6 +124,16 @@ fn main() -> ExitCode {
         Command::Roots { command } => {
             let as_json = command.json();
             let (outcome, elapsed) = mesh::timed(|| roots::run(&command));
+            emit(outcome, elapsed, as_json)
+        }
+        Command::Run(args) => {
+            let as_json = args.json;
+            let (outcome, elapsed) = mesh::timed(|| run::run(&args));
+            emit(outcome, elapsed, as_json)
+        }
+        Command::CutStat(args) => {
+            let as_json = args.json;
+            let (outcome, elapsed) = mesh::timed(|| run::cut_stat(&args));
             emit(outcome, elapsed, as_json)
         }
         Command::Version { json } => {
@@ -299,6 +314,102 @@ mod tests {
             }
             other => panic!("wrong subcommand: {other:?}"),
         }
+    }
+
+    #[test]
+    fn run_parses_and_requires_its_inputs() {
+        // Stock and path are the two things a simulation cannot proceed without,
+        // and neither has a sensible default.
+        assert!(
+            Cli::try_parse_from(["chipbreaker", "run", "--stock", "s.tdx"]).is_err(),
+            "run must require --path"
+        );
+        assert!(
+            Cli::try_parse_from(["chipbreaker", "run", "--path", "j.nc"]).is_err(),
+            "run must require --stock"
+        );
+
+        let cli = Cli::try_parse_from([
+            "chipbreaker",
+            "run",
+            "--stock",
+            "s.tdx",
+            "--path",
+            "j.nc",
+            "--tools",
+            "t.json",
+            "--tool",
+            "flat-6",
+            "--out",
+            "r.tdx",
+            "--progress",
+            "--segment-range",
+            "41332:41333",
+        ])
+        .expect("valid");
+        match cli.command {
+            Command::Run(args) => {
+                assert_eq!(args.segment_range, Some((41_332, 41_333)));
+                assert_eq!(args.tool.as_deref(), Some("flat-6"));
+                assert!(args.progress);
+                // Not given, so it is derived from the stock's cell size later.
+                assert!(args.max_swept_error.is_none());
+            }
+            other => panic!("wrong subcommand: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_segment_range_must_be_half_open_and_ordered() {
+        for bad in ["5", "5:5", "9:3", "a:b", "5:"] {
+            assert!(
+                Cli::try_parse_from([
+                    "chipbreaker",
+                    "run",
+                    "--stock",
+                    "s.tdx",
+                    "--path",
+                    "j.nc",
+                    "--segment-range",
+                    bad,
+                ])
+                .is_err(),
+                "{bad:?} must not parse as a segment range"
+            );
+        }
+    }
+
+    #[test]
+    fn the_reference_ground_truth_is_reachable_from_the_command_line() {
+        let cli = Cli::try_parse_from([
+            "chipbreaker",
+            "run",
+            "--stock",
+            "s.tdx",
+            "--path",
+            "j.nc",
+            "--reference",
+            "--substeps",
+            "512",
+        ])
+        .expect("valid");
+        match cli.command {
+            Command::Run(args) => {
+                assert!(args.reference);
+                assert_eq!(args.substeps, 512);
+            }
+            other => panic!("wrong subcommand: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cut_stat_parses() {
+        assert!(Cli::try_parse_from(["chipbreaker", "cut-stat", "r.tdx"]).is_ok());
+        assert!(Cli::try_parse_from(["chipbreaker", "cut-stat", "r.tdx", "--json"]).is_ok());
+        assert!(
+            Cli::try_parse_from(["chipbreaker", "cut-stat"]).is_err(),
+            "cut-stat must be given a file"
+        );
     }
 
     #[test]
