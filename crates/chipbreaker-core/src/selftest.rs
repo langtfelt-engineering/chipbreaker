@@ -73,6 +73,12 @@ pub const TOOL_RAYS_PER_SIDE: usize = 12;
 /// finer lattice would cost time without adding a way to disagree.
 pub const DEXEL_SPACING: f64 = 0.75;
 
+/// Cell size used by the sweep suite, in millimetres.
+///
+/// Coarse, like the dexel suite's: this checks that every target agrees about
+/// what was removed, not that the volume is accurate.
+pub const SWEEP_SPACING: f64 = 0.8;
+
 /// Tessellation tolerance used by the tool suite, in millimetres.
 pub const TOOL_TESSELLATION_TOLERANCE: f64 = 0.05;
 
@@ -197,6 +203,7 @@ pub fn run_with(extra: Vec<SuiteResult>) -> SelfTestReport {
         root_solver_suite(),
         tool_geometry_suite(),
         dexel_field_suite(),
+        sweep_suite(),
         canonical_hash_suite(),
     ];
     suites.extend(extra);
@@ -873,6 +880,193 @@ fn dexel_field_suite() -> SuiteResult {
         name: "dexel.field",
         description: "builds dexel fields on all three axes and round-trips them through .dexel",
         cases: count,
+        failures,
+        digest: h.finish(),
+    }
+}
+
+/// Cuts a field and hashes what was removed.
+///
+/// Where Unit 7 enters the cross-platform guarantee. Three things must agree on
+/// every target, and only the first is purely about arithmetic.
+///
+/// The **swept spans**, hashed per ray, which covers Case A's three-piece
+/// decomposition, Case B's moving maximum, and the bounded sub-stepper that
+/// catches everything else.
+///
+/// The **resulting field**, which additionally covers the span subtraction, the
+/// arena growing into and out of its spill heap, and the order rays are visited
+/// in.
+///
+/// And the **removed volume per bundle**, on the bits. A float summed in a
+/// different order is a different float, and reordering that sum is exactly what
+/// Unit 11 will be tempted to do.
+fn sweep_suite() -> SuiteResult {
+    use crate::dexel::tri::{AXES, TriBuildOptions, TriDexelField};
+    use crate::math::Ray;
+    use crate::mesh::shapes;
+    use crate::sweep::cut::{CutScratch, SweepMethod, cut_tri};
+    use crate::sweep::{LinearMove, SweepCase, horizontal, plunge, reference};
+    use crate::tool::catalog::{Shank, ball_end_mill, drill, flat_end_mill};
+    use crate::tool::raycast::{RaycastScratch, RaycastStats};
+
+    let mut failures = Vec::new();
+    let mut h = CanonicalHash::new();
+    h.begin("sweep");
+
+    let tools = [
+        (
+            "flat",
+            flat_end_mill(5.0, 16.0, &Shank::plain(5.0, 40.0)).ok(),
+        ),
+        (
+            "ball",
+            ball_end_mill(6.0, 16.0, &Shank::plain(6.0, 40.0)).ok(),
+        ),
+        (
+            "drill",
+            drill(5.0, 118.0, 16.0, &Shank::plain(5.0, 40.0)).ok(),
+        ),
+    ];
+    let motions = [
+        (
+            "horizontal",
+            LinearMove {
+                start: Vec3::new(2.0, 9.0, 4.0),
+                end: Vec3::new(26.0, 15.0, 4.0),
+            },
+        ),
+        (
+            "plunge",
+            LinearMove {
+                start: Vec3::new(14.0, 12.0, 11.0),
+                end: Vec3::new(14.0, 12.0, 2.0),
+            },
+        ),
+        (
+            "ramp",
+            LinearMove {
+                start: Vec3::new(4.0, 6.0, 10.0),
+                end: Vec3::new(24.0, 18.0, 3.0),
+            },
+        ),
+    ];
+
+    // One probe ray per bundle direction, so the span computation is hashed
+    // directly rather than only through the field it feeds.
+    let probes = [
+        Ray {
+            origin: Vec3::new(13.0, 11.0, -5.0),
+            direction: Vec3::new(0.0, 0.0, 1.0),
+        },
+        Ray {
+            origin: Vec3::new(-5.0, 11.0, 5.0),
+            direction: Vec3::new(1.0, 0.0, 0.0),
+        },
+        Ray {
+            origin: Vec3::new(13.0, -5.0, 5.0),
+            direction: Vec3::new(0.0, 1.0, 0.0),
+        },
+    ];
+
+    let mut cases = 0usize;
+    let mut scratch = RaycastScratch::default();
+    let mut stats = RaycastStats::default();
+    let mut spans = Spans::new();
+
+    for (tool_name, profile) in &tools {
+        let Some(profile) = profile else {
+            failures.push(Failure {
+                case: format!("build/{tool_name}"),
+                detail: "the catalogue refused a standard tool".to_owned(),
+            });
+            continue;
+        };
+        for (motion_name, motion) in &motions {
+            h.begin(tool_name);
+            h.str(motion_name);
+
+            for (index, ray) in probes.iter().enumerate() {
+                h.usize(index);
+                match motion.case() {
+                    SweepCase::Horizontal => horizontal::swept_spans_into(
+                        profile,
+                        motion,
+                        ray,
+                        &mut scratch,
+                        &mut spans,
+                        &mut stats,
+                    ),
+                    SweepCase::Plunge
+                        if plunge::swept_spans_into(
+                            profile,
+                            motion,
+                            ray,
+                            &mut scratch,
+                            &mut spans,
+                            &mut stats,
+                        ) => {}
+                    _ => reference::swept_spans_into(
+                        profile,
+                        motion,
+                        32,
+                        ray,
+                        &mut scratch,
+                        &mut spans,
+                        &mut stats,
+                    ),
+                }
+                spans.hash_canonical(&mut h);
+            }
+
+            let mesh = shapes::box_solid(Vec3::new(0.0, 0.0, 0.0), Vec3::new(28.0, 24.0, 10.0));
+            match TriDexelField::build(
+                &mesh,
+                &TriBuildOptions {
+                    spacing: SWEEP_SPACING,
+                    ..TriBuildOptions::default()
+                },
+            ) {
+                Ok((mut field, _)) => {
+                    cases += 1;
+                    let before = field.volumes();
+                    let mut cut_scratch = CutScratch::new(profile);
+                    let cut = cut_tri(
+                        &mut field,
+                        profile,
+                        motion,
+                        SweepMethod::Analytic {
+                            tolerance: SWEEP_SPACING / 10.0,
+                        },
+                        &mut cut_scratch,
+                    );
+                    field.hash_canonical(&mut h);
+                    let after = field.volumes();
+                    for axis in AXES {
+                        let a = before[axis.index()].unwrap_or(0.0);
+                        let b = after[axis.index()].unwrap_or(0.0);
+                        h.f64(a - b);
+                    }
+                    h.u64(cut.rays_tested);
+                    h.u64(cut.rays_rejected);
+                    h.u64(cut.rays_changed);
+                    h.u64(cut.substeps);
+                    h.f64(cut.worst_bound_mm);
+                }
+                Err(e) => failures.push(Failure {
+                    case: format!("stock/{tool_name}/{motion_name}"),
+                    detail: e.to_string(),
+                }),
+            }
+            h.end();
+        }
+    }
+    h.end();
+
+    SuiteResult {
+        name: "sweep",
+        description: "swept spans and cut fields across three tools and three motion cases",
+        cases,
         failures,
         digest: h.finish(),
     }
