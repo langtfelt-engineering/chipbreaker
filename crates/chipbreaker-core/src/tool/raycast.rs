@@ -74,6 +74,17 @@ pub struct RaycastStats {
     /// Roots the solver returned with multiplicity above one: the ray met that
     /// surface tangentially rather than crossing it.
     pub tangencies: u64,
+    /// Times the torus branch was taken, needing a quartic solve.
+    ///
+    /// Counted because Unit 8's plan predicted arcs would drive this rate up:
+    /// the middle piece of a swept arc was expected to need an *offset* profile,
+    /// the tool's chain translated by the arc radius, which would put arcs into
+    /// even a flat end mill's silhouette. It does not, because the three bundles
+    /// split the problem and no profile is ever constructed -- so this counter
+    /// should depend on the **tool** alone and be flat in the motion kind.
+    ///
+    /// A prediction that cheap to check is worth a counter.
+    pub quartics: u64,
 }
 
 impl RaycastStats {
@@ -85,6 +96,7 @@ impl RaycastStats {
         self.spans += other.spans;
         self.grazes += other.grazes;
         self.tangencies += other.tangencies;
+        self.quartics += other.quartics;
     }
 }
 
@@ -209,6 +221,7 @@ fn element_crossings(
             let s0 = e0 + g0 * g0 + major * major - rho * rho;
             let four_r2 = 4.0 * major * major;
 
+            stats.quartics += 1;
             let roots = solve_quartic(
                 s2 * s2,
                 2.0 * s2 * s1,

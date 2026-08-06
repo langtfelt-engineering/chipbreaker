@@ -48,8 +48,9 @@ use crate::tool::raycast::{RaycastScratch, RaycastStats};
 
 /// A linear motion of a tool: where it starts, where it ends.
 ///
-/// Arcs are Unit 8. This carries no feed, no provenance and no tool number,
-/// because none of them affect the geometry of what is removed.
+/// Arcs are [`arc::ArcMove`], and [`Motion`] holds either. This carries no feed,
+/// no provenance and no tool number, because none of them affect the geometry of
+/// what is removed.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LinearMove {
     /// Tool tip position at the start.

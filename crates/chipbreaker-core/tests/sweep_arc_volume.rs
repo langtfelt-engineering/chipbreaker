@@ -307,3 +307,101 @@ fn a_deeper_arc_removes_proportionally_more() {
          got {ratio}"
     );
 }
+
+#[test]
+fn an_arc_does_not_raise_the_quartic_rate() {
+    // **Unit 8's plan predicted this would rise, and it does not.**
+    //
+    // The plan expected the middle piece of a swept arc to need an *offset*
+    // profile -- the tool's chain translated by the arc radius and mirrored --
+    // which would introduce arc elements into even a flat end mill's silhouette
+    // and so drive the torus branch of the raycaster, and with it the quartic
+    // solver.
+    //
+    // No profile is constructed. The three bundles split the problem: along the
+    // arc's axis the bearing is constant, so the test is a vertical cast at
+    // radius `|d - R|` against the tool's own profile; across it the height is
+    // constant, so the tool radius is a single number and the condition is an
+    // annulus, which a line meets in the difference of two disc chords. Both are
+    // closed form and neither builds anything.
+    //
+    // So the quartic rate is a property of the **tool**, not of the motion.
+    // Measured here against a linear move of the same tool over comparable
+    // ground: a flat end mill has no arc element at all and never reaches the
+    // torus branch, and a ball nose reaches it exactly as often either way.
+    use chipbreaker_core::sweep::LinearMove;
+    use chipbreaker_core::sweep::cut::{CutStats, cut_tri_motion};
+    use chipbreaker_core::tool::catalog::bull_end_mill;
+
+    let quartics = |profile: &Profile, motion: &Motion| -> (u64, u64) {
+        let mut field = stock();
+        let mut scratch = CutScratch::new(profile);
+        let mut stats = CutStats::default();
+        stats.merge(&cut_tri_motion(
+            &mut field,
+            profile,
+            motion,
+            SweepMethod::Analytic {
+                tolerance: SPACING / 10.0,
+            },
+            &mut scratch,
+        ));
+        (stats.raycast.quartics, stats.raycast.rays)
+    };
+
+    let arc = Motion::Arc(ArcMove {
+        center: Vec3::new(20.0, 15.0, 0.0),
+        radius: 8.0,
+        start_angle: 0.0,
+        sweep: 2.0 * PI,
+        z: 7.0,
+        plane: ArcPlane::Xy,
+        rise: 0.0,
+    });
+    // A straight slot at the same depth, so both cut real material.
+    let line = Motion::Linear(LinearMove {
+        start: Vec3::new(4.0, 15.0, 7.0),
+        end: Vec3::new(36.0, 15.0, 7.0),
+    });
+
+    let flat = mill(3.0);
+    let (flat_arc, _) = quartics(&flat, &arc);
+    let (flat_line, _) = quartics(&flat, &line);
+    assert_eq!(
+        flat_arc, 0,
+        "a flat end mill's silhouette is lines only, so no cast of it can reach \
+         the torus branch -- whatever the motion. Got {flat_arc} quartic solves \
+         on the arc, which would mean an offset profile had been built after all"
+    );
+    assert_eq!(flat_line, 0, "and the same for the straight slot");
+
+    // A **toroidal** cutter is the one that reaches the quartic, and a ball nose
+    // is not. A ball's tip arc is centred on the tool axis, so the raycaster
+    // takes its sphere branch -- a quadratic. Only an arc centred at a non-zero
+    // radius sweeps a torus, which means a corner-radius or barrel cutter.
+    let bull = bull_end_mill(10.0, 2.0, 24.0, &Shank::plain(8.0, 60.0)).expect("valid");
+    let (bull_arc, arc_rays) = quartics(&bull, &arc);
+    let (bull_line, line_rays) = quartics(&bull, &line);
+    assert!(
+        bull_arc > 0 && bull_line > 0,
+        "a corner-radius mill's arc is centred at r = 3, off the axis, so it          sweeps a torus and must reach the quartic"
+    );
+
+    #[allow(clippy::cast_precision_loss, reason = "a ratio of counts")]
+    let (arc_rate, line_rate) = (
+        bull_arc as f64 / arc_rays as f64,
+        bull_line as f64 / line_rays as f64,
+    );
+    println!(
+        "quartic solves per ray cast: arc {arc_rate:.4} ({bull_arc}/{arc_rays}), \
+         line {line_rate:.4} ({bull_line}/{line_rays})"
+    );
+    let ratio = arc_rate / line_rate;
+    assert!(
+        (0.9..=1.1).contains(&ratio),
+        "the quartic rate per cast should not depend on whether the motion is an \
+         arc; got {arc_rate:.4} against {line_rate:.4}, a ratio of {ratio:.3}. A \
+         rise here would mean the middle piece really had started constructing \
+         an offset profile"
+    );
+}

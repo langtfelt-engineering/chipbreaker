@@ -421,7 +421,7 @@ pub fn run(args: &RunArgs) -> Result<(Value, String, bool), String> {
         cases[1], cases[2], cases[3], cases[4], cases[5], cases[0]
     ));
     report.push_str(&format!(
-        "batching  {} motions in {} run(s) of at most {}; the result is bit-identical          at every size
+        "batching  {} motions in {} run(s) of at most {}, bit-identical at every size
 ",
         motions.len(),
         runs.len(),
@@ -429,7 +429,7 @@ pub fn run(args: &RunArgs) -> Result<(Value, String, bool), String> {
     ));
     if args.no_arc_native {
         report.push_str(&format!(
-            "LINEARISED {linearised_arcs} arc(s) replaced by {linearised_chords} chord(s)              at {linearise_tol} mm. This is the post-processed program, NOT the arc.
+            "LINEARISED {linearised_arcs} arc(s) -> {linearised_chords} chord(s) at {linearise_tol} mm. This is the post-processed program, NOT the arc.
 "
         ));
     }

@@ -56,9 +56,27 @@ use super::cut::{CutScratch, CutStats, SweepMethod, cut_one_ray, transverse_over
 
 /// Default motions per batch.
 ///
-/// Large enough to amortise the traversal over a raster's narrow band, small
-/// enough that the union box does not swell to cover the whole part — at which
-/// point the rejection that makes the field affordable stops working.
+/// Measured, on 4,000 short segments of a posted finishing pass over a
+/// 100 x 60 x 20 mm field at 0.5 mm — the workload batching exists for:
+///
+/// ```text
+/// size      1       4      16      64     256    1024
+/// time   1024ms  662ms   510ms   495ms   471ms   538ms
+/// gain    1.00x  1.55x   2.01x   2.07x   2.17x   1.90x
+/// ```
+///
+/// The turnover at 1024 is the union swelling: a batch rejects a ray against
+/// the union of its boxes, so once a batch spans more ground than its segments
+/// work over, the rejection that makes the field affordable stops working. The
+/// curve is flat from 16 to 256 and 32 sits in the middle of that plateau,
+/// which is why it is the default rather than the 256 that measured fastest —
+/// the extra 5% is not worth being one workload away from the cliff.
+///
+/// Long full-width raster passes show none of this: each move's box already
+/// spans the part, so the union of thirty-two is barely larger than one and the
+/// speedup is inside the noise. Measuring those first was a mistake worth
+/// recording, because it makes the shape of the win precise — batching pays for
+/// **many small boxes**, not for many moves.
 pub const DEFAULT_BATCH: usize = 32;
 
 /// Cuts a whole motion list, batching internally.
