@@ -105,7 +105,7 @@ tolerances in both modules.
 | U2 | Triangle mesh, I/O, validation, BVH | **done** |
 | U3 | Tool and holder geometry, root solver, ray versus solid of revolution | **done** |
 | U4 | G-code parser and toolpath IR | **done** |
-| U5–U8 | Dexel field, tri-dexel, 3-axis material removal, arcs | |
+| U5–U8 | Dexel field, tri-dexel, 3-axis material removal, arcs | **done** |
 | U9–U11 | Dual contouring, adaptive resolution, deterministic parallelism | |
 | U12–U15 | Deviation fields, gouge classification, collision detection, multi-setup | |
 | U16–U18 | 5-axis kinematics, tilted swept volumes, error-bounded sub-stepping | |

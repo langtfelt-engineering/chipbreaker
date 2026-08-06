@@ -204,6 +204,7 @@ pub fn run_with(extra: Vec<SuiteResult>) -> SelfTestReport {
         tool_geometry_suite(),
         dexel_field_suite(),
         sweep_suite(),
+        sweep_arc_suite(),
         canonical_hash_suite(),
     ];
     suites.extend(extra);
@@ -1069,6 +1070,317 @@ fn sweep_suite() -> SuiteResult {
     SuiteResult {
         name: "sweep",
         description: "swept spans and cut fields across three tools and three motion cases",
+        cases,
+        failures,
+        digest: h.finish(),
+    }
+}
+
+/// Arcs, helices, and batching, inside the cross-platform guarantee.
+///
+/// `sweep_suite` covers linear motion only, which left arcs outside the wasm
+/// parity check entirely — and arcs are the part of this module most likely to
+/// drift between targets, because they are the only part that reaches `sin_cos`,
+/// `atan2` and `acos`. A libm-backed transcendental is deterministic by
+/// construction, but "by construction" is what this whole file exists to stop
+/// anyone from having to take on trust.
+///
+/// Batching is hashed here too. It must produce a bit-identical field *and*
+/// bit-identical statistics at every batch size, which the test suite asserts on
+/// one platform; hashing two sizes here asserts it on all four.
+fn sweep_arc_suite() -> SuiteResult {
+    use crate::dexel::tri::{AXES, TriBuildOptions, TriDexelField};
+    use crate::math::Ray;
+    use crate::mesh::shapes;
+    use crate::sweep::arc::ArcMove;
+    use crate::sweep::batch::cut_all;
+    use crate::sweep::cut::{CutScratch, SweepMethod, cut_tri_motion};
+    use crate::sweep::{Motion, arc};
+    use crate::tool::catalog::{Shank, ball_end_mill, bull_end_mill, flat_end_mill};
+    use crate::tool::raycast::{RaycastScratch, RaycastStats};
+    use crate::toolpath::ArcPlane;
+
+    const PI: f64 = core::f64::consts::PI;
+    const SPACING: f64 = 0.5;
+
+    let mut failures = Vec::new();
+    let mut h = CanonicalHash::new();
+    h.begin("sweep.arc");
+
+    let tools = [
+        (
+            "flat",
+            flat_end_mill(5.0, 16.0, &Shank::plain(5.0, 40.0)).ok(),
+        ),
+        (
+            "ball",
+            ball_end_mill(6.0, 16.0, &Shank::plain(6.0, 40.0)).ok(),
+        ),
+        // A corner-radius mill, because its arc element is centred off the axis
+        // and so is the only one of the three that reaches the quartic. If the
+        // quartic solver ever drifted between targets, this is what would catch
+        // it.
+        (
+            "bull",
+            bull_end_mill(8.0, 1.5, 16.0, &Shank::plain(6.0, 40.0)).ok(),
+        ),
+    ];
+
+    let centre = Vec3::new(14.0, 12.0, 0.0);
+    let motions: [(&str, ArcMove); 5] = [
+        (
+            "full-circle",
+            ArcMove {
+                center: centre,
+                radius: 7.0,
+                start_angle: 0.0,
+                sweep: 2.0 * PI,
+                z: 4.0,
+                plane: ArcPlane::Xy,
+                rise: 0.0,
+            },
+        ),
+        (
+            "quarter",
+            ArcMove {
+                center: centre,
+                radius: 7.0,
+                start_angle: 0.37,
+                sweep: PI / 2.0,
+                z: 4.0,
+                plane: ArcPlane::Xy,
+                rise: 0.0,
+            },
+        ),
+        (
+            "clockwise-across-zero",
+            ArcMove {
+                center: centre,
+                radius: 6.0,
+                start_angle: 0.4,
+                sweep: -2.6,
+                z: 5.0,
+                plane: ArcPlane::Xy,
+                rise: 0.0,
+            },
+        ),
+        (
+            "helix",
+            ArcMove {
+                center: centre,
+                radius: 5.0,
+                start_angle: 0.0,
+                sweep: 2.0 * PI,
+                z: 10.0,
+                plane: ArcPlane::Xy,
+                rise: -5.0,
+            },
+        ),
+        (
+            // Sub-stepped: the arc's axis is not the tool's, so Case A' declines.
+            "g18",
+            ArcMove {
+                center: centre,
+                radius: 5.0,
+                start_angle: 0.0,
+                sweep: PI / 2.0,
+                z: 14.0,
+                plane: ArcPlane::Zx,
+                rise: 0.0,
+            },
+        ),
+    ];
+
+    let probes = [
+        Ray {
+            origin: Vec3::new(14.0, 5.5, -5.0),
+            direction: Vec3::new(0.0, 0.0, 1.0),
+        },
+        Ray {
+            origin: Vec3::new(-5.0, 12.0, 5.0),
+            direction: Vec3::new(1.0, 0.0, 0.0),
+        },
+        Ray {
+            origin: Vec3::new(14.0, -5.0, 5.0),
+            direction: Vec3::new(0.0, 1.0, 0.0),
+        },
+    ];
+
+    let mut cases = 0usize;
+    let mut scratch = RaycastScratch::default();
+    let mut stats = RaycastStats::default();
+    let mut spans = Spans::new();
+
+    for (tool_name, profile) in &tools {
+        let Some(profile) = profile else {
+            failures.push(Failure {
+                case: format!("build/{tool_name}"),
+                detail: "the catalogue refused a standard tool".to_owned(),
+            });
+            continue;
+        };
+        let convex = crate::sweep::plunge::is_radially_convex(profile);
+
+        for (motion_name, motion) in &motions {
+            h.begin(tool_name);
+            h.str(motion_name);
+
+            // The spans, hashed directly. `took_closed_form` is hashed as well
+            // as the spans, so a target that silently started declining Case A'
+            // -- and so answered correctly but by the slow path -- is a parity
+            // failure rather than a silent divergence in cost.
+            for (index, ray) in probes.iter().enumerate() {
+                h.usize(index);
+                let took_closed_form = arc::swept_spans_into(
+                    profile,
+                    motion,
+                    ray,
+                    convex,
+                    &mut scratch,
+                    &mut spans,
+                    &mut stats,
+                );
+                h.bool(took_closed_form);
+                if !took_closed_form {
+                    crate::sweep::reference::arc_spans_into(
+                        profile,
+                        motion,
+                        32,
+                        ray,
+                        &mut scratch,
+                        &mut spans,
+                        &mut stats,
+                    );
+                }
+                spans.hash_canonical(&mut h);
+            }
+
+            // Path length, deviation and chord counts: pure arithmetic over the
+            // transcendentals, and the numbers every bound in this unit rests on.
+            h.f64(motion.path_length());
+            h.f64(motion.deviation_bound(64));
+            h.f64(motion.chord_deviation(64));
+            for tolerance in [0.5, 0.05, 0.005] {
+                h.f64(tolerance);
+                let (steps, bound) = motion.substeps_for_error(tolerance);
+                h.u64(u64::from(steps)).f64(bound);
+                h.u64(u64::from(motion.chords_for_error(tolerance)));
+            }
+            // Sampled positions, so a drift in `sin_cos` shows up as itself
+            // rather than only through a span that may have absorbed it.
+            for k in 0..=8 {
+                h.f64(motion.at(f64::from(k) / 8.0).x);
+                h.f64(motion.at(f64::from(k) / 8.0).y);
+                h.f64(motion.at(f64::from(k) / 8.0).z);
+            }
+
+            let mesh = shapes::box_solid(Vec3::new(0.0, 0.0, 0.0), Vec3::new(28.0, 24.0, 10.0));
+            let options = TriBuildOptions {
+                spacing: SPACING,
+                ..TriBuildOptions::default()
+            };
+            let method = SweepMethod::Analytic {
+                tolerance: SPACING / 10.0,
+            };
+            match TriDexelField::build(&mesh, &options) {
+                Ok((mut field, _)) => {
+                    cases += 1;
+                    let before = field.volumes();
+                    let mut cut_scratch = CutScratch::new(profile);
+                    let cut = cut_tri_motion(
+                        &mut field,
+                        profile,
+                        &Motion::Arc(*motion),
+                        method,
+                        &mut cut_scratch,
+                    );
+                    field.hash_canonical(&mut h);
+                    let after = field.volumes();
+                    for axis in AXES {
+                        let a = before[axis.index()].unwrap_or(0.0);
+                        let b = after[axis.index()].unwrap_or(0.0);
+                        h.f64(a - b);
+                    }
+                    h.u64(cut.rays_tested);
+                    h.u64(cut.rays_rejected);
+                    h.u64(cut.rays_changed);
+                    h.u64(cut.substeps);
+                    h.u64(cut.rays_exact);
+                    h.u64(cut.rays_substepped);
+                    h.f64(cut.worst_bound_mm);
+                    h.u64(cut.raycast.quartics);
+                }
+                Err(e) => failures.push(Failure {
+                    case: format!("stock/{tool_name}/{motion_name}"),
+                    detail: e.to_string(),
+                }),
+            }
+            h.end();
+        }
+
+        // Batching, on a run mixing an exact arc with a sub-stepped helix and a
+        // linear lead-in. Two sizes, hashed separately: they must produce the
+        // same digest, and a target where they did not would be one where the
+        // per-motion accumulation had been reordered.
+        h.begin("batch");
+        h.str(tool_name);
+        let run: Vec<Motion> = vec![
+            Motion::Linear(crate::sweep::LinearMove {
+                start: Vec3::new(3.0, 12.0, 4.0),
+                end: Vec3::new(7.0, 12.0, 4.0),
+            }),
+            Motion::Arc(motions[1].1),
+            Motion::Arc(motions[3].1),
+        ];
+        let mesh = shapes::box_solid(Vec3::new(0.0, 0.0, 0.0), Vec3::new(28.0, 24.0, 10.0));
+        let options = TriBuildOptions {
+            spacing: SPACING,
+            ..TriBuildOptions::default()
+        };
+        let method = SweepMethod::Analytic {
+            tolerance: SPACING / 10.0,
+        };
+        let mut digests = Vec::new();
+        for size in [1usize, 32] {
+            match TriDexelField::build(&mesh, &options) {
+                Ok((mut field, _)) => {
+                    cases += 1;
+                    let mut cut_scratch = CutScratch::new(profile);
+                    let cut = cut_all(&mut field, profile, &run, method, &mut cut_scratch, size);
+                    let mut per_size = CanonicalHash::new();
+                    field.hash_canonical(&mut per_size);
+                    for value in cut.removed_mm3 {
+                        per_size.f64(value);
+                    }
+                    per_size.u64(cut.rays_tested);
+                    per_size.u64(cut.rays_changed);
+                    per_size.u64(cut.substeps);
+                    digests.push(per_size.finish());
+                }
+                Err(e) => failures.push(Failure {
+                    case: format!("batch/{tool_name}/{size}"),
+                    detail: e.to_string(),
+                }),
+            }
+        }
+        if digests.len() == 2 && digests[0] != digests[1] {
+            failures.push(Failure {
+                case: format!("batch/{tool_name}"),
+                detail: "batch size 1 and 32 produced different results, so batching \
+                         is not the invisible tuning knob it is documented to be"
+                    .to_owned(),
+            });
+        }
+        for digest in &digests {
+            h.bytes(digest.as_bytes());
+        }
+        h.end();
+    }
+    h.end();
+
+    SuiteResult {
+        name: "sweep.arc",
+        description: "arcs, helices and batching across three tools and five motions",
         cases,
         failures,
         digest: h.finish(),
