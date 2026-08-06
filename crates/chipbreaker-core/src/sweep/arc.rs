@@ -72,6 +72,7 @@ use crate::tool::raycast::{RaycastScratch, RaycastStats};
 use crate::toolpath::ArcPlane;
 use crate::transcendental as t;
 
+use super::LinearMove;
 use super::plunge::max_radius_over_z;
 use super::spans_in_tool_at;
 
@@ -172,6 +173,107 @@ impl ArcMove {
         let angular = self.sweep.abs() / n;
         let axial = self.rise.abs() / n;
         t::hypot(2.0 * self.radius * t::sin(angular / 4.0), axial / 2.0)
+    }
+
+    /// Worst distance from the true path to the chord polyline through `steps`
+    /// evenly spaced points of it.
+    ///
+    /// **Not the same quantity as [`Self::deviation_bound`]**, and confusing the
+    /// two would be easy. That one measures a *stepped* approximation, where the
+    /// tool sits still at each sample and the path between samples is not
+    /// represented at all; the worst point is the midpoint of the gap and the
+    /// error is half the step. This one measures a *chord*, which does traverse
+    /// the gap, and the worst point is the arc's bulge away from its own chord:
+    ///
+    /// ```text
+    /// sagitta(N) = R * (1 - cos(delta/2)),   delta = |sweep| / N
+    /// ```
+    ///
+    /// The axial term does not appear, and that is not an omission. A chord
+    /// between two points of a helix interpolates the axial coordinate linearly
+    /// in the same parameter the true helix does, and both ends agree, so the
+    /// axial component of a chord is **exact**. Only the turn is approximated.
+    ///
+    /// Consequently a chord is far more accurate than a sub-step at the same
+    /// count -- `R(1 - cos(d/2))` is `O(d^2)` where `2R sin(d/4)` is `O(d)` --
+    /// which is why linearising and sub-stepping need different step counts to
+    /// reach the same tolerance.
+    ///
+    /// # Panics
+    /// Panics if `steps` is zero.
+    #[must_use]
+    pub fn chord_deviation(&self, steps: u32) -> f64 {
+        assert!(steps > 0, "a linearised arc needs at least one chord");
+        let delta = self.sweep.abs() / f64::from(steps);
+        self.radius * (1.0 - t::cos(delta / 2.0))
+    }
+
+    /// Chords needed to bring [`Self::chord_deviation`] under `tolerance`.
+    ///
+    /// Inverts the sagitta directly: `delta <= 2 * acos(1 - tol / R)`. When the
+    /// tolerance is at least the radius, one chord per half turn already
+    /// suffices and the formula saturates, which the clamp handles.
+    ///
+    /// # Panics
+    /// Panics if `tolerance` is not positive and finite.
+    #[must_use]
+    pub fn chords_for_error(&self, tolerance: f64) -> u32 {
+        assert!(
+            tolerance.is_finite() && tolerance > 0.0,
+            "the linearisation tolerance must be a positive length, got {tolerance}"
+        );
+        let sweep = self.sweep.abs();
+        if sweep <= DEGENERATE || self.radius <= DEGENERATE {
+            return 1;
+        }
+        // `1 - tol/R` below -1 means any chord is inside tolerance; the `max`
+        // keeps `acos` in its domain rather than letting a NaN through.
+        let cosine = (1.0 - tolerance / self.radius).max(-1.0);
+        let delta = 2.0 * t::acos(cosine);
+        if delta <= 0.0 {
+            return super::reference::MAX_SUBSTEPS;
+        }
+        let wanted = sweep / delta;
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "clamped into u32 immediately below"
+        )]
+        if wanted.is_finite() && wanted < f64::from(super::reference::MAX_SUBSTEPS) {
+            (wanted.ceil() as u32).max(1)
+        } else {
+            super::reference::MAX_SUBSTEPS
+        }
+    }
+
+    /// Replaces the arc with the chord polyline a CAM post would emit.
+    ///
+    /// This is what `--no-arc-native` produces, and what the native path is
+    /// differential-tested against. It is not a fallback: every controller on
+    /// the floor accepts `G2`/`G3`, but a great many posts linearise anyway, so
+    /// the linearised result is the one a customer is most likely to be
+    /// comparing against.
+    ///
+    /// Endpoints come from [`Self::at`], so the chain starts and ends exactly
+    /// where the arc does and the joins are shared points -- no gaps for a
+    /// rounding to open up in.
+    ///
+    /// # Panics
+    /// Panics if `tolerance` is not positive and finite.
+    #[must_use]
+    pub fn linearise(&self, tolerance: f64) -> Vec<LinearMove> {
+        let steps = self.chords_for_error(tolerance);
+        let mut out = Vec::with_capacity(steps as usize);
+        let mut previous = self.at(0.0);
+        for k in 1..=steps {
+            let point = self.at(f64::from(k) / f64::from(steps));
+            out.push(LinearMove {
+                start: previous,
+                end: point,
+            });
+            previous = point;
+        }
+        out
     }
 
     /// Steps needed to bring [`Self::deviation_bound`] under `tolerance`, and

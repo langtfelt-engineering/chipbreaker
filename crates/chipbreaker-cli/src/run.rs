@@ -36,9 +36,8 @@ use chipbreaker_core::dexel::tri::TriDexelField;
 use chipbreaker_core::dexel::{FieldFormat, io as dexel_io};
 use chipbreaker_core::golden::CanonicalHash;
 use chipbreaker_core::sweep::arc::ArcMove;
-use chipbreaker_core::sweep::cut::{
-    CutScratch, CutStats, SweepMethod, cut_tri_motion, distribution,
-};
+use chipbreaker_core::sweep::batch::{DEFAULT_BATCH, cut_batch_per_motion, split_runs};
+use chipbreaker_core::sweep::cut::{CutScratch, CutStats, SweepMethod, distribution};
 use chipbreaker_core::sweep::{LinearMove, Motion, SweepCase};
 use chipbreaker_core::tool::{Profile, ToolLibrary};
 use chipbreaker_core::toolpath::{MotionKind, Toolpath};
@@ -101,6 +100,24 @@ pub struct RunArgs {
     /// Sub-steps per motion when `--reference` is given.
     #[arg(long, default_value_t = 64)]
     pub substeps: u32,
+    /// Motions per batch traversal. `1` disables batching.
+    ///
+    /// A tuning knob and nothing else: the result is bit-identical at every
+    /// value, which the test suite asserts across the corpus.
+    #[arg(long, value_name = "N", default_value_t = DEFAULT_BATCH)]
+    pub batch_size: usize,
+    /// Replace arcs with chords, as many CAM posts do, instead of sweeping them.
+    ///
+    /// For comparing against a post-processed program, and for confirming that
+    /// the native arc converges to the linearised one as the tolerance tightens.
+    #[arg(long)]
+    pub no_arc_native: bool,
+    /// Chord tolerance for `--no-arc-native`, in millimetres.
+    ///
+    /// Defaults to the sweep tolerance, so `--no-arc-native` alone asks for the
+    /// same accuracy by a different route.
+    #[arg(long, value_name = "MM")]
+    pub linearise_tol: Option<f64>,
     /// Emit JSON instead of text.
     #[arg(long)]
     pub json: bool,
@@ -237,6 +254,12 @@ pub fn run(args: &RunArgs) -> Result<(Value, String, bool), String> {
     let tolerance = args
         .max_swept_error
         .unwrap_or(spacing * SWEPT_ERROR_PER_CELL);
+    let linearise_tol = args.linearise_tol.unwrap_or(tolerance);
+    if !linearise_tol.is_finite() || linearise_tol <= 0.0 {
+        return Err(format!(
+            "--linearise-tol must be a positive length in millimetres, got {linearise_tol}"
+        ));
+    }
     let text = std::fs::read_to_string(&args.path)
         .map_err(|e| format!("cannot read {}: {e}", args.path.display()))?;
     let name = args
@@ -276,39 +299,79 @@ pub fn run(args: &RunArgs) -> Result<(Value, String, bool), String> {
     let mut cases = [0u64; 6];
     let mut arcs_skipped = 0u64;
 
+    // Built up front rather than cut as they are read, because batching needs to
+    // see a run of motions at once. The tool number rides along so `split_runs`
+    // can break a run before a tool change.
+    let mut motions: Vec<Motion> = Vec::with_capacity(hi - lo);
+    let mut motion_tools: Vec<u32> = Vec::with_capacity(hi - lo);
+    let mut linearised_arcs = 0u64;
+    let mut linearised_chords = 0u64;
     for (index, segment) in toolpath.segments[lo..hi].iter().enumerate() {
-        let motion = match segment_motion(segment) {
-            Some(motion) => motion,
-            None => {
-                // An arc whose data the parser did not attach. Counted and
-                // reported rather than quietly treated as its chord, which for
-                // a full circle is no motion at all.
-                arcs_skipped += 1;
-                continue;
-            }
+        let Some(motion) = segment_motion(segment) else {
+            // An arc whose data the parser did not attach. Counted and reported
+            // rather than quietly treated as its chord, which for a full circle
+            // is no motion at all.
+            arcs_skipped += 1;
+            continue;
         };
-        cases[case_index(motion.case())] += 1;
-        let (Some(profile), Some(scratch)) = (
-            profiles.get(&segment.tool),
-            scratches.get_mut(&segment.tool),
-        ) else {
+        if !profiles.contains_key(&segment.tool) {
             return Err(format!(
                 "segment {} uses T{} which did not resolve; this should have been \
                  caught before cutting started",
                 lo + index,
                 segment.tool
             ));
-        };
-        let stats = cut_tri_motion(&mut field, profile, &motion, method, scratch);
-        totals.merge(&stats);
+        }
+        match (&motion, args.no_arc_native) {
+            (Motion::Arc(arc), true) => {
+                linearised_arcs += 1;
+                for chord in arc.linearise(linearise_tol) {
+                    linearised_chords += 1;
+                    let chord = Motion::Linear(chord);
+                    cases[case_index(chord.case())] += 1;
+                    motions.push(chord);
+                    motion_tools.push(segment.tool);
+                }
+            }
+            _ => {
+                cases[case_index(motion.case())] += 1;
+                motions.push(motion);
+                motion_tools.push(segment.tool);
+            }
+        }
+    }
 
-        if args.progress && index % 500 == 0 {
+    // One slot per motion, summed once at the end in motion order. Chunking the
+    // list and adding up the chunk totals would make the reported volume depend
+    // on the batch size; see `sweep::batch`.
+    let mut removed_per_motion = vec![[0.0f64; 3]; motions.len()];
+    let runs = split_runs(&motions, &motion_tools, args.batch_size.max(1));
+    for (run, (from, to)) in runs.iter().copied().enumerate() {
+        let tool = motion_tools[from];
+        let (Some(profile), Some(scratch)) = (profiles.get(&tool), scratches.get_mut(&tool)) else {
+            return Err(format!("T{tool} did not resolve"));
+        };
+        let stats = cut_batch_per_motion(
+            &mut field,
+            profile,
+            &motions[from..to],
+            method,
+            scratch,
+            &mut removed_per_motion[from..to],
+        );
+        totals.merge_without_volume(&stats);
+
+        if args.progress && run % 100 == 0 {
             eprintln!(
-                "  segment {}/{}, {:.1}% of rays rejected",
-                lo + index,
-                hi,
+                "  motion {from}/{}, {:.1}% of rays rejected",
+                motions.len(),
                 totals.rejection_rate() * 100.0
             );
+        }
+    }
+    for slot in 0..3 {
+        for per_motion in &removed_per_motion {
+            totals.removed_mm3[slot] += per_motion[slot];
         }
     }
 
@@ -357,6 +420,19 @@ pub fn run(args: &RunArgs) -> Result<(Value, String, bool), String> {
 ",
         cases[1], cases[2], cases[3], cases[4], cases[5], cases[0]
     ));
+    report.push_str(&format!(
+        "batching  {} motions in {} run(s) of at most {}; the result is bit-identical          at every size
+",
+        motions.len(),
+        runs.len(),
+        args.batch_size.max(1),
+    ));
+    if args.no_arc_native {
+        report.push_str(&format!(
+            "LINEARISED {linearised_arcs} arc(s) replaced by {linearised_chords} chord(s)              at {linearise_tol} mm. This is the post-processed program, NOT the arc.
+"
+        ));
+    }
     if arcs_skipped > 0 {
         report.push_str(&format!(
             "SKIPPED   {arcs_skipped} arc segment(s) carried no arc data. This result \
@@ -408,11 +484,12 @@ pub fn run(args: &RunArgs) -> Result<(Value, String, bool), String> {
 
     let results = json!({
         "arcs_skipped": arcs_skipped,
+        "batching": {
+            "runs": runs.len(),
+            "size": args.batch_size.max(1),
+            "motions": motions.len(),
+        },
         "cases": {
-            "arc": cases[4],
-            "helix": cases[5],
-            "arc": cases[4],
-            "helix": cases[5],
             "arc": cases[4],
             "helix": cases[5],
             "horizontal": cases[1],
@@ -428,6 +505,11 @@ pub fn run(args: &RunArgs) -> Result<(Value, String, bool), String> {
             "rejected": totals.rays_rejected,
             "rejection_rate": totals.rejection_rate(),
             "tested": totals.rays_tested,
+        },
+        "linearised": if args.no_arc_native {
+            json!({ "arcs": linearised_arcs, "chords": linearised_chords, "tolerance_mm": linearise_tol })
+        } else {
+            Value::Null
         },
         "removed_mm3": removed,
         "removed_mm3_per_bundle": totals.removed_mm3,

@@ -148,12 +148,21 @@ impl CutStats {
 
     /// Accumulates another cut's statistics.
     pub fn merge(&mut self, other: &Self) {
-        self.rays_tested += other.rays_tested;
-        self.rays_rejected += other.rays_rejected;
-        self.rays_changed += other.rays_changed;
         for (a, b) in self.removed_mm3.iter_mut().zip(other.removed_mm3) {
             *a += b;
         }
+        self.merge_without_volume(other);
+    }
+
+    /// Merges every counter except the removed volume.
+    ///
+    /// For a caller accumulating volume per motion, which the batched path must
+    /// do: adding the volume here too would double it. Everything else is either
+    /// an integer count or a maximum, so it merges freely.
+    pub fn merge_without_volume(&mut self, other: &Self) {
+        self.rays_tested += other.rays_tested;
+        self.rays_rejected += other.rays_rejected;
+        self.rays_changed += other.rays_changed;
         self.substeps += other.substeps;
         self.rays_exact += other.rays_exact;
         self.rays_substepped += other.rays_substepped;
@@ -256,12 +265,6 @@ pub fn cut_bundle_motion(
     scratch: &mut CutScratch,
 ) -> CutStats {
     let mut stats = CutStats::default();
-    let (steps, bound) = method.plan(motion);
-    // Set only when a ray actually sub-steps. A cut that took the exact path on
-    // every ray reports no deviation, which is the truth and is what makes the
-    // number worth printing.
-    let planned_bound = bound;
-
     let lattice = bundle.lattice().clone();
     let axis = lattice.axis();
     let bounds = motion.swept_bounds(profile);
@@ -295,113 +298,153 @@ pub fn cut_bundle_motion(
             origin,
             direction: axis.direction(),
         };
-        match (method, motion) {
-            // Case A′: a level arc, closed form.
-            (SweepMethod::Analytic { .. }, Motion::Arc(a))
-                if !a.is_helix()
-                    && arc::swept_spans_into(
-                        profile,
-                        a,
-                        &ray,
-                        scratch.radially_convex,
-                        &mut scratch.raycast,
-                        &mut scratch.swept,
-                        &mut stats.raycast,
-                    ) =>
-            {
-                stats.rays_exact += 1;
-            }
-            (SweepMethod::Analytic { .. }, Motion::Linear(m))
-                if matches!(m.case(), SweepCase::Horizontal) =>
-            {
-                horizontal::swept_spans_into(
-                    profile,
-                    m,
-                    &ray,
-                    &mut scratch.raycast,
-                    &mut scratch.swept,
-                    &mut stats.raycast,
-                );
-                stats.rays_exact += 1;
-            }
-            (SweepMethod::Analytic { .. }, Motion::Linear(m))
-                if matches!(m.case(), SweepCase::Stationary) =>
-            {
-                spans_in_tool_at(
-                    profile,
-                    m.start,
-                    &ray,
-                    &mut scratch.raycast,
-                    &mut scratch.swept,
-                    &mut stats.raycast,
-                );
-                stats.rays_exact += 1;
-            }
-            // A plunge is exact only for an axis ray against a radially convex
-            // profile. `swept_spans_into` says whether it took it, and anything
-            // it declines falls through to sub-stepping rather than being
-            // guessed at.
-            (SweepMethod::Analytic { .. }, Motion::Linear(m))
-                if matches!(m.case(), SweepCase::Plunge)
-                    && plunge::swept_spans_into(
-                        profile,
-                        m,
-                        &ray,
-                        scratch.radially_convex,
-                        &mut scratch.raycast,
-                        &mut scratch.swept,
-                        &mut stats.raycast,
-                    ) =>
-            {
-                stats.rays_exact += 1;
-            }
-            (_, Motion::Arc(a)) => {
-                reference::arc_spans_into(
-                    profile,
-                    a,
-                    steps.max(1),
-                    &ray,
-                    &mut scratch.raycast,
-                    &mut scratch.swept,
-                    &mut stats.raycast,
-                );
-                stats.substeps += u64::from(steps.max(1));
-                stats.rays_substepped += 1;
-                stats.worst_bound_mm = stats.worst_bound_mm.max(planned_bound);
-            }
-            (_, Motion::Linear(m)) => {
-                reference::swept_spans_into(
-                    profile,
-                    m,
-                    steps.max(1),
-                    &ray,
-                    &mut scratch.raycast,
-                    &mut scratch.swept,
-                    &mut stats.raycast,
-                );
-                stats.substeps += u64::from(steps.max(1));
-                stats.rays_substepped += 1;
-                stats.worst_bound_mm = stats.worst_bound_mm.max(planned_bound);
-            }
+        let removed = cut_one_ray(
+            bundle, profile, motion, method, scratch, ray_index, &ray, cell_area, &mut stats,
+        );
+        if removed > 0.0 {
+            stats.rays_changed += 1;
+            stats.removed_mm3[slot] += removed;
         }
-        if scratch.swept.is_empty() {
-            continue;
-        }
-
-        bundle.arena().read_into(ray_index, &mut scratch.material);
-        let before = scratch.material.measure();
-        scratch
-            .material
-            .subtract_into(&scratch.swept, &mut scratch.result);
-        let after = scratch.result.measure();
-        if after == before && scratch.result.as_slice() == scratch.material.as_slice() {
-            continue;
-        }
-        stats.rays_changed += 1;
-        stats.removed_mm3[slot] += (before - after) * cell_area;
-        bundle.arena_mut().set(ray_index, scratch.result.as_slice());
     }
     stats
+}
+
+/// Cuts one ray and returns the volume removed from it, in cubic millimetres.
+///
+/// Extracted so the batched and unbatched paths share it **exactly**. Two copies
+/// of this that drifted apart would produce two fields that differ by a hair,
+/// and the bit-identity test would then be testing nothing.
+///
+/// Does not touch `rays_changed` or `removed_mm3`: the caller owns those,
+/// because the order they accumulate in is what the batched path has to
+/// reproduce.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the shared inner loop; splitting it would mean a struct that exists only to be destructured"
+)]
+pub(crate) fn cut_one_ray(
+    bundle: &mut DexelField,
+    profile: &Profile,
+    motion: &Motion,
+    method: SweepMethod,
+    scratch: &mut CutScratch,
+    ray_index: u32,
+    ray: &Ray,
+    cell_area: f64,
+    stats: &mut CutStats,
+) -> f64 {
+    // Planned per ray rather than per bundle. It is a handful of arithmetic on
+    // the motion alone, and hoisting it would mean threading it through the
+    // batched path too, where the motion changes on every iteration anyway.
+    //
+    // `planned_bound` is charged only when a ray actually sub-steps: a cut that
+    // took the exact path everywhere reports no deviation, which is the truth
+    // and is what makes the number worth printing.
+    let (steps, planned_bound) = method.plan(motion);
+    match (method, motion) {
+        // Case A′: a level arc, closed form.
+        (SweepMethod::Analytic { .. }, Motion::Arc(a))
+            if !a.is_helix()
+                && arc::swept_spans_into(
+                    profile,
+                    a,
+                    ray,
+                    scratch.radially_convex,
+                    &mut scratch.raycast,
+                    &mut scratch.swept,
+                    &mut stats.raycast,
+                ) =>
+        {
+            stats.rays_exact += 1;
+        }
+        (SweepMethod::Analytic { .. }, Motion::Linear(m))
+            if matches!(m.case(), SweepCase::Horizontal) =>
+        {
+            horizontal::swept_spans_into(
+                profile,
+                m,
+                ray,
+                &mut scratch.raycast,
+                &mut scratch.swept,
+                &mut stats.raycast,
+            );
+            stats.rays_exact += 1;
+        }
+        (SweepMethod::Analytic { .. }, Motion::Linear(m))
+            if matches!(m.case(), SweepCase::Stationary) =>
+        {
+            spans_in_tool_at(
+                profile,
+                m.start,
+                ray,
+                &mut scratch.raycast,
+                &mut scratch.swept,
+                &mut stats.raycast,
+            );
+            stats.rays_exact += 1;
+        }
+        // A plunge is exact only for an axis ray against a radially convex
+        // profile. `swept_spans_into` says whether it took it, and anything
+        // it declines falls through to sub-stepping rather than being
+        // guessed at.
+        (SweepMethod::Analytic { .. }, Motion::Linear(m))
+            if matches!(m.case(), SweepCase::Plunge)
+                && plunge::swept_spans_into(
+                    profile,
+                    m,
+                    ray,
+                    scratch.radially_convex,
+                    &mut scratch.raycast,
+                    &mut scratch.swept,
+                    &mut stats.raycast,
+                ) =>
+        {
+            stats.rays_exact += 1;
+        }
+        (_, Motion::Arc(a)) => {
+            reference::arc_spans_into(
+                profile,
+                a,
+                steps.max(1),
+                ray,
+                &mut scratch.raycast,
+                &mut scratch.swept,
+                &mut stats.raycast,
+            );
+            stats.substeps += u64::from(steps.max(1));
+            stats.rays_substepped += 1;
+            stats.worst_bound_mm = stats.worst_bound_mm.max(planned_bound);
+        }
+        (_, Motion::Linear(m)) => {
+            reference::swept_spans_into(
+                profile,
+                m,
+                steps.max(1),
+                ray,
+                &mut scratch.raycast,
+                &mut scratch.swept,
+                &mut stats.raycast,
+            );
+            stats.substeps += u64::from(steps.max(1));
+            stats.rays_substepped += 1;
+            stats.worst_bound_mm = stats.worst_bound_mm.max(planned_bound);
+        }
+    }
+    if scratch.swept.is_empty() {
+        return 0.0;
+    }
+
+    bundle.arena().read_into(ray_index, &mut scratch.material);
+    let before = scratch.material.measure();
+    scratch
+        .material
+        .subtract_into(&scratch.swept, &mut scratch.result);
+    let after = scratch.result.measure();
+    if after == before && scratch.result.as_slice() == scratch.material.as_slice() {
+        return 0.0;
+    }
+    bundle.arena_mut().set(ray_index, scratch.result.as_slice());
+    (before - after) * cell_area
 }
 
 /// True if a ray's cell could meet the swept box.
@@ -410,7 +453,7 @@ pub fn cut_bundle_motion(
 /// so a ray whose cell straddles the boundary is not dropped. Along the ray axis
 /// nothing is tested: a ray that overlaps transversely may meet the tool
 /// anywhere on its length, and the span arithmetic will find out.
-fn transverse_overlaps(
+pub(crate) fn transverse_overlaps(
     bounds: &Aabb3,
     axis: Axis,
     origin: crate::math::Vec3,

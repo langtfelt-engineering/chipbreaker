@@ -35,6 +35,7 @@
 //! a swept prism that no amount of staring would.
 
 pub mod arc;
+pub mod batch;
 pub mod cut;
 pub mod horizontal;
 pub mod plunge;
