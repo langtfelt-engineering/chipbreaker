@@ -94,8 +94,14 @@ fn main() {
 
     let tools: Vec<Tool> = entries
         .into_iter()
-        .map(|(id, description, profile, gauge)| {
+        .enumerate()
+        .map(|(index, (id, description, profile, gauge))| {
+            // T1 upward, in listing order. The number is the primary key a
+            // program resolves against; the name is metadata for reports.
+            #[allow(clippy::cast_possible_truncation, reason = "a handful of tools")]
+            let number = index as u32 + 1;
             Tool::new(
+                number,
                 ToolId::new(id).expect("valid identifier"),
                 description,
                 profile,

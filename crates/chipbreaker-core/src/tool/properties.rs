@@ -636,6 +636,7 @@ mod tests {
     #[test]
     fn containment_in_three_dimensions_ignores_the_angle_about_the_axis() {
         let tool = crate::tool::Tool::new(
+            1,
             crate::tool::ToolId::new("t1").expect("valid"),
             "6 mm flat",
             flat_end_mill(6.0, 20.0, &Shank::plain(6.0, 50.0)).expect("valid"),

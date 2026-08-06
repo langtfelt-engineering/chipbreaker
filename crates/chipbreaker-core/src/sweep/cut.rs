@@ -101,10 +101,20 @@ pub struct CutStats {
     pub removed_mm3: [f64; 3],
     /// Sub-steps used, summed over motions and bundles.
     pub substeps: u64,
-    /// Worst deviation bound accepted across the motions in this cut.
+    /// Rays whose swept volume was computed in closed form.
     ///
-    /// The number that makes a step count mean something. Reported beside it
-    /// everywhere, because "we used 64 sub-steps" guarantees nothing.
+    /// Reported beside [`Self::rays_substepped`] rather than as a single bound,
+    /// because a mixed job's worst bound is the ramp's and says nothing about
+    /// the segments that were exact. A user should be able to see that most of
+    /// their program carried no sweep error at all.
+    pub rays_exact: u64,
+    /// Rays whose swept volume was sub-stepped.
+    pub rays_substepped: u64,
+    /// Worst deviation bound among the rays that were **not** exact.
+    ///
+    /// Zero when every ray took a closed form. The number that makes a step
+    /// count mean something -- "we used 64 sub-steps" guarantees nothing -- but
+    /// it applies only to [`Self::rays_substepped`], never to the whole job.
     pub worst_bound_mm: f64,
     /// Predicate counters from the ray casts.
     pub raycast: RaycastStats,
@@ -134,6 +144,8 @@ impl CutStats {
             *a += b;
         }
         self.substeps += other.substeps;
+        self.rays_exact += other.rays_exact;
+        self.rays_substepped += other.rays_substepped;
         self.worst_bound_mm = self.worst_bound_mm.max(other.worst_bound_mm);
         self.raycast.merge(&other.raycast);
     }
@@ -188,6 +200,8 @@ pub fn cut_tri(
         total.rays_changed += stats.rays_changed;
         total.removed_mm3[axis.index()] += stats.removed_mm3[axis.index()];
         total.substeps += stats.substeps;
+        total.rays_exact += stats.rays_exact;
+        total.rays_substepped += stats.rays_substepped;
         total.worst_bound_mm = total.worst_bound_mm.max(stats.worst_bound_mm);
         total.raycast.merge(&stats.raycast);
     }
@@ -255,6 +269,7 @@ pub fn cut_bundle(
                     &mut scratch.swept,
                     &mut stats.raycast,
                 );
+                stats.rays_exact += 1;
             }
             SweepMethod::Analytic { .. } if matches!(motion.case(), SweepCase::Stationary) => {
                 spans_in_tool_at(
@@ -265,6 +280,7 @@ pub fn cut_bundle(
                     &mut scratch.swept,
                     &mut stats.raycast,
                 );
+                stats.rays_exact += 1;
             }
             // A plunge is exact only for an axis ray against a radially convex
             // profile. `swept_spans_into` says whether it took it, and anything
@@ -280,7 +296,10 @@ pub fn cut_bundle(
                         &mut scratch.raycast,
                         &mut scratch.swept,
                         &mut stats.raycast,
-                    ) => {}
+                    ) =>
+            {
+                stats.rays_exact += 1;
+            }
             _ => {
                 reference::swept_spans_into(
                     profile,
@@ -292,6 +311,7 @@ pub fn cut_bundle(
                     &mut stats.raycast,
                 );
                 stats.substeps += u64::from(steps);
+                stats.rays_substepped += 1;
                 stats.worst_bound_mm = stats.worst_bound_mm.max(planned_bound);
             }
         }

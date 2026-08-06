@@ -174,6 +174,16 @@ impl From<ProfileError> for ToolError {
 /// of the spindle.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Tool {
+    /// The `T` number this tool answers to.
+    ///
+    /// **The primary key.** A program says `T5`, not `T"flat-6"`, so resolving a
+    /// toolpath against a library is a lookup by number and nothing else. The
+    /// name is metadata for humans reading a report.
+    ///
+    /// Unit 3's specification keyed the library by number and the implementation
+    /// drifted to name, which left Unit 7 unable to run any program that changed
+    /// tools -- which is nearly every real job.
+    number: u32,
     id: ToolId,
     description: String,
     profile: Profile,
@@ -188,6 +198,7 @@ impl Tool {
     /// Returns [`ToolError::BadGaugeLength`] if the gauge line would fall inside
     /// the tool or is not finite.
     pub fn new(
+        number: u32,
         id: ToolId,
         description: impl Into<String>,
         profile: Profile,
@@ -201,11 +212,19 @@ impl Tool {
             });
         }
         Ok(Self {
+            number,
             id,
             description: description.into(),
             profile,
             gauge_length,
         })
+    }
+
+    /// The `T` number this tool answers to.
+    #[inline]
+    #[must_use]
+    pub const fn number(&self) -> u32 {
+        self.number
     }
 
     /// The tool's identifier.

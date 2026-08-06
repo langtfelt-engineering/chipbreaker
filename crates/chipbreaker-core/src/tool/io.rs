@@ -74,7 +74,7 @@ pub const TOOL_FILE_SCHEMA: &str = "chipbreaker.tool-library";
 /// Bump this only when the meaning of an existing field changes or a required
 /// field is added. Readers refuse anything they do not recognise; see the module
 /// header for why.
-pub const TOOL_FILE_VERSION: u32 = 1;
+pub const TOOL_FILE_VERSION: u32 = 2;
 
 /// Why a tool library could not be read.
 #[derive(Debug, Clone, PartialEq)]
@@ -203,6 +203,21 @@ impl ToolLibrary {
                     reason: format!("duplicate tool identifier {:?}", tool.id().as_str()),
                 });
             }
+            // A duplicate NUMBER is the worse of the two: it makes `T5` ambiguous
+            // and a program would silently be cut with whichever came first.
+            if let Some(other) = tools[..i].iter().find(|t| t.number() == tool.number()) {
+                return Err(ToolFileError::BadValue {
+                    path: format!("tools[{i}]"),
+                    reason: format!(
+                        "T{} is claimed by both {:?} and {:?}. A program says T{}, so \
+                         two tools answering to it makes the lookup a coin toss",
+                        tool.number(),
+                        other.id().as_str(),
+                        tool.id().as_str(),
+                        tool.number()
+                    ),
+                });
+            }
         }
         Ok(Self { tools })
     }
@@ -228,7 +243,31 @@ impl ToolLibrary {
         self.tools.is_empty()
     }
 
+    /// The tool a `T` number resolves to.
+    ///
+    /// **The lookup a toolpath uses.** A program says `T5`; the name is for
+    /// humans reading a report, and nothing resolves against it.
+    #[must_use]
+    pub fn get_by_number(&self, number: u32) -> Option<&Tool> {
+        self.tools.iter().find(|t| t.number() == number)
+    }
+
+    /// Every `T` number the library answers to, ascending.
+    ///
+    /// Sorted so that an error message listing what is available reads the same
+    /// way on every run.
+    #[must_use]
+    pub fn numbers(&self) -> Vec<u32> {
+        let mut out: Vec<u32> = self.tools.iter().map(Tool::number).collect();
+        out.sort_unstable();
+        out
+    }
+
     /// Looks a tool up by identifier.
+    ///
+    /// Metadata, not resolution: a program says `T5`, so
+    /// [`Self::get_by_number`] is what a toolpath uses. This is for a human who
+    /// has a name in front of them.
     #[must_use]
     pub fn get(&self, id: &str) -> Option<&Tool> {
         self.tools.iter().find(|t| t.id().as_str() == id)
@@ -318,6 +357,7 @@ fn tool_to_json(tool: &Tool) -> Value {
         .collect();
     json!({
         "id": tool.id().as_str(),
+        "number": tool.number(),
         "description": tool.description(),
         "gauge_length": tool.gauge_length(),
         "profile": profile,
@@ -351,9 +391,24 @@ fn element_to_json(roled: &RoledElement) -> Value {
 
 fn tool_from_json(value: &Value, path: &str) -> Result<Tool, ToolFileError> {
     let map = object(value, path)?;
-    known_keys(map, path, &["id", "description", "gauge_length", "profile"])?;
+    known_keys(
+        map,
+        path,
+        &["id", "number", "description", "gauge_length", "profile"],
+    )?;
 
     let id = ToolId::new(string(map, path, "id")?)?;
+    let number = map
+        .get("number")
+        .and_then(Value::as_u64)
+        .ok_or(ToolFileError::MissingField {
+            path: path.to_owned(),
+            field: "number",
+        })?;
+    let number = u32::try_from(number).map_err(|_| ToolFileError::BadValue {
+        path: format!("{path}.number"),
+        reason: format!("a T number must fit in a u32, got {number}"),
+    })?;
     let description = map
         .get("description")
         .and_then(Value::as_str)
@@ -380,7 +435,7 @@ fn tool_from_json(value: &Value, path: &str) -> Result<Tool, ToolFileError> {
         parsed.push(element_from_json(element, &format!("{path}.profile[{i}]"))?);
     }
     let profile = Profile::new(parsed)?;
-    Ok(Tool::new(id, description, profile, gauge_length)?)
+    Ok(Tool::new(number, id, description, profile, gauge_length)?)
 }
 
 fn element_from_json(value: &Value, path: &str) -> Result<RoledElement, ToolFileError> {
@@ -514,6 +569,7 @@ mod tests {
     fn library() -> ToolLibrary {
         let tools = vec![
             Tool::new(
+                2,
                 ToolId::new("em6").expect("valid"),
                 "6 mm flat, 3 flute",
                 flat_end_mill(6.0, 20.0, &Shank::plain(6.0, 50.0)).expect("valid"),
@@ -521,6 +577,7 @@ mod tests {
             )
             .expect("valid"),
             Tool::new(
+                3,
                 ToolId::new("bn8").expect("valid"),
                 "8 mm ball nose",
                 ball_end_mill(8.0, 25.0, &Shank::plain(8.0, 60.0)).expect("valid"),
@@ -528,6 +585,7 @@ mod tests {
             )
             .expect("valid"),
             Tool::new(
+                4,
                 ToolId::new("bull10-r2").expect("valid"),
                 "10 mm bull, 2 mm corner, in a shrink holder",
                 bull_end_mill(
@@ -554,6 +612,7 @@ mod tests {
             // which is exactly why the fixture failed to notice that
             // `serde_json` was reading such values one ULP low.
             Tool::new(
+                5,
                 ToolId::new("taper3").expect("valid"),
                 "2 mm tip, 6 degree included taper",
                 tapered_end_mill(2.0, 6.0, 20.0, &Shank::plain(8.0, 55.0)).expect("valid"),
@@ -681,13 +740,16 @@ mod tests {
 
     #[test]
     fn a_file_from_a_later_version_is_refused_rather_than_guessed_at() {
-        let text = library()
-            .to_json()
-            .replace("\"version\": 1", "\"version\": 2");
-        let err = ToolLibrary::from_json(&text).expect_err("version 2 is not this build");
+        // One past whatever this build writes, so the test does not need
+        // rewriting every time the format moves.
+        let text = library().to_json().replace(
+            &format!("\"version\": {TOOL_FILE_VERSION}"),
+            &format!("\"version\": {}", TOOL_FILE_VERSION + 1),
+        );
+        let err = ToolLibrary::from_json(&text).expect_err("a later version is not this build");
         match err {
             ToolFileError::UnsupportedVersion { found, supported } => {
-                assert_eq!(found, 2);
+                assert_eq!(found, u64::from(TOOL_FILE_VERSION) + 1);
                 assert_eq!(supported, TOOL_FILE_VERSION);
             }
             other => panic!("{other:?}"),
@@ -710,7 +772,7 @@ mod tests {
 
     #[test]
     fn a_file_that_is_not_a_tool_library_is_refused_by_name() {
-        let err = ToolLibrary::from_json(r#"{"schema":"something.else","version":1,"tools":[]}"#)
+        let err = ToolLibrary::from_json(r#"{"schema":"something.else","version":2,"tools":[]}"#)
             .expect_err("wrong schema");
         assert!(matches!(err, ToolFileError::WrongSchema { .. }), "{err:?}");
     }
@@ -720,28 +782,28 @@ mod tests {
         let cases: Vec<(&str, &str)> = vec![
             ("not json at all", "NotJson"),
             (
-                r#"{"schema":"chipbreaker.tool-library","version":1}"#,
+                r#"{"schema":"chipbreaker.tool-library","version":2}"#,
                 "BadType",
             ),
             (
-                r#"{"schema":"chipbreaker.tool-library","version":1,"tools":[{}]}"#,
+                r#"{"schema":"chipbreaker.tool-library","version":2,"tools":[{}]}"#,
                 "MissingField",
             ),
             (
-                r#"{"schema":"chipbreaker.tool-library","version":1,"tools":[
-                     {"id":"t","description":"","gauge_length":10.0,"profile":[
+                r#"{"schema":"chipbreaker.tool-library","version":2,"tools":[
+                     {"id":"t","number":1,"description":"","gauge_length":10.0,"profile":[
                        {"kind":"helix","role":"cutting","start":[0,0],"end":[1,0]}]}]}"#,
                 "BadValue",
             ),
             (
-                r#"{"schema":"chipbreaker.tool-library","version":1,"tools":[
-                     {"id":"t","description":"","gauge_length":10.0,"profile":[
+                r#"{"schema":"chipbreaker.tool-library","version":2,"tools":[
+                     {"id":"t","number":1,"description":"","gauge_length":10.0,"profile":[
                        {"kind":"segment","role":"grinding","start":[0,0],"end":[1,0]}]}]}"#,
                 "BadValue",
             ),
             (
-                r#"{"schema":"chipbreaker.tool-library","version":1,"tools":[
-                     {"id":"t","description":"","gauge_length":10.0,"profile":[
+                r#"{"schema":"chipbreaker.tool-library","version":2,"tools":[
+                     {"id":"t","number":1,"description":"","gauge_length":10.0,"profile":[
                        {"kind":"segment","role":"cutting","start":[0,0,0],"end":[1,0]}]}]}"#,
                 "BadValue",
             ),
@@ -763,8 +825,8 @@ mod tests {
         // A profile that does not start at the tip. Hand-edited libraries are
         // the normal case, so the validation has to run on read, not only on
         // construction.
-        let text = r#"{"schema":"chipbreaker.tool-library","version":1,"tools":[
-             {"id":"t","description":"","gauge_length":10.0,"profile":[
+        let text = r#"{"schema":"chipbreaker.tool-library","version":2,"tools":[
+             {"id":"t","number":1,"description":"","gauge_length":10.0,"profile":[
                {"kind":"segment","role":"cutting","start":[1,0],"end":[3,0]}]}]}"#;
         let err = ToolLibrary::from_json(text).expect_err("does not begin at the tip");
         assert!(
@@ -788,7 +850,7 @@ mod tests {
     fn the_file_names_itself_and_its_version() {
         let text = library().to_json();
         assert!(text.contains(TOOL_FILE_SCHEMA));
-        assert!(text.contains("\"version\": 1"));
+        assert!(text.contains(&format!("\"version\": {TOOL_FILE_VERSION}")));
         assert!(text.ends_with('\n'), "text files end with a newline");
     }
 }

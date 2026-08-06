@@ -144,7 +144,14 @@ fn splitting_a_segment_mid_way_agrees_to_within_a_few_ulp() {
     //
     // What IS achievable, and is asserted here, is the contract that matters:
     //
-    // - **Removed volume bit-identical.** The quantity a customer is told.
+    // - **Removed volume bit-identical.** The quantity a customer is told. The
+    //   comparison below is on `f64::to_bits` of the summed accumulator, not on
+    //   a formatted string, so it really is bit equality. It holds by
+    //   ABSORPTION rather than by cancellation: a 1e-16 mm endpoint shift is
+    //   far below the ULP of an accumulator of order 100 mm^3, so the
+    //   difference never survives into the sum. Do not read it as evidence that
+    //   the two computations agreed exactly -- they did not, and the endpoint
+    //   assertion below is what says by how much.
     // - **The same span structure.** No ray gains or loses a span, so no hairline
     //   sliver of material is left behind at the join -- which is the failure
     //   mode that would actually show on a part.

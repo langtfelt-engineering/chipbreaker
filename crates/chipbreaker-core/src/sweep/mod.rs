@@ -34,6 +34,7 @@
 //! the strongest tool available here, and it is what will catch a sign error in
 //! a swept prism that no amount of staring would.
 
+pub mod arc;
 pub mod cut;
 pub mod horizontal;
 pub mod plunge;

@@ -5,6 +5,7 @@
       "description": "6 mm flat end mill, 20 mm flute, plain 6 mm shank",
       "gauge_length": 80.0,
       "id": "flat-6",
+      "number": 1,
       "profile": [
         {
           "end": [
@@ -48,6 +49,7 @@
       "description": "6 mm ball nose, 20 mm flute",
       "gauge_length": 80.0,
       "id": "ball-6",
+      "number": 2,
       "profile": [
         {
           "center": [
@@ -96,6 +98,7 @@
       "description": "10 mm bull nose, 2 mm corner, on an 8 mm shank",
       "gauge_length": 95.0,
       "id": "bull-10-r2",
+      "number": 3,
       "profile": [
         {
           "end": [
@@ -168,6 +171,7 @@
       "description": "8 mm chamfer mill, 1 mm flat tip, 90 degree included",
       "gauge_length": 85.0,
       "id": "chamfer-8-90",
+      "number": 4,
       "profile": [
         {
           "end": [
@@ -223,6 +227,7 @@
       "description": "8 mm V-bit, 60 degree included, pointed",
       "gauge_length": 85.0,
       "id": "vbit-8-60",
+      "number": 5,
       "profile": [
         {
           "end": [
@@ -266,6 +271,7 @@
       "description": "2 mm tip, 6 degree included taper, 20 mm flute",
       "gauge_length": 85.0,
       "id": "taper-3deg",
+      "number": 6,
       "profile": [
         {
           "end": [
@@ -321,6 +327,7 @@
       "description": "6 mm twist drill, 118 degree point",
       "gauge_length": 90.0,
       "id": "drill-6-118",
+      "number": 7,
       "profile": [
         {
           "end": [
@@ -364,6 +371,7 @@
       "description": "12 mm barrel cutter on a 200 mm arc",
       "gauge_length": 120.0,
       "id": "barrel-12-r200",
+      "number": 8,
       "profile": [
         {
           "center": [
@@ -412,6 +420,7 @@
       "description": "12 mm flat in a shrink holder, for holder-collision work",
       "gauge_length": 160.0,
       "id": "held-12",
+      "number": 9,
       "profile": [
         {
           "end": [
@@ -488,5 +497,5 @@
       ]
     }
   ],
-  "version": 1
+  "version": 2
 }

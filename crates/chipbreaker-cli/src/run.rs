@@ -18,13 +18,17 @@
 //! doubts a result can reproduce it the slow, obvious way on their own geometry,
 //! rather than taking the fast path on trust.
 //!
-//! # T numbers are not yet bound to tools
+//! # T numbers resolve against the library
 //!
-//! The toolpath IR carries the `T` number a segment was programmed with, and the
-//! tool library is keyed by name. Nothing in the project maps between them,
-//! because that binding belongs to a machine setup that no unit has defined yet.
-//! Until one does, `--tool` names the tool explicitly and a job that changes
-//! tools is refused rather than silently simulated with the wrong one.
+//! A program says `T5`, so the library's primary key is the number and the name
+//! is metadata. Unit 7 could not run a multi-tool program because Unit 3's
+//! library had drifted to keying by name; the number is restored, and a job that
+//! changes tools now simply works.
+//!
+//! `--tool` remains, overriding the resolution for every segment. It is for
+//! answering "what would this program do with a different cutter", not for
+//! papering over a library that is missing a number -- a missing number is an
+//! error naming the tools that are present.
 
 use std::path::PathBuf;
 
@@ -146,8 +150,11 @@ fn read_stock(file: &std::path::Path) -> Result<TriDexelField, String> {
     }
 }
 
-/// Resolves the one tool a job may use.
-fn resolve_tool(args: &RunArgs, toolpath: &Toolpath) -> Result<Profile, String> {
+/// The tool each distinct `T` number in the program resolves to.
+fn resolve_tools(
+    args: &RunArgs,
+    toolpath: &Toolpath,
+) -> Result<std::collections::BTreeMap<u32, Profile>, String> {
     let Some(library_path) = &args.tools else {
         return Err(
             "--tools is required: cutting needs a tool, and guessing one would be \
@@ -164,31 +171,45 @@ fn resolve_tool(args: &RunArgs, toolpath: &Toolpath) -> Result<Profile, String> 
     numbers.sort_unstable();
     numbers.dedup();
 
-    let Some(id) = &args.tool else {
-        return Err(format!(
-            "--tool is required. This program uses T{numbers:?}, and nothing in the \
-             project maps a T number to a library entry -- that binding belongs to a \
-             machine setup no unit has defined yet. Name the tool explicitly. The \
-             library holds: {}",
-            library
-                .tools()
-                .iter()
-                .map(|t| t.id().as_str())
-                .collect::<Vec<_>>()
-                .join(", ")
-        ));
-    };
-    if numbers.len() > 1 {
-        return Err(format!(
-            "this program changes tools (T{numbers:?}) but --tool names only {id}. \
-             Simulating every segment with one tool would produce a confident wrong \
-             answer, so this is refused until T numbers are bound to tools."
-        ));
+    // An override applies to every segment, which is a question ("what would a
+    // different cutter do here?") rather than a resolution.
+    if let Some(id) = &args.tool {
+        let profile = library
+            .get(id)
+            .map(|t| t.profile().clone())
+            .ok_or_else(|| {
+                format!(
+                    "the library has no tool called {id:?}. It holds: {}",
+                    library
+                        .tools()
+                        .iter()
+                        .map(|t| format!("{} (T{})", t.id().as_str(), t.number()))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            })?;
+        return Ok(numbers.into_iter().map(|n| (n, profile.clone())).collect());
     }
-    library
-        .get(id)
-        .map(|t| t.profile().clone())
-        .ok_or_else(|| format!("the library has no tool called {id:?}"))
+
+    let mut resolved = std::collections::BTreeMap::new();
+    for number in numbers {
+        let tool = library.get_by_number(number).ok_or_else(|| {
+            // Named, not numbered, because the person reading this is holding a
+            // library file and needs to know what to add.
+            format!(
+                "the program uses T{number} and the library has no tool with that \
+                 number. It holds: {}",
+                library
+                    .tools()
+                    .iter()
+                    .map(|t| format!("T{} = {}", t.number(), t.id().as_str()))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        })?;
+        resolved.insert(number, tool.profile().clone());
+    }
+    Ok(resolved)
 }
 
 /// Runs `chipbreaker run`.
@@ -222,7 +243,7 @@ pub fn run(args: &RunArgs) -> Result<(Value, String, bool), String> {
         .unwrap_or("program");
     let (toolpath, diagnostics, _) =
         parse(&text, name, &ParseOptions::default(), None).map_err(|e| e.to_string())?;
-    let profile = resolve_tool(args, &toolpath)?;
+    let profiles = resolve_tools(args, &toolpath)?;
 
     let method = if args.reference {
         SweepMethod::Reference {
@@ -242,7 +263,12 @@ pub fn run(args: &RunArgs) -> Result<(Value, String, bool), String> {
     }
 
     let before = field.volume();
-    let mut scratch = CutScratch::new(&profile);
+    // One scratch per tool: `CutScratch` caches the profile's radial convexity,
+    // so sharing one across tools would answer for the wrong cutter.
+    let mut scratches: std::collections::BTreeMap<u32, CutScratch> = profiles
+        .iter()
+        .map(|(number, profile)| (*number, CutScratch::new(profile)))
+        .collect();
     let mut totals = CutStats::default();
     let mut cases = [0u64; 4];
     let mut arcs_skipped = 0u64;
@@ -259,7 +285,18 @@ pub fn run(args: &RunArgs) -> Result<(Value, String, bool), String> {
             end: segment.end,
         };
         cases[case_index(motion.case())] += 1;
-        let stats = cut_tri(&mut field, &profile, &motion, method, &mut scratch);
+        let (Some(profile), Some(scratch)) = (
+            profiles.get(&segment.tool),
+            scratches.get_mut(&segment.tool),
+        ) else {
+            return Err(format!(
+                "segment {} uses T{} which did not resolve; this should have been \
+                 caught before cutting started",
+                lo + index,
+                segment.tool
+            ));
+        };
+        let stats = cut_tri(&mut field, profile, &motion, method, scratch);
         totals.merge(&stats);
 
         if args.progress && index % 500 == 0 {
@@ -290,7 +327,15 @@ pub fn run(args: &RunArgs) -> Result<(Value, String, bool), String> {
          tool      {}\n\
          method    {}\n",
         toolpath.segments.len(),
-        args.tool.as_deref().unwrap_or("?"),
+        if let Some(id) = args.tool.as_deref() {
+            format!("{id} (overriding every T number)")
+        } else {
+            profiles
+                .keys()
+                .map(|n| format!("T{n}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        },
         if args.reference {
             format!("dense reference, {} sub-steps per motion", args.substeps)
         } else {
@@ -325,9 +370,23 @@ pub fn run(args: &RunArgs) -> Result<(Value, String, bool), String> {
         totals.rejection_rate() * 100.0,
         totals.rays_changed,
     ));
+    // Split, per 1c: the worst bound belongs only to the rays that sub-stepped.
+    let total_rays = totals.rays_exact + totals.rays_substepped;
+    #[allow(clippy::cast_precision_loss, reason = "a percentage of counts")]
+    let exact_share = if total_rays == 0 {
+        100.0
+    } else {
+        totals.rays_exact as f64 / total_rays as f64 * 100.0
+    };
     report.push_str(&format!(
-        "sweep     {} sub-steps, worst deviation bound {} mm\n",
-        totals.substeps, totals.worst_bound_mm
+        "sweep     {} of {total_rays} ray-cuts exact ({exact_share:.2}%), {} sub-stepped \
+         over {} steps\n",
+        totals.rays_exact, totals.rays_substepped, totals.substeps
+    ));
+    report.push_str(&format!(
+        "          worst deviation bound {} mm, and it applies ONLY to the \
+         sub-stepped ones\n",
+        totals.worst_bound_mm
     ));
     report.push_str(&format!("digest    {digest}\n"));
     if let Some((path, bytes)) = &written {
@@ -364,6 +423,9 @@ pub fn run(args: &RunArgs) -> Result<(Value, String, bool), String> {
         "removed_mm3_per_bundle": totals.removed_mm3,
         "segments": { "from": lo, "to": hi, "total": toolpath.segments.len() },
         "sweep": {
+            "exact_share": exact_share,
+            "rays_exact": totals.rays_exact,
+            "rays_substepped": totals.rays_substepped,
             "substeps": totals.substeps,
             "worst_bound_mm": totals.worst_bound_mm,
         },
