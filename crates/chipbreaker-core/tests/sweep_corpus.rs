@@ -216,7 +216,7 @@ fn the_closed_form_cases_take_no_sub_steps_at_all() {
             .iter()
             .map(|k| k.as_str().expect("a name"))
             .collect();
-        if kinds.iter().any(|k| *k == "ramp") {
+        if kinds.contains(&"ramp") {
             continue;
         }
         let (_, _, substeps, bound, _, _) = replay(id);
@@ -242,7 +242,7 @@ fn the_ramps_report_a_bound_beside_their_step_count() {
             .iter()
             .map(|k| k.as_str().expect("a name"))
             .collect();
-        if !kinds.iter().any(|k| *k == "ramp") {
+        if !kinds.contains(&"ramp") {
             continue;
         }
         ramps += 1;
