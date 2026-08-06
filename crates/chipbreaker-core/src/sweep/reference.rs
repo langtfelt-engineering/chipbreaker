@@ -118,6 +118,37 @@ pub fn swept_spans_into(
     }
 }
 
+/// Intervals of `ray` inside a swept arc or helix, by dense sub-stepping.
+///
+/// The same machinery as the linear reference; only the path differs. `out` is
+/// cleared first.
+///
+/// # Panics
+/// Panics if `steps` is zero.
+pub fn arc_spans_into(
+    profile: &Profile,
+    arc: &super::arc::ArcMove,
+    steps: u32,
+    ray: &Ray,
+    scratch: &mut RaycastScratch,
+    out: &mut Spans,
+    stats: &mut RaycastStats,
+) {
+    assert!(steps > 0, "a reference sweep needs at least one step");
+    out.clear();
+    let mut piece = Spans::new();
+    let mut merged = Spans::new();
+    for k in 0..=steps {
+        let s = f64::from(k) / f64::from(steps);
+        spans_in_tool_at(profile, arc.at(s), ray, scratch, &mut piece, stats);
+        if piece.is_empty() {
+            continue;
+        }
+        out.union_into(&piece, &mut merged);
+        core::mem::swap(out, &mut merged);
+    }
+}
+
 /// Allocating form of [`swept_spans_into`].
 ///
 /// # Panics

@@ -69,6 +69,7 @@ use crate::math::{Ray, Vec3};
 use crate::spans::{Span, Spans};
 use crate::tool::Profile;
 use crate::tool::raycast::{RaycastScratch, RaycastStats};
+use crate::toolpath::ArcPlane;
 use crate::transcendental as t;
 
 use super::plunge::max_radius_over_z;
@@ -90,8 +91,21 @@ pub struct ArcMove {
     ///
     /// Carries multiple turns: a two-turn clockwise arc sweeps `-4 PI`.
     pub sweep: f64,
-    /// Tool tip height, constant across the move.
+    /// Tool tip height at the start.
     pub z: f64,
+    /// Which plane the arc turns in.
+    ///
+    /// The closed form needs the arc's axis parallel to the tool's, so only
+    /// [`ArcPlane::Xy`] collapses. A `G18` or `G19` arc turns about a horizontal
+    /// axis and is sub-stepped, which is the honest answer rather than a
+    /// worked-around one.
+    pub plane: ArcPlane,
+    /// Axial rise over the whole sweep, in millimetres.
+    ///
+    /// Zero for a plain arc, which is Case A′ and closed form. Non-zero makes it
+    /// a helix, which is Case B′ and sub-stepped: the angular and axial terms
+    /// couple and there is no collapse.
+    pub rise: f64,
 }
 
 impl ArcMove {
@@ -100,11 +114,97 @@ impl ArcMove {
     pub fn at(&self, s: f64) -> Vec3 {
         let angle = self.start_angle + self.sweep * s;
         let (sin, cos) = t::sin_cos(angle);
-        Vec3::new(
-            self.center.x + self.radius * cos,
-            self.center.y + self.radius * sin,
-            self.z,
-        )
+        let [u, v, w] = self.plane.axes();
+        let centre = self.center.to_array();
+        let mut point = [0.0; 3];
+        point[u] = centre[u] + self.radius * cos;
+        point[v] = centre[v] + self.radius * sin;
+        point[w] = self.z + self.rise * s;
+        Vec3::from_array(point)
+    }
+
+    /// True if the axial term couples in, making this a helix.
+    #[must_use]
+    pub fn is_helix(&self) -> bool {
+        self.rise.abs() > DEGENERATE
+    }
+
+    /// True if the closed form of Case A′ applies.
+    ///
+    /// Needs the arc's axis parallel to the tool's -- so `G17` only -- and no
+    /// axial rise.
+    #[must_use]
+    pub fn is_level_xy(&self) -> bool {
+        matches!(self.plane, ArcPlane::Xy) && !self.is_helix()
+    }
+
+    /// Length of the tip's path, in millimetres.
+    ///
+    /// The **helical** length, not the chord. A chord under-states it badly --
+    /// 20.8% on a 2.4 radian sweep of a 10 mm radius with a 6 mm rise -- so a
+    /// bound derived from the chord would claim an accuracy it does not have.
+    #[must_use]
+    pub fn path_length(&self) -> f64 {
+        t::hypot(self.radius * self.sweep, self.rise)
+    }
+
+    /// Worst distance from any point of the true path to the nearest of `steps`
+    /// evenly spaced samples of it.
+    ///
+    /// Between consecutive samples the tip travels a helical arc of angular
+    /// extent `delta = |sweep| / N` and axial rise `h = |rise| / N`. By symmetry
+    /// the farthest point is the midpoint, at angular `delta/2` and axial `h/2`
+    /// from each end, so
+    ///
+    /// ```text
+    /// deviation(N) = sqrt( (2 R sin(delta/4))^2 + (h/2)^2 )
+    /// ```
+    ///
+    /// Exact, not an estimate. The tool translates rigidly along the path, so
+    /// the tip's deviation is the swept volume's deviation.
+    ///
+    /// # Panics
+    /// Panics if `steps` is zero.
+    #[must_use]
+    pub fn deviation_bound(&self, steps: u32) -> f64 {
+        assert!(steps > 0, "a sub-stepped sweep needs at least one step");
+        let n = f64::from(steps);
+        let angular = self.sweep.abs() / n;
+        let axial = self.rise.abs() / n;
+        t::hypot(2.0 * self.radius * t::sin(angular / 4.0), axial / 2.0)
+    }
+
+    /// Steps needed to bring [`Self::deviation_bound`] under `tolerance`, and
+    /// the bound actually achieved.
+    ///
+    /// Chosen from `L / (2N)` with `L` the helical path length, which bounds the
+    /// exact form because `sin(x) <= x`. So the choice is conservative and the
+    /// number reported alongside is tight -- never a step count on its own.
+    ///
+    /// # Panics
+    /// Panics if `tolerance` is not positive and finite.
+    #[must_use]
+    pub fn substeps_for_error(&self, tolerance: f64) -> (u32, f64) {
+        assert!(
+            tolerance.is_finite() && tolerance > 0.0,
+            "the sweep tolerance must be a positive length, got {tolerance}"
+        );
+        let length = self.path_length();
+        if length <= 0.0 {
+            return (1, 0.0);
+        }
+        let wanted = length / (2.0 * tolerance);
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "clamped into u32 immediately below"
+        )]
+        let steps = if wanted.is_finite() && wanted < f64::from(super::reference::MAX_SUBSTEPS) {
+            (wanted.ceil() as u32).max(1)
+        } else {
+            super::reference::MAX_SUBSTEPS
+        };
+        (steps, self.deviation_bound(steps))
     }
 
     /// True if a bearing lies in the swept wedge.
@@ -133,14 +233,25 @@ impl ArcMove {
     /// material.
     #[must_use]
     pub fn swept_bounds(&self, profile: &Profile) -> crate::math::Aabb3 {
-        let reach = self.radius + profile.max_radius();
+        // Built from the sampled extremes of the path rather than from a formula
+        // per plane: for a non-`G17` arc the tool's own axis is not the arc's,
+        // so the reach is not symmetric and a formula would have to special-case
+        // each plane. Sampling the path is loose only in that it may be slightly
+        // large, which costs rejection rate and never material.
+        let mut lo = self.at(0.0).to_array();
+        let mut hi = lo;
+        let samples = 64;
+        for k in 0..=samples {
+            let p = self.at(f64::from(k) / f64::from(samples)).to_array();
+            for axis in 0..3 {
+                lo[axis] = lo[axis].min(p[axis]);
+                hi[axis] = hi[axis].max(p[axis]);
+            }
+        }
+        let r = profile.max_radius();
         crate::math::Aabb3::from_min_max(
-            Vec3::new(self.center.x - reach, self.center.y - reach, self.z),
-            Vec3::new(
-                self.center.x + reach,
-                self.center.y + reach,
-                self.z + profile.total_length(),
-            ),
+            Vec3::new(lo[0] - r, lo[1] - r, lo[2]),
+            Vec3::new(hi[0] + r, hi[1] + r, hi[2] + profile.total_length()),
         )
     }
 }
@@ -159,6 +270,12 @@ pub fn swept_spans_into(
     out: &mut Spans,
     stats: &mut RaycastStats,
 ) -> bool {
+    if !arc.is_level_xy() {
+        // Either the axial term couples in, or the arc turns about a horizontal
+        // axis so the collapse -- which needs the arc axis parallel to the
+        // tool's -- does not apply. Either way the caller sub-steps.
+        return false;
+    }
     let along_axis = ray.direction.z.abs() > DEGENERATE;
     let across_axis = t::hypot(ray.direction.x, ray.direction.y) > DEGENERATE;
     if along_axis == across_axis {

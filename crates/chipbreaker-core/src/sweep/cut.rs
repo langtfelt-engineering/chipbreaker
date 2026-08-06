@@ -25,7 +25,7 @@ use crate::spans::Spans;
 use crate::tool::Profile;
 use crate::tool::raycast::{RaycastScratch, RaycastStats};
 
-use super::{LinearMove, SweepCase, horizontal, plunge, reference, spans_in_tool_at};
+use super::{LinearMove, Motion, SweepCase, arc, horizontal, plunge, reference, spans_in_tool_at};
 
 /// How a swept volume should be computed.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -62,24 +62,35 @@ pub enum SweepMethod {
 impl SweepMethod {
     /// Steps and the deviation bound achieved, for one motion.
     #[must_use]
-    pub fn plan(self, motion: &LinearMove) -> (u32, f64) {
+    pub fn plan(self, motion: &Motion) -> (u32, f64) {
         match self {
             Self::Reference { steps } => {
                 let steps = steps.max(1);
-                let distance = motion.delta().length();
-                (steps, distance / (2.0 * f64::from(steps)))
+                // The bound uses the true path length, which for an arc is the
+                // helical length. A chord under-states it by a fifth on an
+                // ordinary helix, so a chord-based bound would claim an accuracy
+                // it does not have.
+                let bound = match motion {
+                    Motion::Arc(a) => a.deviation_bound(steps),
+                    Motion::Linear(m) => m.delta().length() / (2.0 * f64::from(steps)),
+                };
+                (steps, bound)
             }
-            Self::Bounded { tolerance } => reference::substeps_for_error(motion, tolerance),
+            Self::Bounded { tolerance } => match motion {
+                Motion::Arc(a) => a.substeps_for_error(tolerance),
+                Motion::Linear(m) => reference::substeps_for_error(m, tolerance),
+            },
             Self::Analytic { tolerance } => match motion.case() {
                 // Exact: no sub-stepping, so no deviation at all.
-                SweepCase::Stationary | SweepCase::Horizontal => (0, 0.0),
+                SweepCase::Stationary | SweepCase::Horizontal | SweepCase::Arc => (0, 0.0),
                 // A plunge is usually exact too, but only for an axis ray
                 // against a radially convex profile, and neither is known here.
                 // The plan is the fallback's; `cut_bundle` records zero
                 // sub-steps for the rays that took the exact path.
-                SweepCase::Plunge | SweepCase::Ramp => {
-                    reference::substeps_for_error(motion, tolerance)
-                }
+                SweepCase::Plunge | SweepCase::Ramp | SweepCase::Helix => match motion {
+                    Motion::Arc(a) => a.substeps_for_error(tolerance),
+                    Motion::Linear(m) => reference::substeps_for_error(m, tolerance),
+                },
             },
         }
     }
@@ -189,12 +200,26 @@ pub fn cut_tri(
     method: SweepMethod,
     scratch: &mut CutScratch,
 ) -> CutStats {
+    cut_tri_motion(field, profile, &Motion::Linear(*motion), method, scratch)
+}
+
+/// Subtracts a swept tool from every bundle, for a motion of any kind.
+///
+/// The form Unit 8 added so that an arc is not a special case bolted on: a
+/// program is a sequence of `Motion`s and every one of them cuts the same way.
+pub fn cut_tri_motion(
+    field: &mut TriDexelField,
+    profile: &Profile,
+    motion: &Motion,
+    method: SweepMethod,
+    scratch: &mut CutScratch,
+) -> CutStats {
     let mut total = CutStats::default();
     for axis in AXES {
         let Some(bundle) = field.bundle_mut(axis) else {
             continue;
         };
-        let stats = cut_bundle(bundle, profile, motion, method, scratch);
+        let stats = cut_bundle_motion(bundle, profile, motion, method, scratch);
         total.rays_tested += stats.rays_tested;
         total.rays_rejected += stats.rays_rejected;
         total.rays_changed += stats.rays_changed;
@@ -216,6 +241,17 @@ pub fn cut_bundle(
     bundle: &mut DexelField,
     profile: &Profile,
     motion: &LinearMove,
+    method: SweepMethod,
+    scratch: &mut CutScratch,
+) -> CutStats {
+    cut_bundle_motion(bundle, profile, &Motion::Linear(*motion), method, scratch)
+}
+
+/// Subtracts a swept tool from one bundle, for a motion of any kind.
+pub fn cut_bundle_motion(
+    bundle: &mut DexelField,
+    profile: &Profile,
+    motion: &Motion,
     method: SweepMethod,
     scratch: &mut CutScratch,
 ) -> CutStats {
@@ -259,11 +295,28 @@ pub fn cut_bundle(
             origin,
             direction: axis.direction(),
         };
-        match method {
-            SweepMethod::Analytic { .. } if matches!(motion.case(), SweepCase::Horizontal) => {
+        match (method, motion) {
+            // Case A′: a level arc, closed form.
+            (SweepMethod::Analytic { .. }, Motion::Arc(a))
+                if !a.is_helix()
+                    && arc::swept_spans_into(
+                        profile,
+                        a,
+                        &ray,
+                        scratch.radially_convex,
+                        &mut scratch.raycast,
+                        &mut scratch.swept,
+                        &mut stats.raycast,
+                    ) =>
+            {
+                stats.rays_exact += 1;
+            }
+            (SweepMethod::Analytic { .. }, Motion::Linear(m))
+                if matches!(m.case(), SweepCase::Horizontal) =>
+            {
                 horizontal::swept_spans_into(
                     profile,
-                    motion,
+                    m,
                     &ray,
                     &mut scratch.raycast,
                     &mut scratch.swept,
@@ -271,10 +324,12 @@ pub fn cut_bundle(
                 );
                 stats.rays_exact += 1;
             }
-            SweepMethod::Analytic { .. } if matches!(motion.case(), SweepCase::Stationary) => {
+            (SweepMethod::Analytic { .. }, Motion::Linear(m))
+                if matches!(m.case(), SweepCase::Stationary) =>
+            {
                 spans_in_tool_at(
                     profile,
-                    motion.start,
+                    m.start,
                     &ray,
                     &mut scratch.raycast,
                     &mut scratch.swept,
@@ -286,11 +341,11 @@ pub fn cut_bundle(
             // profile. `swept_spans_into` says whether it took it, and anything
             // it declines falls through to sub-stepping rather than being
             // guessed at.
-            SweepMethod::Analytic { .. }
-                if matches!(motion.case(), SweepCase::Plunge)
+            (SweepMethod::Analytic { .. }, Motion::Linear(m))
+                if matches!(m.case(), SweepCase::Plunge)
                     && plunge::swept_spans_into(
                         profile,
-                        motion,
+                        m,
                         &ray,
                         scratch.radially_convex,
                         &mut scratch.raycast,
@@ -300,17 +355,31 @@ pub fn cut_bundle(
             {
                 stats.rays_exact += 1;
             }
-            _ => {
-                reference::swept_spans_into(
+            (_, Motion::Arc(a)) => {
+                reference::arc_spans_into(
                     profile,
-                    motion,
+                    a,
                     steps.max(1),
                     &ray,
                     &mut scratch.raycast,
                     &mut scratch.swept,
                     &mut stats.raycast,
                 );
-                stats.substeps += u64::from(steps);
+                stats.substeps += u64::from(steps.max(1));
+                stats.rays_substepped += 1;
+                stats.worst_bound_mm = stats.worst_bound_mm.max(planned_bound);
+            }
+            (_, Motion::Linear(m)) => {
+                reference::swept_spans_into(
+                    profile,
+                    m,
+                    steps.max(1),
+                    &ray,
+                    &mut scratch.raycast,
+                    &mut scratch.swept,
+                    &mut stats.raycast,
+                );
+                stats.substeps += u64::from(steps.max(1));
                 stats.rays_substepped += 1;
                 stats.worst_bound_mm = stats.worst_bound_mm.max(planned_bound);
             }

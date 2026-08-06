@@ -27,8 +27,8 @@ use chipbreaker_core::dexel::tri::{AXES, TriBuildOptions, TriDexelField};
 use chipbreaker_core::golden::CanonicalHash;
 use chipbreaker_core::math::Vec3;
 use chipbreaker_core::mesh::shapes;
+use chipbreaker_core::sweep::LinearMove;
 use chipbreaker_core::sweep::cut::{CutScratch, SweepMethod, cut_tri, distribution, spilled};
-use chipbreaker_core::sweep::{LinearMove, SweepCase};
 use chipbreaker_core::tool::Profile;
 use chipbreaker_core::tool::catalog::{Shank, ball_end_mill, bull_end_mill, drill, flat_end_mill};
 
@@ -219,12 +219,7 @@ fn main() {
         let mut case_kinds: Vec<&str> = Vec::new();
 
         for motion in &case.moves {
-            case_kinds.push(match motion.case() {
-                SweepCase::Stationary => "stationary",
-                SweepCase::Horizontal => "horizontal",
-                SweepCase::Plunge => "plunge",
-                SweepCase::Ramp => "ramp",
-            });
+            case_kinds.push(motion.case().as_str());
             let stats = cut_tri(
                 &mut field,
                 &profile,

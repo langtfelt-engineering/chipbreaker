@@ -114,6 +114,63 @@ impl LinearMove {
     }
 }
 
+/// One motion of the tool, of whichever kind.
+///
+/// Unit 7 cut linear moves only and `run` skipped arcs with a non-zero exit
+/// code. This is what makes a whole program simulable: every segment the parser
+/// produces maps to one of these.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Motion {
+    /// A straight move. Cases A, B and C.
+    Linear(LinearMove),
+    /// An arc or helix. Case A′ when level, B′ when it rises.
+    Arc(arc::ArcMove),
+}
+
+impl Motion {
+    /// Tool tip position at parameter `s` in `[0, 1]`.
+    #[must_use]
+    pub fn at(&self, s: f64) -> Vec3 {
+        match self {
+            Self::Linear(m) => m.at(s),
+            Self::Arc(a) => a.at(s),
+        }
+    }
+
+    /// The box the swept tool occupies.
+    #[must_use]
+    pub fn swept_bounds(&self, profile: &Profile) -> Aabb3 {
+        match self {
+            Self::Linear(m) => m.swept_bounds(profile),
+            Self::Arc(a) => a.swept_bounds(profile),
+        }
+    }
+
+    /// Length of the tip's path. The **helical** length for an arc, not a chord.
+    #[must_use]
+    pub fn path_length(&self) -> f64 {
+        match self {
+            Self::Linear(m) => m.delta().length(),
+            Self::Arc(a) => a.path_length(),
+        }
+    }
+
+    /// Which sweep case this motion falls into.
+    #[must_use]
+    pub fn case(&self) -> SweepCase {
+        match self {
+            Self::Linear(m) => m.case(),
+            Self::Arc(a) => {
+                if a.is_helix() {
+                    SweepCase::Helix
+                } else {
+                    SweepCase::Arc
+                }
+            }
+        }
+    }
+}
+
 /// Displacements at or below this count as zero when classifying a move.
 ///
 /// Far below any real machining displacement, so a shallow finishing ramp is
@@ -132,6 +189,10 @@ pub enum SweepCase {
     Plunge,
     /// Both non-zero. Helical entries, ramped leads, sloped contouring.
     Ramp,
+    /// A level arc. Case A′, and closed form.
+    Arc,
+    /// An arc that rises. Case B′, and sub-stepped.
+    Helix,
 }
 
 impl SweepCase {
@@ -143,7 +204,18 @@ impl SweepCase {
             Self::Horizontal => "horizontal",
             Self::Plunge => "plunge",
             Self::Ramp => "ramp",
+            Self::Arc => "arc",
+            Self::Helix => "helix",
         }
+    }
+
+    /// True if this case has a closed form.
+    #[must_use]
+    pub const fn is_exact(self) -> bool {
+        matches!(
+            self,
+            Self::Stationary | Self::Horizontal | Self::Plunge | Self::Arc
+        )
     }
 }
 

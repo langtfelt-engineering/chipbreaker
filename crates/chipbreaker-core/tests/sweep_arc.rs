@@ -102,6 +102,8 @@ fn arc_at(radius: f64, start: f64, sweep: f64) -> ArcMove {
         start_angle: start,
         sweep,
         z: 0.0,
+        rise: 0.0,
+        plane: chipbreaker_core::toolpath::ArcPlane::Xy,
     }
 }
 
@@ -319,6 +321,176 @@ fn a_ray_clear_of_the_ring_returns_nothing() {
         assert!(
             analytic(&profile, &arc, &ray).is_empty(),
             "a ray clear of the swept ring must return nothing"
+        );
+    }
+}
+
+// --- Case B': helices -------------------------------------------------------
+
+fn helix(radius: f64, start: f64, sweep: f64, rise: f64) -> ArcMove {
+    ArcMove {
+        center: Vec3::new(1.5, -2.25, 0.0),
+        radius,
+        start_angle: start,
+        sweep,
+        z: 0.0,
+        rise,
+        plane: chipbreaker_core::toolpath::ArcPlane::Xy,
+    }
+}
+
+#[test]
+fn the_helix_bound_is_conservative_against_the_true_path() {
+    // The bound claims: no point of the true path is farther than
+    // `deviation_bound(N)` from the nearest of N+1 evenly spaced samples.
+    //
+    // The tool translates rigidly along the path, so the tip's deviation IS the
+    // swept volume's deviation -- which is why measuring the path is enough and
+    // is far more direct than measuring the volume.
+    for arc in [
+        helix(10.0, 0.3, 2.4, 6.0),
+        helix(4.0, -1.0, -3.1, -2.5),
+        helix(12.0, 0.0, 4.0 * PI, 9.0),
+        helix(0.5, 0.7, 1.2, 8.0),
+    ] {
+        for steps in [4u32, 16, 64, 256] {
+            let bound = arc.deviation_bound(steps);
+            // Walk the path finely and find the worst distance to a sample.
+            let mut worst = 0.0f64;
+            let fine = steps * 97;
+            for k in 0..=fine {
+                let s = f64::from(k) / f64::from(fine);
+                let p = arc.at(s);
+                let mut nearest = f64::INFINITY;
+                for j in 0..=steps {
+                    let q = arc.at(f64::from(j) / f64::from(steps));
+                    nearest = nearest.min((p - q).length());
+                }
+                worst = worst.max(nearest);
+            }
+            assert!(
+                worst <= bound * (1.0 + 1.0e-9),
+                "R={} sweep={} rise={} at {steps} steps: measured deviation {worst} \
+                 exceeds the claimed bound {bound}. The bound is unsound.",
+                arc.radius,
+                arc.sweep,
+                arc.rise
+            );
+            // And not absurdly slack: the bound is the midpoint distance, which
+            // the fine walk should very nearly reach.
+            assert!(
+                worst >= bound * 0.9,
+                "R={} at {steps} steps: bound {bound} is {:.1}x the measured {worst}, \
+                 which is looser than the derivation should allow",
+                bound / worst.max(1.0e-300),
+                arc.radius
+            );
+        }
+    }
+}
+
+#[test]
+fn a_chord_based_bound_would_be_unsound_for_a_helix() {
+    // Why the bound uses the helical path length rather than the chord. On an
+    // ordinary helix the chord under-states the path by a fifth, so a bound
+    // derived from it would claim an accuracy the sweep does not have.
+    let arc = helix(10.0, 0.0, 2.4, 6.0);
+    let chord = (arc.at(1.0) - arc.at(0.0)).length();
+    let path = arc.path_length();
+    assert!(
+        chord < path * 0.85,
+        "this case is meant to have a chord well under the path: {chord} against {path}"
+    );
+    for steps in [8u32, 32] {
+        let honest = arc.deviation_bound(steps);
+        let from_chord = chord / (2.0 * f64::from(steps));
+        assert!(
+            from_chord < honest,
+            "a chord-based bound {from_chord} should be OPTIMISTIC against the true \
+             {honest}, which is exactly why it must not be used"
+        );
+    }
+}
+
+#[test]
+fn a_helix_is_declined_by_the_closed_form_and_falls_through() {
+    // Case A′ collapses only when the axial term is absent. A helix must say so
+    // rather than return the level answer.
+    let profile = flat(6.0);
+    let level = helix(10.0, 0.2, 1.5, 0.0);
+    let rising = helix(10.0, 0.2, 1.5, 5.0);
+    assert!(!level.is_helix());
+    assert!(rising.is_helix());
+
+    let ray = Ray {
+        origin: Vec3::new(1.5 + 10.0, -2.25, -20.0),
+        direction: Vec3::new(0.0, 0.0, 1.0),
+    };
+    let mut out = Spans::new();
+    let convex = plunge::is_radially_convex(&profile);
+    assert!(
+        swept_spans_into(
+            &profile,
+            &level,
+            &ray,
+            convex,
+            &mut RaycastScratch::default(),
+            &mut out,
+            &mut RaycastStats::default()
+        ),
+        "a level arc is closed form"
+    );
+    assert!(
+        !swept_spans_into(
+            &profile,
+            &rising,
+            &ray,
+            convex,
+            &mut RaycastScratch::default(),
+            &mut out,
+            &mut RaycastStats::default()
+        ),
+        "a helix must be declined, not answered with the level result"
+    );
+}
+
+#[test]
+fn a_zero_radius_helix_is_a_plunge() {
+    // The degenerate case: with no radius the path is a straight descent, so the
+    // swept volume must match Case B's plunge exactly.
+    use chipbreaker_core::sweep::LinearMove;
+    let profile = ball(6.0);
+    let spin = helix(0.0, 0.0, 4.0 * PI, -8.0);
+    let drop = LinearMove {
+        start: Vec3::new(1.5, -2.25, 0.0),
+        end: Vec3::new(1.5, -2.25, -8.0),
+    };
+
+    for ray in probe_rays().into_iter().take(90) {
+        let mut helical = Spans::new();
+        chipbreaker_core::sweep::reference::arc_spans_into(
+            &profile,
+            &spin,
+            64,
+            &ray,
+            &mut RaycastScratch::default(),
+            &mut helical,
+            &mut RaycastStats::default(),
+        );
+        let mut straight = Spans::new();
+        assert!(plunge::swept_spans_into(
+            &profile,
+            &drop,
+            &ray,
+            plunge::is_radially_convex(&profile),
+            &mut RaycastScratch::default(),
+            &mut straight,
+            &mut RaycastStats::default(),
+        ));
+        assert!(
+            helical.subtract(&straight).measure() < 1.0e-9,
+            "a zero-radius helix found material the plunge did not: {helical:?} vs \
+             {straight:?}"
         );
     }
 }

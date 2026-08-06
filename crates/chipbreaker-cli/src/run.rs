@@ -35,8 +35,11 @@ use std::path::PathBuf;
 use chipbreaker_core::dexel::tri::TriDexelField;
 use chipbreaker_core::dexel::{FieldFormat, io as dexel_io};
 use chipbreaker_core::golden::CanonicalHash;
-use chipbreaker_core::sweep::cut::{CutScratch, CutStats, SweepMethod, cut_tri, distribution};
-use chipbreaker_core::sweep::{LinearMove, SweepCase};
+use chipbreaker_core::sweep::arc::ArcMove;
+use chipbreaker_core::sweep::cut::{
+    CutScratch, CutStats, SweepMethod, cut_tri_motion, distribution,
+};
+use chipbreaker_core::sweep::{LinearMove, Motion, SweepCase};
 use chipbreaker_core::tool::{Profile, ToolLibrary};
 use chipbreaker_core::toolpath::{MotionKind, Toolpath};
 use chipbreaker_gcode::resolve::{ParseOptions, parse};
@@ -270,19 +273,19 @@ pub fn run(args: &RunArgs) -> Result<(Value, String, bool), String> {
         .map(|(number, profile)| (*number, CutScratch::new(profile)))
         .collect();
     let mut totals = CutStats::default();
-    let mut cases = [0u64; 4];
+    let mut cases = [0u64; 6];
     let mut arcs_skipped = 0u64;
 
     for (index, segment) in toolpath.segments[lo..hi].iter().enumerate() {
-        // Arcs are Unit 8. Counted and reported rather than silently treated as
-        // their chord, which would remove the wrong material and look fine.
-        if matches!(segment.kind, MotionKind::Arc | MotionKind::Helix) {
-            arcs_skipped += 1;
-            continue;
-        }
-        let motion = LinearMove {
-            start: segment.start,
-            end: segment.end,
+        let motion = match segment_motion(segment) {
+            Some(motion) => motion,
+            None => {
+                // An arc whose data the parser did not attach. Counted and
+                // reported rather than quietly treated as its chord, which for
+                // a full circle is no motion at all.
+                arcs_skipped += 1;
+                continue;
+            }
         };
         cases[case_index(motion.case())] += 1;
         let (Some(profile), Some(scratch)) = (
@@ -296,7 +299,7 @@ pub fn run(args: &RunArgs) -> Result<(Value, String, bool), String> {
                 segment.tool
             ));
         };
-        let stats = cut_tri(&mut field, profile, &motion, method, scratch);
+        let stats = cut_tri_motion(&mut field, profile, &motion, method, scratch);
         totals.merge(&stats);
 
         if args.progress && index % 500 == 0 {
@@ -350,13 +353,14 @@ pub fn run(args: &RunArgs) -> Result<(Value, String, bool), String> {
         },
     );
     report.push_str(&format!(
-        "cases     {} horizontal, {} plunge, {} ramp, {} stationary\n",
-        cases[1], cases[2], cases[3], cases[0]
+        "cases     {} horizontal, {} plunge, {} ramp, {} arc, {} helix, {} stationary
+",
+        cases[1], cases[2], cases[3], cases[4], cases[5], cases[0]
     ));
     if arcs_skipped > 0 {
         report.push_str(&format!(
-            "SKIPPED   {arcs_skipped} arc or helix segment(s): arcs are Unit 8. This \
-             result is NOT a simulation of the whole program.\n"
+            "SKIPPED   {arcs_skipped} arc segment(s) carried no arc data. This result \
+             is NOT a simulation of the whole program.\n"
         ));
     }
     report.push_str(&format!(
@@ -405,6 +409,12 @@ pub fn run(args: &RunArgs) -> Result<(Value, String, bool), String> {
     let results = json!({
         "arcs_skipped": arcs_skipped,
         "cases": {
+            "arc": cases[4],
+            "helix": cases[5],
+            "arc": cases[4],
+            "helix": cases[5],
+            "arc": cases[4],
+            "helix": cases[5],
             "horizontal": cases[1],
             "plunge": cases[2],
             "ramp": cases[3],
@@ -436,12 +446,47 @@ pub fn run(args: &RunArgs) -> Result<(Value, String, bool), String> {
     Ok((results, report, arcs_skipped == 0))
 }
 
+/// Turns a parsed segment into a motion this unit can sweep.
+///
+/// `None` only when an arc segment carries no arc data, which the parser should
+/// never produce -- but the caller counts and reports it rather than assuming,
+/// because silently treating an arc as its chord deletes a full circle entirely.
+fn segment_motion(segment: &chipbreaker_core::toolpath::MotionSegment) -> Option<Motion> {
+    if !matches!(segment.kind, MotionKind::Arc | MotionKind::Helix) {
+        return Some(Motion::Linear(LinearMove {
+            start: segment.start,
+            end: segment.end,
+        }));
+    }
+    let data = segment.arc.as_ref()?;
+    let [u, v, w] = data.plane.axes();
+    let centre = data.center.to_array();
+    let start = segment.start.to_array();
+    let end = segment.end.to_array();
+    Some(Motion::Arc(ArcMove {
+        center: data.center,
+        radius: data.radius,
+        // The bearing of the start about the arc's own axis, in that plane's
+        // own axis order -- which for `G18` is Z then X, not X then Z.
+        start_angle: chipbreaker_core::transcendental::atan2(
+            start[v] - centre[v],
+            start[u] - centre[u],
+        ),
+        sweep: data.sweep,
+        z: start[w],
+        rise: end[w] - start[w],
+        plane: data.plane,
+    }))
+}
+
 const fn case_index(case: SweepCase) -> usize {
     match case {
         SweepCase::Stationary => 0,
         SweepCase::Horizontal => 1,
         SweepCase::Plunge => 2,
         SweepCase::Ramp => 3,
+        SweepCase::Arc => 4,
+        SweepCase::Helix => 5,
     }
 }
 
