@@ -494,3 +494,62 @@ fn a_zero_radius_helix_is_a_plunge() {
         );
     }
 }
+
+#[test]
+fn a_g18_arc_is_classified_as_a_ramp_and_not_as_an_exact_arc() {
+    // **This is a regression test for a real bug, found by adding a `G18` case
+    // to the corpus.**
+    //
+    // `Motion::case` used to return `SweepCase::Arc` for any arc without a rise,
+    // regardless of plane. `SweepMethod::Analytic` reads that as "exact, plan
+    // zero sub-steps". `arc::swept_spans_into` then correctly declined the
+    // non-`G17` arc -- the collapse needs the arc's axis parallel to the tool's
+    // -- and the fall-through swept it with `steps.max(1)`: **one** sample of
+    // the tool, sitting at the start point, for a whole quarter turn.
+    //
+    // Nothing complained. The cut was simply almost entirely absent.
+    //
+    // A `G18` arc has no rise in its own plane, so it is not a `Helix` either.
+    // It is a `Ramp`: sub-stepped, with a step count planned from its true path
+    // length.
+    use chipbreaker_core::sweep::cut::SweepMethod;
+    use chipbreaker_core::sweep::{Motion, SweepCase};
+    use chipbreaker_core::toolpath::ArcPlane;
+
+    let level_g17 = ArcMove {
+        center: Vec3::new(0.0, 0.0, 0.0),
+        radius: 8.0,
+        start_angle: 0.0,
+        sweep: PI / 2.0,
+        z: 0.0,
+        plane: ArcPlane::Xy,
+        rise: 0.0,
+    };
+    assert_eq!(Motion::Arc(level_g17).case(), SweepCase::Arc);
+
+    for plane in [ArcPlane::Zx, ArcPlane::Yz] {
+        let sideways = ArcMove { plane, ..level_g17 };
+        assert!(
+            !sideways.is_helix(),
+            "{plane:?} has no rise, so the helix test alone would let it through"
+        );
+        assert_eq!(
+            Motion::Arc(sideways).case(),
+            SweepCase::Ramp,
+            "{plane:?} turns about a horizontal axis, so Case A' does not apply"
+        );
+
+        // And the consequence that actually matters: the planner now buys steps.
+        let (steps, bound) = SweepMethod::Analytic { tolerance: 0.05 }.plan(&Motion::Arc(sideways));
+        assert!(
+            steps > 100,
+            "{plane:?}: a quarter turn of radius 8 at 0.05 mm needs on the order of \
+             a hundred steps, planned {steps}"
+        );
+        assert!(
+            bound <= 0.05,
+            "{plane:?}: planned {steps} steps for a bound of {bound} mm, over the \
+             0.05 mm asked for"
+        );
+    }
+}

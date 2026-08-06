@@ -161,11 +161,26 @@ impl Motion {
     pub fn case(&self) -> SweepCase {
         match self {
             Self::Linear(m) => m.case(),
+            // `is_level_xy`, not `!is_helix`. A `G18` or `G19` arc has no rise
+            // in its own plane and is still not Case A′: the collapse needs the
+            // arc's axis parallel to the tool's, and there it is horizontal.
+            //
+            // Classifying one as `Arc` was a real bug, not a tidiness point.
+            // `SweepMethod::Analytic` reads `SweepCase::Arc` as "exact, plan
+            // zero sub-steps", `arc::swept_spans_into` then correctly declines a
+            // non-`G17` arc, and the fall-through swept a quarter-turn arc with
+            // `steps.max(1)` -- **one** sample of the tool, at the start point.
+            // Silent, and wrong by most of the arc.
+            //
+            // A `G18` arc is a `Ramp`: sub-stepped, with a step count planned
+            // from its true path length.
             Self::Arc(a) => {
-                if a.is_helix() {
+                if a.is_level_xy() {
+                    SweepCase::Arc
+                } else if a.is_helix() {
                     SweepCase::Helix
                 } else {
-                    SweepCase::Arc
+                    SweepCase::Ramp
                 }
             }
         }
