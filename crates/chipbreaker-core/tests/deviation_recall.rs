@@ -340,35 +340,63 @@ fn localisation_recovers_the_place_and_the_depth() {
 }
 
 #[test]
-fn a_coarse_nominal_is_detected_as_a_floor() {
+fn a_coarse_nominal_is_detected_as_a_floor_and_a_flat_one_is_not() {
     // The tessellation floor, on the nominal rather than the stock. A customer
-    // feeding a 1 mm-faceted STL and asking for 0.01 mm findings is making ADR
-    // 0005's mistake in a different costume, and the field must say so.
+    // feeding a coarsely faceted STL and asking for 0.01 mm findings is making
+    // ADR 0005's mistake in a different costume, and the field must say so.
+    //
+    // **And must not say so about a box.** A twelve-triangle box has enormous
+    // triangles and represents its planes *exactly*; no refinement would improve
+    // it. The first version of this test asserted the opposite -- that a box
+    // reads as coarser than the lattice -- and it was wrong in a way that
+    // mattered, because it refused to compare any prismatic part at all, which
+    // is most machined parts. See `deviation::facet_size`.
     let profile = mill(6.0);
     let case = &corpus()[0];
     let result = cut(&case.clean, &profile);
 
-    // A deliberately coarse nominal: an eight-triangle box has facets metres
-    // across in the sense that matters.
-    let coarse = stock_mesh();
-    let field = compare(&result, &coarse, Some(&stock_mesh()));
+    // A torus at sixteen segments: facets a machinist would see, and shallow
+    // enough between neighbours to read as a sampled curve rather than as a
+    // sixteen-sided design. See `tests/facet_floor.rs` for where that line is
+    // drawn and what it costs.
+    let coarse = shapes::torus(40.0, 10.0, 16, 24);
+    let coarse_field = compare(&result, &coarse, Some(&stock_mesh()));
+    let flat_field = compare(&result, &stock_mesh(), Some(&stock_mesh()));
     println!(
-        "coarse nominal: stock facets {:.3} mm, nominal facets {:.3} mm, floor {:.3} mm",
-        field.stock_facet_mm,
-        field.nominal_facet_mm,
-        field.tolerance_floor_mm()
+        "coarse curved nominal: facets {:.4} mm, floor {:.4} mm\n\
+         flat nominal:          facets {:.4} mm, floor {:.4} mm",
+        coarse_field.nominal_facet_mm,
+        coarse_field.tolerance_floor_mm(),
+        flat_field.nominal_facet_mm,
+        flat_field.tolerance_floor_mm()
+    );
+
+    assert!(
+        coarse_field.nominal_facet_mm > SPACING,
+        "a bare icosahedron standing in for a 20 mm sphere departs from it by \
+         millimetres, and must read as coarser than a {SPACING} mm lattice; it \
+         read {:.4}",
+        coarse_field.nominal_facet_mm
     );
     assert!(
-        field.nominal_facet_mm > SPACING,
-        "an eight-triangle box should read as coarser than a {SPACING} mm lattice"
+        coarse_field.below_floor(0.01),
+        "a 0.01 mm tolerance against a visibly faceted nominal must be reported \
+         as below the floor its inputs support"
     );
     assert!(
-        field.below_floor(0.01),
-        "a 0.01 mm tolerance against this nominal must be reported as below the \
-         floor its inputs support"
-    );
-    assert!(
-        !field.below_floor(100.0),
+        !coarse_field.below_floor(100.0),
         "a tolerance far above the floor must not be flagged"
+    );
+
+    assert_eq!(
+        flat_field.nominal_facet_mm, 0.0,
+        "a box is made of planes and its triangles represent them exactly, so its \
+         chord error is zero however large they are. Reporting otherwise refuses \
+         to compare prismatic parts, which is most of them."
+    );
+    assert_eq!(
+        flat_field.tolerance_floor_mm(),
+        flat_field.spacing_mm,
+        "with both meshes exact, the only floor left is the lattice"
     );
 }

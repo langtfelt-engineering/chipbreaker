@@ -9,6 +9,7 @@
 //! the core and there will not be one; the eventual browser demo is a consumer
 //! of the library, never a part of it.
 
+mod compare;
 mod dexel;
 mod extract;
 mod memest;
@@ -89,6 +90,13 @@ enum Command {
     CutStat(run::CutStatArgs),
     /// Contour a cut field back to a watertight triangle mesh.
     Extract(extract::ExtractArgs),
+    /// Judge a cut field against the part it was meant to be.
+    ///
+    /// Reports gouges and excess stock as two numbers and never as one. A gouge
+    /// is unambiguous; excess is what a roughing pass is supposed to leave.
+    Compare(compare::CompareArgs),
+    /// The distribution behind `compare`: where the deviation is, and how deep.
+    DeviationStat(compare::DeviationStatArgs),
     /// Predict what a job will cost in memory, without allocating any of it.
     MemEstimate(memest::MemEstimateArgs),
     /// Print version information.
@@ -145,6 +153,16 @@ fn main() -> ExitCode {
         Command::Extract(args) => {
             let as_json = args.json;
             let (outcome, elapsed) = mesh::timed(|| extract::extract(&args));
+            emit(outcome, elapsed, as_json)
+        }
+        Command::Compare(args) => {
+            let as_json = args.json;
+            let (outcome, elapsed) = mesh::timed(|| compare::compare(&args));
+            emit(outcome, elapsed, as_json)
+        }
+        Command::DeviationStat(args) => {
+            let as_json = args.compare.json;
+            let (outcome, elapsed) = mesh::timed(|| compare::deviation_stat(&args));
             emit(outcome, elapsed, as_json)
         }
         Command::MemEstimate(args) => {

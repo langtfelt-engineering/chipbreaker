@@ -81,6 +81,7 @@ use crate::golden::{CanonicalHash, Hashable};
 use crate::math::{Ray, Vec3};
 use crate::mesh::TriMesh;
 use crate::mesh::bvh::Bvh;
+use crate::transcendental as t;
 
 /// One sampled disagreement between the result and the nominal.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -200,24 +201,163 @@ impl Hashable for DeviationField {
     }
 }
 
-/// Estimates a mesh's characteristic facet size.
+/// Above this dihedral angle an edge is a design feature, not a sampled curve.
 ///
-/// The square root of the mean triangle area, which is the side of the
-/// equal-area equilateral triangle — a single number for "how finely is this
-/// tessellated". Crude on purpose: it is used to warn, not to bound.
+/// The distinction is the whole of [`facet_size`]. Thirty degrees is well above
+/// any tessellation a customer would ship — a curve sampled that coarsely would
+/// be visible as facets to the naked eye — and well below the shallowest edge
+/// anyone deliberately puts on a part.
+const FEATURE_ANGLE: f64 = core::f64::consts::PI / 6.0;
+
+/// How far a mesh can be from the surface it represents, in millimetres.
+///
+/// # Big triangles are not the same as a coarse mesh
+///
+/// The first version of this returned the square root of the mean triangle area:
+/// the side of the equal-area equilateral triangle, as a single number for "how
+/// finely is this tessellated". It refused to compare anything against a box.
+///
+/// A box's faces are *planes*, and twelve triangles represent them **exactly**.
+/// No refinement would improve them, so a floor derived from their size is a
+/// refusal to answer a question that has an exact answer — and refusing to
+/// answer is worse than answering with a caveat. Every prismatic part, which is
+/// most machined parts, hit it.
+///
+/// # What is actually being estimated
+///
+/// The **chord error**: how far the true smooth surface departs from the flat
+/// facet standing in for it. That is not a property of a triangle on its own; it
+/// is a property of how a triangle sits relative to its neighbours.
+///
+/// Two facets meeting across an edge at a dihedral angle `theta` are sampling a
+/// surface whose radius of curvature is set by **how far they reach across that
+/// edge**, not by how long the edge is:
+///
+/// ```text
+///   rho  =  (w_a + w_b) / (2 theta)          w = the facet's reach, perpendicular
+///   s    =  rho * (1 - cos(theta / 2))       to the shared edge
+/// ```
+///
+/// which is exact for a regular polygon inscribed in a circle: `N` facets around
+/// radius `R` reach `L = 2R sin(pi/N)` each and turn by `theta = 2 pi / N`, so
+/// `rho` comes back as `R` and `s` as the sagitta `R (1 - cos(pi/N))`.
+///
+/// The reach is what matters and the edge length is not, which the first version
+/// of this had backwards. It used the edge length directly, so a cylinder
+/// tessellated into `N` segments reported a chord error proportional to its
+/// **height** — the vertical edges are the ones that carry the dihedral, and
+/// their length says nothing at all about how well the circle is sampled. A
+/// torus happened to come out near enough to hide it.
+///
+/// Splitting a quad with a diagonal costs little under this form: the diagonal's
+/// two triangles are nearly coplanar, so its `theta` is small and its
+/// contribution falls off as `theta`.
+///
+/// Two angles contribute nothing, for opposite reasons. **Coplanar** facets have
+/// `theta = 0`: they are one plane, sampled twice, with no error between them.
+/// **Feature** edges above [`FEATURE_ANGLE`] are a crease the part really has,
+/// and refining the mesh will never soften them — measuring a 90 degree corner
+/// as though it were a coarsely sampled fillet is the same mistake as before,
+/// wearing the opposite hat.
+///
+/// A box therefore returns zero, a coarsely tessellated sphere returns its chord
+/// error, and a part that is mostly flat with one rough fillet returns the
+/// fillet's.
+///
+/// # It is an estimate, and is used to warn rather than to bound
+///
+/// The formula is exact for a regular polygon inscribed in a circle and nothing
+/// else. A triangulated torus is not one, and the estimate comes back at a
+/// steady **1.23 times** the closed form across three tessellations of the same
+/// torus, and 1.5 to 1.6 on an icosphere: a consistent, slightly conservative
+/// offset that depends on how the shape was triangulated. Measured in
+/// `tests/facet_floor.rs`.
+///
+/// That is enough for the job. A customer asking for 0.01 mm against a mesh
+/// whose facets are half a millimetre out needs to be told the scale of the
+/// problem. Calling this a bound would be the more comfortable claim and the
+/// wrong one.
+///
+/// # The limitation worth knowing
+///
+/// Below roughly twelve segments per revolution the dihedral exceeds
+/// [`FEATURE_ANGLE`] and the mesh reads as a faceted *design* rather than a
+/// coarse sampling — a bare icosahedron standing in for a sphere returns zero.
+/// Nothing in a mesh file distinguishes the two, and the choice here is to
+/// believe the part: treating a genuine 45 degree chamfer as sampling error
+/// would inflate the floor on every chamfered part and refuse comparisons that
+/// are exactly answerable, which is the failure this function was rewritten to
+/// remove.
 #[must_use]
 pub fn facet_size(mesh: &TriMesh) -> f64 {
-    let n = mesh.triangle_count();
-    if n == 0 {
+    use std::collections::BTreeMap;
+
+    // Undirected edge -> the triangles on it. `u32` keys, and a BTreeMap rather
+    // than a hash map, because the iteration below reaches a float.
+    let mut edges: BTreeMap<(u32, u32), Vec<u32>> = BTreeMap::new();
+    for (index, tri) in mesh.triangles().iter().enumerate() {
+        let t = u32::try_from(index).unwrap_or(u32::MAX);
+        for k in 0..3 {
+            let (a, b) = (tri[k], tri[(k + 1) % 3]);
+            let key = if a <= b { (a, b) } else { (b, a) };
+            edges.entry(key).or_default().push(t);
+        }
+    }
+
+    let mut worst = 0.0f64;
+    for ((a, b), tris) in &edges {
+        // Boundary and non-manifold edges have no single dihedral angle. The
+        // validator reports those; here they simply contribute nothing.
+        let [ta, tb] = tris[..] else { continue };
+        let (Some(na), Some(nb)) = (mesh.face_normal(ta), mesh.face_normal(tb)) else {
+            continue;
+        };
+        let cos = (na.x * nb.x + na.y * nb.y + na.z * nb.z).clamp(-1.0, 1.0);
+        let theta = t::acos(cos);
+        if theta <= 0.0 || theta >= FEATURE_ANGLE {
+            continue;
+        }
+        let reach = facet_reach(mesh, ta, *a, *b) + facet_reach(mesh, tb, *a, *b);
+        if reach <= 0.0 {
+            continue;
+        }
+        let rho = reach / (2.0 * theta);
+        // `1 - cos(theta/2)` written as `2 sin^2(theta/4)`, which does not
+        // cancel to nothing when theta is small -- and on a finely tessellated
+        // mesh theta is always small.
+        let quarter = t::sin(0.25 * theta);
+        worst = worst.max(rho * 2.0 * quarter * quarter);
+    }
+    worst
+}
+
+/// How far triangle `tri` reaches from the line through `a` and `b`.
+///
+/// The perpendicular distance from its third vertex to that line: the extent of
+/// the facet across the shared edge, which is what sets the curvature the two
+/// facets are sampling.
+fn facet_reach(mesh: &TriMesh, tri: u32, a: u32, b: u32) -> f64 {
+    let Some(indices) = mesh.triangles().get(tri as usize) else {
+        return 0.0;
+    };
+    let Some(&opposite) = indices.iter().find(|v| **v != a && **v != b) else {
+        return 0.0;
+    };
+    let vertices = mesh.vertices();
+    let (Some(pa), Some(pb), Some(pc)) = (
+        vertices.get(a as usize),
+        vertices.get(b as usize),
+        vertices.get(opposite as usize),
+    ) else {
+        return 0.0;
+    };
+    let edge = *pb - *pa;
+    let length = edge.length();
+    if length <= 0.0 {
         return 0.0;
     }
-    let mut total = 0.0f64;
-    for t in 0..n {
-        total += mesh.double_area(t) / 2.0;
-    }
-    #[allow(clippy::cast_precision_loss, reason = "a triangle count")]
-    let mean = total / f64::from(n);
-    if mean > 0.0 { mean.sqrt() } else { 0.0 }
+    // Twice the triangle's area over the edge length is the height on that edge.
+    edge.cross(*pc - *pa).length() / length
 }
 
 /// Compares a cut field against the nominal part.
