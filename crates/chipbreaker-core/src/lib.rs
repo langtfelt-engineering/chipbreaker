@@ -4,6 +4,7 @@
 #![forbid(unsafe_code)]
 #![doc = include_str!("../README.md")]
 
+pub mod budget;
 pub mod contour;
 pub mod dexel;
 pub mod eps;
