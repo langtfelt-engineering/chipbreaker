@@ -38,6 +38,7 @@ pub mod arc;
 pub mod batch;
 pub mod cut;
 pub mod horizontal;
+pub mod parallel;
 pub mod plunge;
 pub mod reference;
 

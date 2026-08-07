@@ -180,9 +180,9 @@ pub struct CutScratch {
     /// per ray, and cost 180 times Case A's whole span computation.
     radially_convex: bool,
     raycast: RaycastScratch,
-    swept: Spans,
-    material: Spans,
-    result: Spans,
+    pub(crate) swept: Spans,
+    pub(crate) material: Spans,
+    pub(crate) result: Spans,
 }
 
 impl CutScratch {
@@ -311,13 +311,9 @@ pub fn cut_bundle_motion(
 
 /// Cuts one ray and returns the volume removed from it, in cubic millimetres.
 ///
-/// Extracted so the batched and unbatched paths share it **exactly**. Two copies
-/// of this that drifted apart would produce two fields that differ by a hair,
-/// and the bit-identity test would then be testing nothing.
-///
-/// Does not touch `rays_changed` or `removed_mm3`: the caller owns those,
-/// because the order they accumulate in is what the batched path has to
-/// reproduce.
+/// Reads the ray's material from the arena and writes the result back. The
+/// sequential path; see [`swept_for_ray`] and [`apply_swept`] for the pieces the
+/// parallel path uses instead, which touch no shared state.
 #[allow(
     clippy::too_many_arguments,
     reason = "the shared inner loop; splitting it would mean a struct that exists only to be destructured"
@@ -333,6 +329,39 @@ pub(crate) fn cut_one_ray(
     cell_area: f64,
     stats: &mut CutStats,
 ) -> f64 {
+    if !swept_for_ray(profile, motion, method, scratch, ray, stats) {
+        return 0.0;
+    }
+    bundle.arena().read_into(ray_index, &mut scratch.material);
+    let removed = apply_swept(
+        &scratch.material,
+        &scratch.swept,
+        &mut scratch.result,
+        cell_area,
+    );
+    if removed == 0.0 && scratch.result.as_slice() == scratch.material.as_slice() {
+        return 0.0;
+    }
+    bundle.arena_mut().set(ray_index, scratch.result.as_slice());
+    removed
+}
+
+/// Computes the swept volume's intervals along one ray, into `scratch.swept`.
+///
+/// Returns `false` when the sweep misses the ray entirely, in which case the
+/// caller has nothing to do.
+///
+/// **Touches no shared state.** That is the whole reason it is separate: the
+/// parallel path runs this across threads against an immutable field, and only
+/// the subtraction and the write-back are ordered afterwards.
+pub(crate) fn swept_for_ray(
+    profile: &Profile,
+    motion: &Motion,
+    method: SweepMethod,
+    scratch: &mut CutScratch,
+    ray: &Ray,
+    stats: &mut CutStats,
+) -> bool {
     // Planned per ray rather than per bundle. It is a handful of arithmetic on
     // the motion alone, and hoisting it would mean threading it through the
     // batched path too, where the motion changes on every iteration anyway.
@@ -430,20 +459,18 @@ pub(crate) fn cut_one_ray(
             stats.worst_bound_mm = stats.worst_bound_mm.max(planned_bound);
         }
     }
-    if scratch.swept.is_empty() {
-        return 0.0;
-    }
+    !scratch.swept.is_empty()
+}
 
-    bundle.arena().read_into(ray_index, &mut scratch.material);
-    let before = scratch.material.measure();
-    scratch
-        .material
-        .subtract_into(&scratch.swept, &mut scratch.result);
-    let after = scratch.result.measure();
-    if after == before && scratch.result.as_slice() == scratch.material.as_slice() {
-        return 0.0;
-    }
-    bundle.arena_mut().set(ray_index, scratch.result.as_slice());
+/// Subtracts a swept volume from one ray's material.
+///
+/// Writes the remainder into `out` and returns the volume removed, in cubic
+/// millimetres. Pure: no arena, no shared state, so it runs identically on any
+/// thread.
+pub(crate) fn apply_swept(material: &Spans, swept: &Spans, out: &mut Spans, cell_area: f64) -> f64 {
+    let before = material.measure();
+    material.subtract_into(swept, out);
+    let after = out.measure();
     (before - after) * cell_area
 }
 
