@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Chipbreaker Contributors
 
-//! Three rungs, in order, before the deviation field is trusted at all.
+//! A ladder, climbed in order, before the deviation field is trusted at all.
 //!
 //! Comparing a field against a mesh extracted from that same field conflates
 //! extraction error with comparison error, so a failure cannot be localised.
@@ -16,8 +16,34 @@
 //!    extraction error, which is sub-cell. A failure here is in the field-to-mesh
 //!    interface -- containment, sidedness, placement -- and not in rung 1's
 //!    arithmetic.
-//! 3. **Field against an independently modelled nominal.** The real test, and
-//!    only meaningful once the first two are clean.
+//! 3. **The same, on a field that has been CUT** (rung 2b). The rung that found
+//!    the defect. Rungs 1 and 2 were clean on uncut shapes, so cutting was the
+//!    one thing left that differed.
+//! 4. **Are the cut faces' normals geometry at all?** (rung 2c). Narrowing the
+//!    one above: a slot's walls face four ways, so a single shared normal cannot
+//!    have come from the shape. They did share one, and the sweep had never set
+//!    any.
+//! 5. **Field against an independently modelled nominal** (rung 3). The real
+//!    test, and only meaningful once the rest are clean.
+//!
+//! # Rung 3's nominal is written out by hand, and checked before it is believed
+//!
+//! Every other rung compares the engine against itself on purpose, to keep a
+//! failure localised. Rung 3 gives that up: [`slotted_block`] is coordinates and
+//! nothing else, so anything it reports is real.
+//!
+//! A fixture that ambitious needs its own check, or a mistake in it sends the
+//! search into the engine — the most expensive possible place to look for a
+//! mistake that is not there. [`the_hand_built_nominal_is_the_solid_it_claims_to_be`]
+//! validates it for manifoldness and winding and against its closed-form volume,
+//! and it earned its keep immediately: the first version came out inside out,
+//! with the volume exactly right and negative.
+//!
+//! Rung 3 then reports **exactly zero**, which is the correct answer — a flat
+//! mill driven straight through a block sweeps precisely the slotted solid — and
+//! is indistinguishable from a comparison that has fallen asleep. So
+//! [`rung_3_reports_a_nominal_that_is_wrong`] runs it again against a nominal a
+//! millimetre out and requires the millimetre back, with the right sign.
 
 use chipbreaker_core::contour::{ContourOptions, extract};
 use chipbreaker_core::deviation::compare;
@@ -275,4 +301,251 @@ fn rung_2c_cut_faces_all_point_the_same_way_which_cannot_be_geometry() {
         wall_normals.len()
     );
     let _ = AXES;
+}
+
+/// A block with a rectangular channel milled right through it, modelled by hand.
+///
+/// **The point is that nothing in the engine produced this.** Rungs 1 and 2
+/// compare a field against a mesh derived from that same field, which removes
+/// the engine's own error from both sides on purpose so that a failure localises.
+/// Rung 3 gives up that convenience: the nominal here is written out as
+/// coordinates, so anything the comparison reports is real.
+///
+/// The cross-section is a twelve-sided polygon in `(y, z)`, extruded along `x`.
+/// Twelve rather than eight because the cap has to be triangulated without
+/// T-junctions: splitting the slab under the channel at the channel's own walls
+/// means every interior edge is shared by exactly two triangles, which is what
+/// makes the result manifold. Getting that wrong produces a mesh that looks right
+/// and leaks under a ray cast.
+fn slotted_block(size: Vec3, slot_y: (f64, f64), floor: f64) -> TriMesh {
+    use chipbreaker_core::mesh::MeshMeta;
+    let (ya, yb) = slot_y;
+    let (x, y, z) = (size.x, size.y, size.z);
+
+    // Counter-clockwise in `(y, z)`, with `y` to the right and `z` up.
+    let section = [
+        (0.0, 0.0),
+        (ya, 0.0),
+        (yb, 0.0),
+        (y, 0.0),
+        (y, floor),
+        (y, z),
+        (yb, z),
+        (yb, floor),
+        (ya, floor),
+        (ya, z),
+        (0.0, z),
+        (0.0, floor),
+    ];
+    let n = section.len();
+
+    // Two copies of the section, at each end of the extrusion.
+    let mut vertices = Vec::with_capacity(2 * n);
+    for (vy, vz) in section {
+        vertices.push(Vec3::new(0.0, vy, vz));
+    }
+    for (vy, vz) in section {
+        vertices.push(Vec3::new(x, vy, vz));
+    }
+
+    let mut triangles: Vec<[u32; 3]> = Vec::new();
+    let idx = |i: usize| u32::try_from(i).expect("small");
+
+    // The sides, one quad per edge of the section.
+    for i in 0..n {
+        let j = (i + 1) % n;
+        let (a, b, c, d) = (idx(i), idx(j), idx(j + n), idx(i + n));
+        triangles.push([a, b, c]);
+        triangles.push([a, c, d]);
+    }
+
+    // The two caps. Five rectangles, chosen so that every edge they introduce is
+    // shared by exactly two of them or lies on the section's boundary.
+    let quads = [
+        [0, 1, 8, 11],  // under the channel, left of it
+        [1, 2, 7, 8],   // under the channel
+        [2, 3, 4, 7],   // under the channel, right of it
+        [11, 8, 9, 10], // the left rail
+        [7, 4, 5, 6],   // the right rail
+    ];
+    for q in quads {
+        // The section is counter-clockwise in `(y, z)`, which viewed from `+X`
+        // -- looking back along `-X`, where `+y` runs left -- is clockwise. So
+        // the near cap at `x = 0` takes the reversed order and the far cap takes
+        // the section's own. Written the other way round the mesh comes out
+        // inside out, with the volume exactly right and negative, which is what
+        // the fixture check below is for.
+        triangles.push([idx(q[2]), idx(q[1]), idx(q[0])]);
+        triangles.push([idx(q[3]), idx(q[2]), idx(q[0])]);
+        triangles.push([idx(q[0] + n), idx(q[1] + n), idx(q[2] + n)]);
+        triangles.push([idx(q[0] + n), idx(q[2] + n), idx(q[3] + n)]);
+    }
+
+    TriMesh::new(vertices, triangles, MeshMeta::synthetic()).expect("a valid hand-built mesh")
+}
+
+#[test]
+fn the_hand_built_nominal_is_the_solid_it_claims_to_be() {
+    // Checked before it is trusted. A nominal that is subtly wrong would fail
+    // rung 3 and send the search into the engine, which is the most expensive
+    // possible way to find a mistake in a test fixture.
+    use chipbreaker_core::mesh::validate::validate;
+    let (size, slot, floor) = (Vec3::new(24.0, 18.0, 10.0), (6.0, 12.0), 6.0);
+    let mesh = slotted_block(size, slot, floor);
+    let report = validate(&mesh);
+
+    let expected = size.x * (size.y * size.z - (slot.1 - slot.0) * (size.z - floor));
+    println!(
+        "hand-built nominal: {} vertices, {} triangles, volume {:.6} against {:.6} \
+         by arithmetic",
+        mesh.vertex_count(),
+        mesh.triangle_count(),
+        report.signed_volume,
+        expected
+    );
+    assert!(report.is_manifold, "the hand-built nominal is not manifold");
+    assert!(report.is_watertight, "the hand-built nominal leaks");
+    assert!(
+        report.is_orientation_consistent,
+        "the hand-built nominal has inconsistent winding"
+    );
+    assert!(
+        (report.signed_volume - expected).abs() < 1.0e-9,
+        "the hand-built nominal encloses {:.9} where the arithmetic says {expected:.9}; \
+         a sign error in the winding shows up here as a negative volume and a \
+         mis-placed vertex as a small difference",
+        report.signed_volume
+    );
+}
+
+#[test]
+fn rung_3_a_cut_field_against_an_independently_modelled_nominal() {
+    // **The real test**, and only meaningful because the three below it are
+    // clean. Nothing the engine produced appears on the nominal side.
+    use chipbreaker_core::sweep::batch::{DEFAULT_BATCH, cut_all};
+    use chipbreaker_core::sweep::cut::{CutScratch, SweepMethod};
+    use chipbreaker_core::sweep::{LinearMove, Motion};
+    use chipbreaker_core::tool::catalog::{Shank, flat_end_mill};
+
+    let size = Vec3::new(24.0, 18.0, 10.0);
+    let (radius, centre_y, floor) = (3.0, 9.0, 6.0);
+    let nominal = slotted_block(size, (centre_y - radius, centre_y + radius), floor);
+
+    let mut field = field_from(&shapes::box_solid(Vec3::new(0.0, 0.0, 0.0), size));
+    let profile =
+        flat_end_mill(2.0 * radius, 30.0, &Shank::plain(2.0 * radius, 60.0)).expect("valid");
+    let mut scratch = CutScratch::new(&profile);
+    cut_all(
+        &mut field,
+        &profile,
+        // Starting and ending clear of the block, so the channel goes right
+        // through and the nominal has no rounded ends to model.
+        &[Motion::Linear(LinearMove {
+            start: Vec3::new(-6.0, centre_y, floor),
+            end: Vec3::new(size.x + 6.0, centre_y, floor),
+        })],
+        SweepMethod::Analytic {
+            tolerance: SPACING / 10.0,
+        },
+        &mut scratch,
+        DEFAULT_BATCH,
+    );
+
+    let d = compare(&field, &nominal, Some(&shapes::box_solid(Vec3::ZERO, size)));
+    let over = d.samples.iter().filter(|s| s.signed_mm.abs() > SPACING).count();
+    println!(
+        "rung 3: {} samples, {over} above one cell, worst gouge {:.4} mm, worst \
+         excess {:.4} mm, rms {:.4} mm, worst projection gap {:.4} mm",
+        d.samples.len(),
+        d.worst_gouge_mm,
+        d.worst_excess_mm,
+        d.rms_mm,
+        d.worst_projection_gap_mm
+    );
+
+    assert!(
+        d.samples.len() > 10_000,
+        "too few samples to mean anything: {}",
+        d.samples.len()
+    );
+    // A correctly simulated part against its true nominal. The residual is the
+    // engine's own reconstruction error and nothing else, so the bound is the one
+    // rung 2 established: half a cell, where dual contouring places a vertex on a
+    // flat face.
+    let bound = SPACING / 2.0;
+    assert!(
+        d.worst_gouge_mm <= bound,
+        "rung 3 reported a {:.4} mm gouge against a hand-modelled nominal, beyond \
+         the {bound} mm the lattice accounts for. Rungs 1, 2 and 2c are clean, so \
+         this is neither the comparison arithmetic nor the normals: it is the \
+         simulation disagreeing with the part it was asked to make.",
+        d.worst_gouge_mm
+    );
+    assert!(
+        d.worst_excess_mm <= bound,
+        "rung 3 reported {:.4} mm of excess stock against a hand-modelled nominal, \
+         beyond the {bound} mm the lattice accounts for",
+        d.worst_excess_mm
+    );
+}
+
+#[test]
+fn rung_3_reports_a_nominal_that_is_wrong() {
+    // Rung 3 comes back exactly zero, and a test that reports zero has to prove
+    // it could have reported something else. The zero is not luck: a flat mill
+    // driven straight through a block sweeps exactly the slotted solid, and every
+    // span endpoint is an exact intersection with it, so the two surfaces
+    // genuinely coincide. But "genuinely coincide" and "the comparison is asleep"
+    // look identical from the outside.
+    //
+    // So the same field is compared against a nominal whose channel floor is a
+    // millimetre too low. The part is then a millimetre of excess stock across
+    // the whole channel, and rung 3 must say so, with that sign.
+    use chipbreaker_core::sweep::batch::{DEFAULT_BATCH, cut_all};
+    use chipbreaker_core::sweep::cut::{CutScratch, SweepMethod};
+    use chipbreaker_core::sweep::{LinearMove, Motion};
+    use chipbreaker_core::tool::catalog::{Shank, flat_end_mill};
+
+    let size = Vec3::new(24.0, 18.0, 10.0);
+    let (radius, centre_y, floor) = (3.0, 9.0, 6.0);
+    let error = 1.0;
+    let wrong = slotted_block(size, (centre_y - radius, centre_y + radius), floor - error);
+
+    let mut field = field_from(&shapes::box_solid(Vec3::new(0.0, 0.0, 0.0), size));
+    let profile =
+        flat_end_mill(2.0 * radius, 30.0, &Shank::plain(2.0 * radius, 60.0)).expect("valid");
+    let mut scratch = CutScratch::new(&profile);
+    cut_all(
+        &mut field,
+        &profile,
+        &[Motion::Linear(LinearMove {
+            start: Vec3::new(-6.0, centre_y, floor),
+            end: Vec3::new(size.x + 6.0, centre_y, floor),
+        })],
+        SweepMethod::Analytic {
+            tolerance: SPACING / 10.0,
+        },
+        &mut scratch,
+        DEFAULT_BATCH,
+    );
+
+    let d = compare(&field, &wrong, Some(&shapes::box_solid(Vec3::ZERO, size)));
+    println!(
+        "rung 3, nominal {error} mm too deep: worst gouge {:.4} mm, worst excess \
+         {:.4} mm, rms {:.4} mm",
+        d.worst_gouge_mm, d.worst_excess_mm, d.rms_mm
+    );
+
+    assert!(
+        (d.worst_excess_mm - error).abs() < SPACING / 2.0,
+        "a channel machined {error} mm shallower than the nominal must read as \
+         {error} mm of excess stock; it read {:.4}",
+        d.worst_excess_mm
+    );
+    assert!(
+        d.worst_gouge_mm < SPACING / 2.0,
+        "a part with material left standing is not gouged anywhere, but rung 3 \
+         reported a {:.4} mm gouge. The sign is inverted.",
+        d.worst_gouge_mm
+    );
 }
