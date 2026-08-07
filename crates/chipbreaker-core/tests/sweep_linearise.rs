@@ -32,10 +32,24 @@
 //! by a micrometre, and the field records it.
 //!
 //! The practical reading is the reverse of the expected one. A 0.25 mm lattice
-//! can still distinguish a 1 um post tolerance from a 10 um one, so a coarse
-//! simulation grid does not license a coarse post. What limits refinement is
-//! cost alone: the sagitta is second order in the angle, so the chord count runs
-//! as the inverse square root of the tolerance, forever.
+//! can still tell a 1 um chord tolerance from a 10 um one. What limits
+//! refinement is cost alone: the sagitta is second order in the angle, so the
+//! chord count runs as the inverse square root of the tolerance, forever.
+//!
+//! # What this finding does NOT say
+//!
+//! It is about linearisation as a **validation device** -- our chords, compared
+//! against our arc -- and not about a customer's post-processor tolerance.
+//!
+//! If a post has already emitted chords, those chords are what the machine
+//! executes. Simulating them is then simply correct, and there is no error to
+//! measure: the part really is the chorded one. The tolerance question only
+//! arises when *we* choose to linearise something the controller would have
+//! interpolated natively, which is exactly what `--no-arc-native` does and
+//! nothing else does.
+//!
+//! Stated the other way round: this measures how well our two computations of
+//! one arc agree, not how well a chorded program matches an ideal curve.
 //!
 //! Run with `--nocapture` to see the tables.
 
