@@ -81,6 +81,18 @@ cuts both ways:
   resolution and toolpath resolution are independent; a coarse field does not
   blur away a difference the program actually contains.
 
+### Every accuracy figure floors against its input
+
+A deviation or volume figure is a statement about Chipbreaker only while the cell
+size is coarser than the geometry it was given. Below that the grid reproduces
+the source mesh's own facets faithfully, and the number reported is the mesher's
+error rather than the engine's — measured, at Unit 9, as an rms deviation that
+*fell* from 0.0122 mm to 0.0035 mm and then *rose* to 0.0053 mm once the grid
+passed the source's 0.4 mm facets.
+
+So a coarse STL puts a floor under any tolerance that can be claimed from it.
+See [ADR 0005](docs/adr/0005-deviation-not-volume.md).
+
 ### Volume is a diagnostic; deviation is the metric
 
 Removed volume is reported per bundle and never averaged, and accuracy claims are
@@ -233,6 +245,7 @@ because that is usually the more useful half.
 | [0004](docs/adr/0004-dexel-binary-format.md) | Why `.dexel` is binary and not text |
 | [0005](docs/adr/0005-deviation-not-volume.md) | Volume is a diagnostic; deviation is the metric |
 | [0006](docs/adr/0006-arc-closed-form-scope-and-batch-invisibility.md) | The arc closed form's scope, and batching's invisibility |
+| [0007](docs/adr/0007-no-local-refinement.md) | A dexel ray is global, so local refinement is not available |
 
 ## Roadmap
 
@@ -246,7 +259,8 @@ because that is usually the more useful half.
 | U6 | Tri-dexel field, the sampling theorem, deviation harness | **done** |
 | U7 | 3-axis material removal: linear moves | **done** |
 | U8 | Arcs, helices, motion batching | **done** |
-| U9–U11 | Dual contouring, adaptive resolution, deterministic parallelism | next |
+| U9 | Dual contouring to a watertight mesh | **done** |
+| U10–U11 | Rectilinear graded resolution, deterministic parallelism | next |
 | U12–U15 | Deviation fields, gouge classification, collision detection, multi-setup | |
 | U16–U18 | 5-axis kinematics, tilted swept volumes, error-bounded sub-stepping | |
 | U19–U20 | WASM target and demo, commercial packaging (C ABI, Python bindings) | |

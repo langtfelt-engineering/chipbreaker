@@ -2,7 +2,7 @@
 
 - **Status:** accepted
 - **Date:** 2026-08-03
-- **Unit:** 6 (tri-dexel field)
+- **Unit:** 6 (tri-dexel field), amended at Unit 9
 - **Binds:** U9 (surface extraction), U12, U13 (customer-facing accuracy claims)
 - **Related:** [ADR 0001](0001-spans-arena.md), [ADR 0004](0004-dexel-binary-format.md)
 
@@ -168,3 +168,41 @@ by autocomplete rather than by this document still gets told.
   records the estimate in `.tdx` provenance so a field carries the evidence with
   it, and `dexel build` warns when the requested cell size is finer than the
   input mesh supports.
+
+
+## Amendment, Unit 9: every accuracy metric floors against its input
+
+Volume was rejected above partly because it **floors out against tessellation**.
+Unit 9 found the same floor in deviation, which is the metric that replaced it,
+and the coincidence is not one — it is a general property that deserves stating
+once rather than being rediscovered per unit.
+
+**Any accuracy metric floors against the fidelity of its input. Past that point
+you are no longer measuring the pipeline; you are measuring the mesher.**
+
+Measured at Unit 9, extracting a subdivision-4 icosphere of radius 8 whose facets
+are about 0.4 mm across:
+
+| cell size | rms deviation from the ideal sphere |
+|---:|---:|
+| 0.8 mm | 0.012246 mm |
+| 0.4 mm | 0.003464 mm |
+| 0.2 mm | **0.005297 mm** |
+
+The last row rises, and nothing is wrong. At 0.2 mm the grid has become finer
+than the source mesh's own facets, so it is faithfully reproducing a faceted
+polyhedron while the measurement compares against an ideal sphere. The number it
+reports is the tessellation's error, not the field's. With a subdivision-5 sphere
+all three rungs stay above the floor: 0.015229, 0.003099, 0.000851.
+
+### What this binds
+
+- **Unit 9 onward**, any convergence assertion must keep the grid coarser than
+  the input geometry, or it is asserting something about the input.
+- **Unit 12**, whose deviation fields compare an extracted mesh against a nominal
+  part, inherits this twice over: once for the stock mesh and once for the
+  nominal.
+- **Unit 13's error budget** must say it in customer-facing terms. A customer
+  supplying a coarse STL and asking for findings at 0.01 mm is making exactly
+  this mistake in a different costume, and the honest answer is that the tolerance
+  they can be given is bounded below by the tolerance their input carries.

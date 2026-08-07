@@ -342,9 +342,11 @@ fn refining_the_grid_reduces_the_deviation_until_it_meets_the_tessellation() {
     // while the test measures against an ideal sphere. The deviation it reports
     // is the tessellation's, not the field's.
     //
-    // The lesson is for the customer-facing claim as much as for the test: a
-    // deviation figure is only a statement about the pipeline while the grid is
-    // coarser than the input geometry. Below that it measures the input.
+    // The lesson generalises and is recorded once, in ADR 0005: **any accuracy
+    // metric floors against the fidelity of its input**, and past that point it
+    // measures the mesher rather than the pipeline. Volume floors that way,
+    // deviation floors that way, and Unit 12's comparison against a nominal part
+    // will floor that way twice -- once for each mesh it is given.
     //
     // A subdivision-5 sphere has facets near 0.2 mm, which keeps all three rungs
     // above the floor.

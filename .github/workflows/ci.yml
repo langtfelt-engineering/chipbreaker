@@ -261,10 +261,11 @@ jobs:
           cargo run -q -p chipbreaker-core --example generate_dexel_corpus             > tests/corpus/dexel/expectations.json
           cargo run -q -p chipbreaker-core --example generate_tri_corpus             > tests/corpus/tridexel/expectations.json
           cargo run -q -p chipbreaker-core --example generate_sweep_corpus             > tests/corpus/sweep/expectations.json
+          cargo run -q -p chipbreaker-core --example generate_contour_corpus             > tests/corpus/contour/expectations.json
 
       - name: Nothing may have changed, and nothing may be empty
         run: |
-          for f in tests/corpus/tool/standard-library.json                    tests/corpus/tool/expectations.json                    tests/corpus/gcode/expectations.json                    tests/corpus/dexel/expectations.json                    tests/corpus/tridexel/expectations.json                    tests/corpus/sweep/expectations.json; do
+          for f in tests/corpus/tool/standard-library.json                    tests/corpus/tool/expectations.json                    tests/corpus/gcode/expectations.json                    tests/corpus/dexel/expectations.json                    tests/corpus/tridexel/expectations.json                    tests/corpus/sweep/expectations.json                    tests/corpus/contour/expectations.json; do
             if [ ! -s "$f" ]; then
               echo "::error file=$f::regenerated to an empty file"
               exit 1
