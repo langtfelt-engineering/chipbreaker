@@ -491,6 +491,86 @@ fn widen(value: f64, n: u32, up: bool) -> f64 {
     v
 }
 
+/// Squared distance from `p` to the nearest point of `b`, zero when inside.
+fn aabb_distance_squared(b: &Aabb3, p: Vec3) -> f64 {
+    if b.is_empty() {
+        return f64::INFINITY;
+    }
+    let axis = |v: f64, lo: f64, hi: f64| {
+        if v < lo {
+            lo - v
+        } else if v > hi {
+            v - hi
+        } else {
+            0.0
+        }
+    };
+    let dx = axis(p.x, b.min.x, b.max.x);
+    let dy = axis(p.y, b.min.y, b.max.y);
+    let dz = axis(p.z, b.min.z, b.max.z);
+    dx * dx + dy * dy + dz * dz
+}
+
+/// The point of triangle `abc` nearest to `p`.
+///
+/// The barycentric region test: seven regions -- the interior, three vertices,
+/// three edges -- decided by the signs of the same handful of dot products, with
+/// no division until the region is known. Written this way rather than as
+/// "project onto the plane, then clamp" because clamping a projected point does
+/// not land on the nearest point of the triangle except in the interior case.
+fn closest_on_triangle(a: Vec3, b: Vec3, c: Vec3, p: Vec3) -> Vec3 {
+    let ab = b - a;
+    let ac = c - a;
+    let ap = p - a;
+    let d1 = ab.dot(ap);
+    let d2 = ac.dot(ap);
+    if d1 <= 0.0 && d2 <= 0.0 {
+        return a;
+    }
+
+    let bp = p - b;
+    let d3 = ab.dot(bp);
+    let d4 = ac.dot(bp);
+    if d3 >= 0.0 && d4 <= d3 {
+        return b;
+    }
+
+    let vc = d1 * d4 - d3 * d2;
+    if vc <= 0.0 && d1 >= 0.0 && d3 <= 0.0 {
+        let v = d1 / (d1 - d3);
+        return a + ab * v;
+    }
+
+    let cp = p - c;
+    let d5 = ab.dot(cp);
+    let d6 = ac.dot(cp);
+    if d6 >= 0.0 && d5 <= d6 {
+        return c;
+    }
+
+    let vb = d5 * d2 - d1 * d6;
+    if vb <= 0.0 && d2 >= 0.0 && d6 <= 0.0 {
+        let w = d2 / (d2 - d6);
+        return a + ac * w;
+    }
+
+    let va = d3 * d6 - d5 * d4;
+    if va <= 0.0 && (d4 - d3) >= 0.0 && (d5 - d6) >= 0.0 {
+        let w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+        return b + (c - b) * w;
+    }
+
+    // Interior: the projection onto the plane, in barycentric coordinates.
+    let denom = va + vb + vc;
+    if denom <= 0.0 {
+        // A degenerate triangle has no interior to project into.
+        return a;
+    }
+    let v = vb / denom;
+    let w = vc / denom;
+    a + ab * v + ac * w
+}
+
 /// ULP of padding applied to every node bound.
 ///
 /// Four covers the rounding of the bound itself plus a couple of operations in
@@ -732,6 +812,65 @@ impl Bvh {
     pub fn intersect_ray(&self, mesh: &TriMesh, ray: &Ray) -> Result<Option<Hit>, RayError> {
         let (hits, _) = self.intersect_ray_all(mesh, ray)?;
         Ok(hits.into_iter().find(|h| h.t >= 0.0))
+    }
+
+    /// The point of the mesh's surface nearest to `p`, and which triangle it is
+    /// on.
+    ///
+    /// Returns `None` only for an empty mesh.
+    ///
+    /// # Determinism
+    ///
+    /// Branch and bound prunes on a running best, so the *order* nodes are
+    /// visited decides which of two equally distant triangles is examined first —
+    /// and on a mesh with a symmetry that is not a rare case, it is every edge.
+    /// Two guards, both necessary:
+    ///
+    /// - Children are pushed in a fixed order, never sorted by distance. Sorting
+    ///   by a float would make the traversal depend on rounding.
+    /// - A tie in distance is broken by **triangle index**, which is a property
+    ///   of the mesh rather than of the walk. Without it the answer would depend
+    ///   on which subtree happened to be reached first, which is exactly the kind
+    ///   of hidden ordering ADR 0001 rules out.
+    #[must_use]
+    pub fn closest_point(&self, mesh: &TriMesh, p: Vec3) -> Option<(Vec3, u32)> {
+        if self.nodes.is_empty() {
+            return None;
+        }
+        let mut best_d2 = f64::INFINITY;
+        let mut best: Option<(Vec3, u32)> = None;
+        let mut stack = vec![0u32];
+        while let Some(index) = stack.pop() {
+            let node = &self.nodes[index as usize];
+            // The bound is a lower bound on any distance inside this node, so a
+            // node no closer than the running best cannot improve it. Compared
+            // with `>` rather than `>=` so that a node exactly at the current
+            // best is still opened: it may hold a lower-indexed triangle at the
+            // same distance, and the tie-break must see it.
+            if aabb_distance_squared(&node.bounds, p) > best_d2 {
+                continue;
+            }
+            if node.is_leaf() {
+                let start = node.first_or_left as usize;
+                for &t in &self.order[start..start + node.count as usize] {
+                    let [a, b, c] = mesh.triangle(t);
+                    let q = closest_on_triangle(a, b, c, p);
+                    let d2 = q.distance_squared(p);
+                    let better = match best {
+                        None => true,
+                        Some((_, bt)) => d2 < best_d2 || (d2 == best_d2 && t < bt),
+                    };
+                    if better {
+                        best_d2 = d2;
+                        best = Some((q, t));
+                    }
+                }
+            } else {
+                stack.push(node.first_or_left);
+                stack.push(node.first_or_left + 1);
+            }
+        }
+        best
     }
 
     /// Appends every triangle whose bounds overlap `query` to `out`, ascending.
@@ -1356,5 +1495,105 @@ mod tests {
         merged.merge(&stats);
         assert_eq!(merged.triangle_tests, stats.triangle_tests * 2);
         assert_eq!(RayStats::default().exact_fraction(), 0.0);
+    }
+
+    /// The same query without a hierarchy: every triangle, no pruning.
+    fn closest_by_brute_force(mesh: &TriMesh, p: Vec3) -> (Vec3, u32) {
+        let mut best = (Vec3::new(0.0, 0.0, 0.0), 0u32);
+        let mut best_d2 = f64::INFINITY;
+        for t in 0..mesh.triangle_count() {
+            let [a, b, c] = mesh.triangle(t);
+            let q = closest_on_triangle(a, b, c, p);
+            let d2 = q.distance_squared(p);
+            if d2 < best_d2 {
+                best_d2 = d2;
+                best = (q, t);
+            }
+        }
+        (best, best_d2).0
+    }
+
+    #[test]
+    fn the_hierarchy_finds_the_same_closest_point_as_brute_force() {
+        // The pruning is the whole of the risk here: a bound computed slightly
+        // too tight culls the real answer and the result is quietly wrong rather
+        // than slow. Brute force is the only check that catches that, so it is
+        // worth the quadratic cost on a small mesh.
+        for mesh in [
+            crate::mesh::shapes::box_solid(Vec3::new(0.0, 0.0, 0.0), Vec3::new(4.0, 3.0, 2.0)),
+            crate::mesh::shapes::icosphere(2.0, 2),
+            crate::mesh::shapes::torus(3.0, 1.0, 24, 12),
+        ] {
+            let bvh = Bvh::build(&mesh);
+            // A lattice that lands inside, outside, on faces and past corners.
+            for i in 0..7 {
+                for j in 0..7 {
+                    for k in 0..7 {
+                        let p = Vec3::new(
+                            -3.0 + f64::from(i),
+                            -3.0 + f64::from(j),
+                            -3.0 + f64::from(k),
+                        );
+                        let (q, _) = bvh.closest_point(&mesh, p).expect("non-empty");
+                        let (want, _) = closest_by_brute_force(&mesh, p);
+                        assert!(
+                            (q.distance(p) - want.distance(p)).abs() < 1.0e-12,
+                            "at {p:?}: hierarchy found {:.12} away, brute force \
+                             {:.12}. The pruning bound culled the real answer.",
+                            q.distance(p),
+                            want.distance(p)
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_point_on_a_face_is_its_own_closest_point() {
+        let m = crate::mesh::shapes::box_solid(Vec3::new(0.0, 0.0, 0.0), Vec3::new(4.0, 3.0, 2.0));
+        let bvh = Bvh::build(&m);
+        for p in [
+            Vec3::new(2.0, 1.5, 0.0),
+            Vec3::new(2.0, 1.5, 2.0),
+            Vec3::new(0.0, 1.5, 1.0),
+            Vec3::new(4.0, 3.0, 2.0),
+        ] {
+            let (q, _) = bvh.closest_point(&m, p).expect("non-empty");
+            assert!(
+                q.distance(p) < 1.0e-12,
+                "a point on the surface reported {:.12} mm away at {p:?}",
+                q.distance(p)
+            );
+        }
+    }
+
+    #[test]
+    fn a_tie_is_broken_by_triangle_index_and_not_by_the_walk() {
+        // The centre of a cube is equidistant from all six faces, so the answer
+        // is decided entirely by the tie-break. It must be the same every time
+        // and must not depend on which subtree the stack reached first.
+        let m = crate::mesh::shapes::box_solid(Vec3::new(0.0, 0.0, 0.0), Vec3::new(2.0, 2.0, 2.0));
+        let bvh = Bvh::build(&m);
+        let centre = Vec3::new(1.0, 1.0, 1.0);
+        let (_, first) = bvh.closest_point(&m, centre).expect("non-empty");
+        for _ in 0..8 {
+            let (_, again) = bvh.closest_point(&m, centre).expect("non-empty");
+            assert_eq!(first, again, "the tie broke differently between calls");
+        }
+        // And it is the lowest-indexed triangle at that distance, which is a
+        // property of the mesh rather than of the traversal.
+        let d = closest_by_brute_force(&m, centre).0.distance(centre);
+        let lowest = (0..m.triangle_count())
+            .find(|t| {
+                let [a, b, c] = m.triangle(*t);
+                (closest_on_triangle(a, b, c, centre).distance(centre) - d).abs() < 1.0e-12
+            })
+            .expect("some triangle is nearest");
+        assert_eq!(
+            first, lowest,
+            "the tie went to triangle {first}, but {lowest} is the lowest-indexed \
+             one at that distance"
+        );
     }
 }

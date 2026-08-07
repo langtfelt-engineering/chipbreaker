@@ -14,30 +14,47 @@
 //! "there is metal left on the face" into "you have cut into it", which is the
 //! difference between a part that needs another pass and a part that is scrap.
 //!
-//! # Perpendicular deviation, not sample distance
+//! # Three distances, and which one is the metric
 //!
-//! This is the Unit 6 correction, and it matters more here than anywhere else in
-//! the engine.
+//! Unit 6 established that **sample distance** — how far a query point is from
+//! the nearest place the field sampled — is a property of the lattice and not of
+//! the part, that it exceeds the real error by up to `3/sqrt(2)`, and that
+//! pointwise the ratio `1/(sin θ · cos θ)` is unbounded. That argument stands and
+//! nothing here reports sample distance.
 //!
-//! - **Sample distance** is how far the query point is from the nearest place
-//!   the field sampled. It is a property of the lattice.
-//! - **Perpendicular deviation** is how far the surface is from where it should
-//!   be, measured along the surface normal. It is a property of the part.
+//! But it leaves two candidates, not one, and the first version of this module
+//! conflated them:
 //!
-//! They differ by up to `3/sqrt(2)`, and pointwise the ratio is
-//! `1/(sin θ · cos θ)`, which is **unbounded**. The unboundedness is not a
-//! curiosity: it is worst precisely on the *best-sampled* surfaces, where
-//! perpendicular error tends to zero while sample distance does not. A face
-//! exactly normal to a bundle is reconstructed perfectly and still sits up to
-//! `h/sqrt(2)` from the nearest ray.
+//! - **Surface distance.** How far the result's surface is from the nominal
+//!   surface, to the nearest point of it. This is what `d_H` is *defined* as, so
+//!   it is the metric. Reported as `signed_mm`.
+//! - **Perpendicular distance.** The same thing measured along the stored
+//!   normal, by casting a ray. Reported as `perpendicular_mm`.
 //!
-//! Gouge depth is a perpendicular quantity. Reporting sample distance instead
-//! would overstate every gouge, and overstate them most on the surfaces that
-//! were machined best — the worst possible direction of error for a tool whose
-//! job is to say what is wrong.
+//! Where the two surfaces are locally parallel the two agree exactly, which is
+//! most of any part. Where they are not, the perpendicular one is an **upper
+//! bound and nothing more**: the cast point lies on the nominal, so the nearest
+//! point can only be closer.
 //!
-//! The projection uses the endpoint normals stored at Unit 9. That is the second
-//! of the three units the four-byte decision was justified by.
+//! ## What the difference looks like
+//!
+//! At a step edge the perpendicular ray misses the wall beside it and travels on
+//! until it strikes something else. A slot's floor 0.06 mm out laterally reads as
+//! **5 mm** out perpendicularly, because the ray leaves along the floor's normal,
+//! passes the wall, and hits the top face of the part. That is not a 5 mm defect;
+//! it is a 0.06 mm one measured with the wrong ruler, and it appears at every
+//! step edge in every program.
+//!
+//! So the metric is the surface distance, and the perpendicular one is published
+//! beside it rather than discarded — the same discipline Unit 8 settled on for
+//! its two error measures. Their disagreement is itself diagnostic:
+//! [`DeviationField::worst_projection_gap_mm`] is large exactly where the result
+//! meets the nominal at a steep angle, which is where a customer should be told
+//! that a perpendicular reading is not meaningful.
+//!
+//! Both use the endpoint normals stored at Unit 9 — the perpendicular one for its
+//! direction, and **both** for their sign. That is the second of the three units
+//! the four-byte decision was justified by.
 //!
 //! # What a deviation bound covers
 //!
@@ -72,11 +89,28 @@ pub struct Deviation {
     pub at: Vec3,
     /// Outward normal of the result there, from the stored endpoint normal.
     pub normal: Vec3,
-    /// **Signed perpendicular deviation, in millimetres.** Positive is excess
-    /// stock, negative is a gouge. See the module header.
+    /// **The metric: signed distance to the nearest point of the nominal
+    /// surface, in millimetres.** Positive is excess stock, negative is a gouge.
+    /// See the module header.
     pub signed_mm: f64,
+    /// The same deviation measured along `normal` instead, by casting a ray.
+    ///
+    /// A diagnostic, never the finding. Equal to `signed_mm` wherever the two
+    /// surfaces are locally parallel, and an upper bound on it everywhere.
+    pub perpendicular_mm: f64,
     /// Which bundle's ray this endpoint came from.
     pub axis: usize,
+}
+
+impl Deviation {
+    /// How much the perpendicular reading overstates the metric here.
+    ///
+    /// Zero on parallel surfaces; large at a step edge, where the cast leaves
+    /// along the normal and misses the wall beside it.
+    #[must_use]
+    pub fn projection_gap_mm(&self) -> f64 {
+        (self.perpendicular_mm.abs() - self.signed_mm.abs()).max(0.0)
+    }
 }
 
 impl Hashable for Deviation {
@@ -85,6 +119,7 @@ impl Hashable for Deviation {
         h.f64_slice(&self.at.to_array());
         h.f64_slice(&self.normal.to_array());
         h.f64(self.signed_mm);
+        h.f64(self.perpendicular_mm);
         h.u64(self.axis as u64);
         h.end();
     }
@@ -101,6 +136,14 @@ pub struct DeviationField {
     pub worst_excess_mm: f64,
     /// Root-mean-square of the signed values, reduced in sample order.
     pub rms_mm: f64,
+    /// The largest amount by which the perpendicular reading overstated the
+    /// metric at any sample.
+    ///
+    /// Published rather than asserted on. A large value does not mean the
+    /// comparison is wrong — it means the two surfaces meet at a steep angle
+    /// somewhere, so a perpendicular reading there describes the geometry of the
+    /// measurement rather than the geometry of the part.
+    pub worst_projection_gap_mm: f64,
     /// Estimated facet size of the stock mesh, in millimetres.
     pub stock_facet_mm: f64,
     /// Estimated facet size of the nominal mesh.
@@ -146,6 +189,7 @@ impl Hashable for DeviationField {
         h.f64(self.worst_gouge_mm);
         h.f64(self.worst_excess_mm);
         h.f64(self.rms_mm);
+        h.f64(self.worst_projection_gap_mm);
         // The facet estimates and the spacing describe the inputs, and a report
         // that omitted them from the digest could claim a tolerance its inputs
         // never supported without the digest noticing.
@@ -210,11 +254,14 @@ pub fn compare(field: &TriDexelField, nominal: &TriMesh, stock: Option<&TriMesh>
                         origin.z + direction.z * t,
                     );
                     let normal = code.decode();
-                    if let Some(signed) = signed_deviation(nominal, &bvh, at, normal) {
+                    if let Some((surface, perpendicular)) =
+                        signed_deviation(nominal, &bvh, at, normal)
+                    {
                         samples.push(Deviation {
                             at,
                             normal,
-                            signed_mm: signed,
+                            signed_mm: surface,
+                            perpendicular_mm: perpendicular,
                             axis: axis.index(),
                         });
                     }
@@ -247,6 +294,7 @@ pub fn reduce(
 ) -> DeviationField {
     let mut worst_gouge = 0.0f64;
     let mut worst_excess = 0.0f64;
+    let mut worst_gap = 0.0f64;
     let mut sum_sq = 0.0f64;
     for d in &samples {
         if d.signed_mm < 0.0 {
@@ -254,6 +302,7 @@ pub fn reduce(
         } else {
             worst_excess = worst_excess.max(d.signed_mm);
         }
+        worst_gap = worst_gap.max(d.projection_gap_mm());
         sum_sq += d.signed_mm * d.signed_mm;
     }
     #[allow(clippy::cast_precision_loss, reason = "a sample count")]
@@ -262,6 +311,7 @@ pub fn reduce(
         worst_gouge_mm: worst_gouge,
         worst_excess_mm: worst_excess,
         rms_mm: (sum_sq / n).sqrt(),
+        worst_projection_gap_mm: worst_gap,
         stock_facet_mm,
         nominal_facet_mm,
         spacing_mm,
@@ -269,36 +319,45 @@ pub fn reduce(
     }
 }
 
-/// Signed perpendicular distance from `at` to the nominal surface.
+/// Signed deviation from `at` to the nominal surface, both ways of measuring it.
 ///
-/// # Sign from containment, magnitude from the normal
+/// Returns `(surface, perpendicular)`, both signed, in millimetres.
 ///
-/// The sign is decided by whether `at` lies **inside** the nominal solid, and
-/// the magnitude by the nearest nominal surface along `+/-normal`.
+/// # Sign from containment, not from which direction hit first
 ///
-/// The first version decided the sign from *which direction* found the nominal
-/// first, and it was wrong in a way worth recording. Consider the side wall of a
-/// slot that should not exist: the wall is deep inside the nominal solid, so
-/// casting inward finds the far side of the part before casting outward finds
-/// anything, and the nearer hit is the inward one. That reads as excess stock
-/// when the truth is a gouge — the result's surface is inside the nominal
-/// because material was removed that should have stayed.
+/// The sign is decided by whether `at` lies **inside** the nominal solid.
+///
+/// The first version decided it from *which direction* found the nominal first,
+/// and it was wrong in a way worth recording. Consider the side wall of a slot
+/// that should not exist: the wall is deep inside the nominal solid, so casting
+/// inward finds the far side of the part before casting outward finds anything,
+/// and the nearer hit is the inward one. That reads as excess stock when the
+/// truth is a gouge — the result's surface is inside the nominal because material
+/// was removed that should have stayed.
 ///
 /// Containment does not have that failure mode. A result surface inside the
 /// nominal means material is missing there, wherever the nearest face happens to
 /// lie; a result surface outside it means material is left over. The corpus
 /// caught this as a plunge-too-deep case reporting 2.8 mm of *excess*.
 ///
-/// **The magnitude is still perpendicular**, cast along the stored normal, which
-/// is the quantity the module header insists on: a nearest-point search would
-/// return sample distance instead, and the two can differ without bound.
+/// One sign serves both magnitudes. They measure the distance to the same
+/// surface along different paths, so they cannot disagree about which side of it
+/// the point is on.
 ///
-/// `None` when neither direction finds the nominal within reach, which happens
-/// where the result has no counterpart on the nominal at all.
-fn signed_deviation(nominal: &TriMesh, bvh: &Bvh, at: Vec3, normal: Vec3) -> Option<f64> {
+/// # Two magnitudes
+///
+/// The surface distance is the metric and always exists for a non-empty nominal.
+/// The perpendicular one is a cast along `+/-normal` and can miss entirely, in
+/// which case it falls back to the surface distance rather than to nothing: a
+/// missing cast means the normal points into open space, not that there is no
+/// deviation.
+fn signed_deviation(nominal: &TriMesh, bvh: &Bvh, at: Vec3, normal: Vec3) -> Option<(f64, f64)> {
     // Far enough to cross any plausible part, short enough that a stray hit on
     // the far side of the model is not mistaken for a local deviation.
     const REACH: f64 = 200.0;
+
+    let (nearest, _) = bvh.closest_point(nominal, at)?;
+    let surface = nearest.distance(at);
 
     let cast = |direction: Vec3| -> Option<f64> {
         bvh.intersect_ray(
@@ -314,18 +373,19 @@ fn signed_deviation(nominal: &TriMesh, bvh: &Bvh, at: Vec3, normal: Vec3) -> Opt
         .map(|h| h.t)
     };
     let back = Vec3::new(-normal.x, -normal.y, -normal.z);
-    let out_hit = cast(normal);
-    let in_hit = cast(back);
-
-    let magnitude = match (out_hit, in_hit) {
+    let perpendicular = match (cast(normal), cast(back)) {
         (Some(a), Some(b)) => a.min(b),
-        (Some(a), None) => a,
-        (None, Some(b)) => b,
-        (None, None) => return None,
+        (Some(a), None) | (None, Some(a)) => a,
+        (None, None) => surface,
     };
+
     // Inside the nominal: material that should be here is gone.
-    let inside = contains(nominal, bvh, at, normal);
-    Some(if inside { -magnitude } else { magnitude })
+    let sign = if contains(nominal, bvh, at, normal) {
+        -1.0
+    } else {
+        1.0
+    };
+    Some((sign * surface, sign * perpendicular))
 }
 
 /// Whether `at` lies inside the nominal solid.
