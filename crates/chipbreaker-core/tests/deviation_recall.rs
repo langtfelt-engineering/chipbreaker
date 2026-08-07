@@ -210,6 +210,16 @@ fn the_sign_convention_is_gouges_negative_and_excess_positive() {
 }
 
 #[test]
+// **Nightly, not per push.** Every sampled case builds two fields and contours
+// one, which is 140 seconds in the debug build `cargo test --all` uses against
+// 33 in the release build the nightly job uses.
+//
+// Recall is the unit's headline number and it is measured, not asserted, so it
+// belongs where it can be measured properly rather than where it can be
+// afforded hourly. The fast suite keeps what a commit can plausibly break: the
+// sign convention, the false-positive floor, the tessellation floor, and the
+// ladder.
+#[ignore = "nightly: 140s in debug, see the note above"]
 fn recall_against_depth() {
     // The headline. Reported as a curve because the shape near the floor is the
     // answer to "what is the smallest gouge you can find", and a single

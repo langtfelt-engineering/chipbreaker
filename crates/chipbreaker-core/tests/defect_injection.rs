@@ -255,6 +255,19 @@ fn injected_mm(per_bundle: [f64; 3]) -> f64 {
 }
 
 #[test]
+// **Nightly, not per push**, and the reason is a budget rather than a doubt.
+// Two fields per case over 295 cases is 96 seconds in a debug build, which is
+// what `cargo test --all` uses; the nightly job runs the ignored tests in
+// release, where the same sweep is 20 seconds.
+//
+// What still runs on every push is
+// `the_corpus_matches_its_committed_expectations`, which pins every case's
+// motions by digest and is instant. That catches a *generator* change, which is
+// what both of the empty-case bugs were. This sweep catches the other thing: an
+// engine change that alters what unchanged motions do. That is real and it is
+// not something a commit is likely to do accidentally, so nightly is the right
+// cadence for it.
+#[ignore = "nightly: 96s in debug, see the note above"]
 fn every_case_injects_the_defect_it_claims() {
     let cases = corpus();
     let profile = mill(6.0);
