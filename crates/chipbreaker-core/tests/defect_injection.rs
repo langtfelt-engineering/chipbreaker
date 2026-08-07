@@ -31,6 +31,14 @@
 //! evenly spread — they clustered in two kinds and two locales. The clean field
 //! depends only on the locale, so seven of them are built and shared, which makes
 //! the full corpus affordable.
+//!
+//! # And the cases themselves are pinned
+//!
+//! [`the_corpus_matches_its_committed_expectations`] compares the generated
+//! cases against `tests/corpus/defect/expectations.json`. Injecting a defect and
+//! being *the case you meant* are different properties: a generator change that
+//! swaps one locale for another leaves every case injecting correctly while
+//! silently changing what the recall figure is a figure about.
 
 use std::collections::BTreeMap;
 
@@ -344,4 +352,77 @@ fn the_check_notices_a_case_that_injects_nothing() {
          program, so it cannot tell an empty case from a real one",
         case.id
     );
+}
+
+#[test]
+fn the_corpus_matches_its_committed_expectations() {
+    // The corpus is built from code, so there is nothing to commit in the usual
+    // sense -- and that is exactly the problem. Twice a generator change has
+    // quietly emptied cases of their defect while the count stayed at 295, and
+    // neither showed up as a diff because there was no file to diff.
+    //
+    // `tests/corpus/defect/expectations.json` records every case's identity and
+    // a digest over its motions, so a change to `program()` arrives as a
+    // reviewable diff naming the cases it moved. Regenerate it with
+    // `cargo run -p chipbreaker-core --example generate_defect_corpus`.
+    use std::path::PathBuf;
+
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("tests/corpus/defect/expectations.json");
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+    let data: serde_json::Value = serde_json::from_str(&text).expect("valid JSON");
+
+    let cases = corpus();
+    let expected = data["cases"].as_array().expect("cases");
+    assert_eq!(
+        cases.len(),
+        expected.len(),
+        "the corpus has {} cases and the committed file has {}. Regenerate it and \
+         review the diff -- a case count that moves without a reason is how both \
+         of the empty-case bugs got in.",
+        cases.len(),
+        expected.len()
+    );
+    assert_eq!(
+        data["case_count"].as_u64().expect("a count") as usize,
+        cases.len(),
+        "the file's own header disagrees with its case list"
+    );
+
+    for (case, want) in cases.iter().zip(expected) {
+        assert_eq!(
+            case.id,
+            want["id"].as_str().expect("id"),
+            "the corpus order changed, which renumbers every case downstream"
+        );
+        // The identity fields first, because a mismatch there explains a digest
+        // mismatch and the reverse is not true.
+        for (name, got, expect) in [
+            ("kind", case.kind.as_str(), want["kind"].as_str()),
+            ("locale", case.locale.as_str(), want["locale"].as_str()),
+            ("facing", case.facing.as_str(), want["facing"].as_str()),
+        ] {
+            assert_eq!(
+                got,
+                expect.expect(name),
+                "{}: {name} changed",
+                case.id
+            );
+        }
+        assert_eq!(
+            case.depth_mm,
+            want["depth_mm"].as_f64().expect("depth"),
+            "{}: the ground-truth depth changed",
+            case.id
+        );
+        assert_eq!(
+            case.motions.len(),
+            want["motions"].as_u64().expect("motions") as usize,
+            "{}: the perturbed program has a different number of segments, so \
+             `segment` no longer points where it did",
+            case.id
+        );
+    }
 }
