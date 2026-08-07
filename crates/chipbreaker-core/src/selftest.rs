@@ -1718,7 +1718,10 @@ fn deviation_suite() -> SuiteResult {
     // `acos` per edge -- new transcendental use on new code.
     h.begin("facet-size");
     for (name, mesh) in [
-        ("box", shapes::box_solid(Vec3::ZERO, Vec3::new(4.0, 3.0, 2.0))),
+        (
+            "box",
+            shapes::box_solid(Vec3::ZERO, Vec3::new(4.0, 3.0, 2.0)),
+        ),
         ("sphere", shapes::icosphere(4.0, 2)),
         ("torus", shapes::torus(6.0, 2.0, 24, 12)),
     ] {

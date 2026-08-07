@@ -174,18 +174,21 @@ fn main() {
     }
 
     println!("{checked} of {} cases measured\n", cases.len());
-    println!(
-        "injecting nothing measurable ({}):",
-        vacuous.len()
-    );
+    println!("injecting nothing measurable ({}):", vacuous.len());
     for (id, want, got) in &vacuous {
         println!("  {id:<44} claims {want:.2} mm, injects {got:.4} mm");
     }
-    println!("\ninjecting less than half what they claim ({}):", weak.len());
+    println!(
+        "\ninjecting less than half what they claim ({}):",
+        weak.len()
+    );
     for (id, want, got) in &weak {
         println!("  {id:<44} claims {want:.2} mm, injects {got:.4} mm");
     }
     #[allow(clippy::cast_precision_loss, reason = "small counts")]
     let rate = (vacuous.len() + weak.len()) as f64 / checked.max(1) as f64;
-    println!("\n{:.1}% of the corpus does not inject what it claims", rate * 100.0);
+    println!(
+        "\n{:.1}% of the corpus does not inject what it claims",
+        rate * 100.0
+    );
 }

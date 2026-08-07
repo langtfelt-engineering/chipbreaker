@@ -477,19 +477,13 @@ fn program(
         // The plunge goes deeper than it should. One segment, one mistake.
         DefectKind::PlungeTooDeep => {
             motions[0] = line([x0, at.y, 16.0], [x0, at.y, z - depth]);
-            motions[1] = line(
-                [x0, at.y, z - depth],
-                [x1, at.y, z - depth],
-            );
+            motions[1] = line([x0, at.y, z - depth], [x1, at.y, z - depth]);
             motions[2] = line([x1, at.y, z - depth], [x1, at.y, 16.0]);
             Some(1)
         }
         // The cut wanders sideways into a wall.
         DefectKind::HorizontalOvercut => {
-            motions[1] = line(
-                [x0, at.y - depth, z],
-                [x1, at.y - depth, z],
-            );
+            motions[1] = line([x0, at.y - depth, z], [x1, at.y - depth, z]);
             Some(1)
         }
         // The path is correct; the cutter is not. Handled by the deltas on the
@@ -541,10 +535,7 @@ fn program(
         }
         // The pass stops short, leaving material.
         DefectKind::ExcessStock => {
-            motions[1] = line(
-                [x0, at.y, z + depth],
-                [x1, at.y, z + depth],
-            );
+            motions[1] = line([x0, at.y, z + depth], [x1, at.y, z + depth]);
             Some(1)
         }
     };

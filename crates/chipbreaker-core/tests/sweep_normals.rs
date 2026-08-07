@@ -389,7 +389,11 @@ fn a_plunge() {
     // Case B, both of its ray orientations at once: the Z bundle runs along the
     // plunge and dilates its spans, the X and Y bundles run across it and take a
     // chord of the swept disc.
-    check("plunge", &[line([15.0, 12.0, 14.0], [15.0, 12.0, 5.0])], 300);
+    check(
+        "plunge",
+        &[line([15.0, 12.0, 14.0], [15.0, 12.0, 5.0])],
+        300,
+    );
 }
 
 #[test]

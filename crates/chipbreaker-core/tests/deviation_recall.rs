@@ -78,7 +78,9 @@ fn cut(motions: &[Motion], profile: &Profile) -> TriDexelField {
 fn nominal_for(case: &DefectCase, profile: &Profile) -> TriMesh {
     use chipbreaker_core::contour::{ContourOptions, extract};
     let field = cut(&case.clean, profile);
-    extract(&field, &ContourOptions::default()).expect("extracts").0
+    extract(&field, &ContourOptions::default())
+        .expect("extracts")
+        .0
 }
 
 /// Runs one case and returns its deviation field.
@@ -237,7 +239,10 @@ fn recall_against_depth() {
             continue;
         }
         let cells = case.cells(SPACING);
-        let Some(band) = bands.iter().position(|(lo, hi)| cells >= *lo && cells < *hi) else {
+        let Some(band) = bands
+            .iter()
+            .position(|(lo, hi)| cells >= *lo && cells < *hi)
+        else {
             continue;
         };
         total[band] += 1;
@@ -247,7 +252,10 @@ fn recall_against_depth() {
     }
 
     println!("\nrecall against depth, tolerance {tolerance} mm, cell {SPACING} mm:");
-    println!("{:>14}{:>8}{:>8}{:>10}", "depth (cells)", "cases", "found", "recall");
+    println!(
+        "{:>14}{:>8}{:>8}{:>10}",
+        "depth (cells)", "cases", "found", "recall"
+    );
     for (index, (lo, hi)) in bands.iter().enumerate() {
         if total[index] == 0 {
             continue;
@@ -270,7 +278,10 @@ fn recall_against_depth() {
     // The contract: everything at or above two cells is found.
     let deep_total: usize = total[4] + total[5];
     let deep_hit: usize = hit[4] + hit[5];
-    assert!(deep_total > 0, "no cases at or above two cells were sampled");
+    assert!(
+        deep_total > 0,
+        "no cases at or above two cells were sampled"
+    );
     assert_eq!(
         deep_hit, deep_total,
         "recall above 2x cell size must be 100%, got {deep_hit}/{deep_total}. \
@@ -295,12 +306,8 @@ fn localisation_recovers_the_place_and_the_depth() {
     // same thing from the other side and is where the reasoning lives.
     let cases = corpus();
     let mut checked = 0usize;
-    let global = |c: &&DefectCase| {
-        !matches!(
-            c.kind,
-            chipbreaker_core::defect::DefectKind::ToolTooLarge
-        )
-    };
+    let global =
+        |c: &&DefectCase| !matches!(c.kind, chipbreaker_core::defect::DefectKind::ToolTooLarge);
     for case in cases
         .iter()
         .filter(global)
@@ -336,7 +343,10 @@ fn localisation_recovers_the_place_and_the_depth() {
         );
         checked += 1;
     }
-    assert!(checked >= 4, "too few well-resolved cases checked: {checked}");
+    assert!(
+        checked >= 4,
+        "too few well-resolved cases checked: {checked}"
+    );
 }
 
 #[test]

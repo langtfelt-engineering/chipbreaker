@@ -404,12 +404,7 @@ fn the_corpus_matches_its_committed_expectations() {
             ("locale", case.locale.as_str(), want["locale"].as_str()),
             ("facing", case.facing.as_str(), want["facing"].as_str()),
         ] {
-            assert_eq!(
-                got,
-                expect.expect(name),
-                "{}: {name} changed",
-                case.id
-            );
+            assert_eq!(got, expect.expect(name), "{}: {name} changed", case.id);
         }
         assert_eq!(
             case.depth_mm,

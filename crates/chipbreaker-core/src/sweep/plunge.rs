@@ -285,9 +285,8 @@ pub fn swept_spans_into(
         let normal_at = |t: f64| {
             let p = ray.at(t);
             let local = crate::math::Vec3::new(p.x - ax, p.y - ay, at_z);
-            crate::tool::surface_normal(profile, local).map_or(OctNormal::PLACEHOLDER, |n| {
-                OctNormal::encode(n)
-            })
+            crate::tool::surface_normal(profile, local)
+                .map_or(OctNormal::PLACEHOLDER, |n| OctNormal::encode(n))
         };
         out.push_merge(Span::with_normals(t0, t1, normal_at(t0), normal_at(t1)));
         return true;

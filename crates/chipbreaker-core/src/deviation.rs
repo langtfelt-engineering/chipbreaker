@@ -370,7 +370,11 @@ fn facet_reach(mesh: &TriMesh, tri: u32, a: u32, b: u32) -> f64 {
 /// from the toolpath's work offset or an explicit transform, exactly as Unit 5's
 /// stock placement does, rather than a second mechanism being invented here.
 #[must_use]
-pub fn compare(field: &TriDexelField, nominal: &TriMesh, stock: Option<&TriMesh>) -> DeviationField {
+pub fn compare(
+    field: &TriDexelField,
+    nominal: &TriMesh,
+    stock: Option<&TriMesh>,
+) -> DeviationField {
     let bvh = Bvh::build(nominal);
     let mut samples: Vec<Deviation> = Vec::new();
     // Two buffers, reused across every sample. One query per span endpoint means

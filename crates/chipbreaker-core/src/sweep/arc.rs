@@ -517,7 +517,11 @@ fn middle_normal(profile: &Profile, arc: &ArcMove, p: Vec3) -> OctNormal {
     // On the arc's own centre every bearing is equidistant. The point is then
     // inside the tool wherever it is placed, so no bound of the result can land
     // here; answering with a fixed bearing keeps the function total.
-    let (ux, uy) = if d > 0.0 { (dx / d, dy / d) } else { (1.0, 0.0) };
+    let (ux, uy) = if d > 0.0 {
+        (dx / d, dy / d)
+    } else {
+        (1.0, 0.0)
+    };
     let local = Vec3::new(
         p.x - (arc.center.x + arc.radius * ux),
         p.y - (arc.center.y + arc.radius * uy),

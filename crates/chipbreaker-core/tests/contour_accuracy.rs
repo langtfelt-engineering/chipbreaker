@@ -332,8 +332,8 @@ fn sharp_edges_survive_on_cut_geometry_too() {
     let (centre_y, radius) = (9.0, 3.0);
 
     let mut field = field_from(&shapes::box_solid(lo, hi), spacing);
-    let profile = flat_end_mill(2.0 * radius, 30.0, &Shank::plain(2.0 * radius, 60.0))
-        .expect("valid");
+    let profile =
+        flat_end_mill(2.0 * radius, 30.0, &Shank::plain(2.0 * radius, 60.0)).expect("valid");
     let mut scratch = CutScratch::new(&profile);
     cut_all(
         &mut field,
@@ -353,7 +353,11 @@ fn sharp_edges_survive_on_cut_geometry_too() {
 
     // Distance to the exact surface of the slotted block, which is a plane in
     // every direction that matters here.
-    let wall = |y: f64| (y - (centre_y - radius)).abs().min((y - (centre_y + radius)).abs());
+    let wall = |y: f64| {
+        (y - (centre_y - radius))
+            .abs()
+            .min((y - (centre_y + radius)).abs())
+    };
     let surface = |p: Vec3| -> f64 {
         // Inside the slot's width the surface is the floor; outside it, the top.
         if (p.y - centre_y).abs() <= radius {

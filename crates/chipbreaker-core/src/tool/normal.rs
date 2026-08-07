@@ -213,7 +213,10 @@ mod tests {
             (0.0, -3.0, Vec3::new(0.0, -1.0, 0.0)),
         ] {
             let n = surface_normal(&p, Vec3::new(x, y, 5.0)).expect("has a surface");
-            assert!(close(n, want), "at ({x}, {y}, 5) expected {want:?}, got {n:?}");
+            assert!(
+                close(n, want),
+                "at ({x}, {y}, 5) expected {want:?}, got {n:?}"
+            );
         }
     }
 
@@ -231,7 +234,10 @@ mod tests {
     fn a_ball_nose_points_away_from_its_centre() {
         let p = ball_end_mill(6.0, 20.0, &Shank::plain(6.0, 40.0)).expect("valid");
         let bottom = surface_normal(&p, Vec3::new(0.0, 0.0, 0.0)).expect("has a surface");
-        assert!(bottom.z < -0.999, "the lowest point faces -Z, got {bottom:?}");
+        assert!(
+            bottom.z < -0.999,
+            "the lowest point faces -Z, got {bottom:?}"
+        );
 
         // Forty-five degrees round the ball: radius 3, centre on the axis at 3.
         let s = 3.0 / 2.0f64.sqrt();
@@ -254,7 +260,10 @@ mod tests {
             "the outer equator of the corner torus points +X, got {equator:?}"
         );
         let under = surface_normal(&p, Vec3::new(3.0, 0.0, 0.0)).expect("has a surface");
-        assert!(under.z < -0.999, "under the corner torus is -Z, got {under:?}");
+        assert!(
+            under.z < -0.999,
+            "under the corner torus is -Z, got {under:?}"
+        );
 
         // Halfway round the corner, at 45 degrees from the centre.
         let s = 2.0 / 2.0f64.sqrt();
@@ -316,8 +325,8 @@ mod tests {
                 let a = f64::from(bearing) * core::f64::consts::PI / 4.0;
                 let (sin, cos) = t::sin_cos(a);
                 for r in [0.0, 0.7, 3.0, 5.0] {
-                    let n = surface_normal(&p, Vec3::new(r * cos, r * sin, z))
-                        .expect("has a surface");
+                    let n =
+                        surface_normal(&p, Vec3::new(r * cos, r * sin, z)).expect("has a surface");
                     let len = t::hypot(t::hypot(n.x, n.y), n.z);
                     assert!(
                         (len - 1.0).abs() < 1.0e-12,

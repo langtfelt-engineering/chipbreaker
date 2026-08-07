@@ -170,11 +170,7 @@ fn prism_spans_into(
     // `across` and the vertical, with nothing along `along`.
     let restore = |n: crate::math::OctNormal| {
         let local = n.decode();
-        crate::math::OctNormal::encode(Vec3::new(
-            local.x * across.x,
-            local.x * across.y,
-            local.z,
-        ))
+        crate::math::OctNormal::encode(Vec3::new(local.x * across.x, local.x * across.y, local.z))
     };
     let mut rescaled = Spans::with_capacity(cross.len());
     for span in cross.iter() {

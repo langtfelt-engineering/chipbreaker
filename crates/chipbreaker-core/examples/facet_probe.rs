@@ -19,7 +19,12 @@ fn main() {
 
     // A box: planes, represented exactly, whatever the triangle size.
     let b = shapes::box_solid(Vec3::new(0.0, 0.0, 0.0), Vec3::new(40.0, 30.0, 12.0));
-    println!("{:<28}{:>12.4}{:>14}", "box 40x30x12", facet_size(&b), "0 (exact)");
+    println!(
+        "{:<28}{:>12.4}{:>14}",
+        "box 40x30x12",
+        facet_size(&b),
+        "0 (exact)"
+    );
 
     for level in 0..4u32 {
         let r = 20.0;

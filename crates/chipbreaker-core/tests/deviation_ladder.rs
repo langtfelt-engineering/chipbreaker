@@ -73,7 +73,10 @@ fn rung_1_a_field_against_its_own_source_mesh_is_exactly_zero() {
     // Anything else is the comparison arithmetic being wrong, with no extraction
     // or resolution effect able to explain it away.
     for (name, mesh) in [
-        ("box", shapes::box_solid(Vec3::new(0.0, 0.0, 0.0), Vec3::new(20.0, 16.0, 12.0))),
+        (
+            "box",
+            shapes::box_solid(Vec3::new(0.0, 0.0, 0.0), Vec3::new(20.0, 16.0, 12.0)),
+        ),
         ("sphere", shapes::icosphere(8.0, 3)),
         ("torus", shapes::torus(8.0, 3.0, 48, 24)),
     ] {
@@ -105,11 +108,16 @@ fn rung_2_a_field_against_its_own_extraction_is_sub_cell() {
     // Only meaningful if rung 1 passes. A failure here is in the field-to-mesh
     // interface rather than in the arithmetic.
     for (name, mesh) in [
-        ("box", shapes::box_solid(Vec3::new(0.0, 0.0, 0.0), Vec3::new(20.0, 16.0, 12.0))),
+        (
+            "box",
+            shapes::box_solid(Vec3::new(0.0, 0.0, 0.0), Vec3::new(20.0, 16.0, 12.0)),
+        ),
         ("sphere", shapes::icosphere(8.0, 3)),
     ] {
         let field = field_from(&mesh);
-        let extracted = extract(&field, &ContourOptions::default()).expect("extracts").0;
+        let extracted = extract(&field, &ContourOptions::default())
+            .expect("extracts")
+            .0;
         let d = compare(&field, &extracted, Some(&mesh));
         let worst = d.worst_gouge_mm.max(d.worst_excess_mm);
         println!(
@@ -173,10 +181,16 @@ fn rung_2b_a_cut_field_against_its_own_extraction_is_sub_cell() {
         DEFAULT_BATCH,
     );
 
-    let extracted = extract(&field, &ContourOptions::default()).expect("extracts").0;
+    let extracted = extract(&field, &ContourOptions::default())
+        .expect("extracts")
+        .0;
     let d = compare(&field, &extracted, Some(&mesh));
     let worst = d.worst_gouge_mm.max(d.worst_excess_mm);
-    let over = d.samples.iter().filter(|s| s.signed_mm.abs() > SPACING).count();
+    let over = d
+        .samples
+        .iter()
+        .filter(|s| s.signed_mm.abs() > SPACING)
+        .count();
     println!(
         "cut field: {} samples, {over} above one cell, worst gouge {:.4}, worst \
          excess {:.4}, rms {:.4}",
@@ -452,7 +466,11 @@ fn rung_3_a_cut_field_against_an_independently_modelled_nominal() {
     );
 
     let d = compare(&field, &nominal, Some(&shapes::box_solid(Vec3::ZERO, size)));
-    let over = d.samples.iter().filter(|s| s.signed_mm.abs() > SPACING).count();
+    let over = d
+        .samples
+        .iter()
+        .filter(|s| s.signed_mm.abs() > SPACING)
+        .count();
     println!(
         "rung 3: {} samples, {over} above one cell, worst gouge {:.4} mm, worst \
          excess {:.4} mm, rms {:.4} mm, worst projection gap {:.4} mm",

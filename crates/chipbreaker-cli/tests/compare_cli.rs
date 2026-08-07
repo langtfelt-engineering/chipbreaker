@@ -212,10 +212,7 @@ impl Fixture {
     }
 
     fn str(&self, name: &str) -> String {
-        self.path(name)
-            .to_str()
-            .expect("utf-8 path")
-            .to_owned()
+        self.path(name).to_str().expect("utf-8 path").to_owned()
     }
 
     /// Cuts a program at the given depth and returns the resulting field's path.
@@ -376,7 +373,13 @@ fn a_tolerance_below_the_floor_is_refused_with_the_number_that_would_be_honest()
         "0.001",
     ]);
     assert_ne!(code, 0, "a tolerance below the floor must be refused");
-    for expected in ["floor", "stock facets", "nominal facets", "lattice", "0.4000"] {
+    for expected in [
+        "floor",
+        "stock facets",
+        "nominal facets",
+        "lattice",
+        "0.4000",
+    ] {
         assert!(
             err.contains(expected),
             "the refusal must name {expected}; it said: {err}"
@@ -449,7 +452,10 @@ fn deviation_stat_localises_the_defect_and_publishes_both_rulers() {
         "5",
         "--json",
     ]);
-    assert_eq!(code, 0, "a distribution is a description, not a verdict: {err}");
+    assert_eq!(
+        code, 0,
+        "a distribution is a description, not a verdict: {err}"
+    );
 
     let v: Value = serde_json::from_str(&out).expect("valid JSON");
     let r = &v["results"];
