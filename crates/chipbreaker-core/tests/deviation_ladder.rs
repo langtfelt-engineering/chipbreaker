@@ -180,3 +180,99 @@ fn rung_2b_a_cut_field_against_its_own_extraction_is_sub_cell() {
          specific to cut geometry."
     );
 }
+
+#[test]
+fn rung_2c_cut_faces_all_point_the_same_way_which_cannot_be_geometry() {
+    // Narrowing rung 2b. The grazing explanation predicts SOME endpoints are
+    // wrong; a simpler cause predicts they all are.
+    //
+    // Counting placeholders is the obvious check and it does not work, because
+    // `PLACEHOLDER` IS `+Z` -- the Unit 9 encoding has no reserved pattern on
+    // purpose -- so every up-facing endpoint of an uncut box already counts as
+    // one. The direct question is better: a slot has walls facing four different
+    // directions, so if every one of its cut endpoints shares a single normal,
+    // that normal cannot have come from the geometry.
+    use chipbreaker_core::dexel::tri::AXES;
+    use chipbreaker_core::math::Axis;
+    use chipbreaker_core::sweep::batch::{DEFAULT_BATCH, cut_all};
+    use chipbreaker_core::sweep::cut::{CutScratch, SweepMethod};
+    use chipbreaker_core::sweep::{LinearMove, Motion};
+    use chipbreaker_core::tool::catalog::{Shank, flat_end_mill};
+
+    let mesh = shapes::box_solid(Vec3::new(0.0, 0.0, 0.0), Vec3::new(40.0, 30.0, 12.0));
+    let mut field = TriDexelField::build(
+        &mesh,
+        &TriBuildOptions {
+            spacing: SPACING,
+            ..TriBuildOptions::default()
+        },
+    )
+    .expect("builds")
+    .0;
+    let profile = flat_end_mill(6.0, 30.0, &Shank::plain(6.0, 60.0)).expect("valid");
+    let motions = vec![Motion::Linear(LinearMove {
+        start: Vec3::new(6.0, 15.0, 7.0),
+        end: Vec3::new(34.0, 15.0, 7.0),
+    })];
+    let mut scratch = CutScratch::new(&profile);
+    cut_all(
+        &mut field,
+        &profile,
+        &motions,
+        SweepMethod::Analytic {
+            tolerance: SPACING / 10.0,
+        },
+        &mut scratch,
+        DEFAULT_BATCH,
+    );
+
+    // The X bundle at the slot's floor height sees the slot's two END walls,
+    // which face -X and +X. Their endpoint normals must differ from each other.
+    let bundle = field.bundle(Axis::X).expect("x bundle");
+    let lattice = bundle.lattice().clone();
+    let mut wall_normals = Vec::new();
+    let rays = u32::try_from(bundle.arena().rays()).expect("small");
+    for r in 0..rays {
+        let (i, j) = lattice.coords(r);
+        let o = lattice.origin_of(i, j);
+        // A ray ABOVE the slot floor and on its centre line, so it crosses the
+        // slot and meets both end walls. Below the floor the material is
+        // continuous and there are no wall endpoints to look at, which the first
+        // attempt at this filter got wrong.
+        if (o.y - 15.0).abs() > 0.3 || o.z < 8.0 || o.z > 10.0 {
+            continue;
+        }
+        for s in bundle.arena().get(r) {
+            for n in [s.n0, s.n1] {
+                wall_normals.push(n.decode());
+            }
+        }
+    }
+    assert!(
+        wall_normals.len() >= 8,
+        "expected endpoints on both slot end walls, got {}",
+        wall_normals.len()
+    );
+    println!("X-bundle endpoint normals ({}):", wall_normals.len());
+    for n in wall_normals.iter().take(6) {
+        println!("  ({:.3}, {:.3}, {:.3})", n.x, n.y, n.z);
+    }
+
+    // Every surface an X-bundle ray meets here faces +/-X: the two outer stock
+    // faces and the slot's two end walls. A Z-facing normal on any of them is
+    // impossible geometrically.
+    //
+    // The first version of this test asked whether ALL the normals matched, and
+    // passed -- vacuously, because the outer faces carry correct normals from
+    // construction and only the CUT ones are wrong. A passing test that cannot
+    // fail is worse than a missing one, and that is now the second time in this
+    // unit.
+    let z_facing = wall_normals.iter().filter(|n| n.z.abs() > 0.5).count();
+    assert_eq!(
+        z_facing,
+        0,
+        "{z_facing} of {} endpoints on an X-bundle ray point along Z, including          the slot's two end walls, which face opposite directions and share one          normal. That is not geometry -- it is the placeholder normal negated by          the subtraction. Unit 9 said the normal is free at both sites an          endpoint is born, the triangle normal during construction and the          analytic TOOL SURFACE normal during a cut. Only the first was ever          implemented: `sweep` and `tool::raycast` set no normal at all, so every          cut face in the engine carries (0, 0, -1).",
+        wall_normals.len()
+    );
+    let _ = AXES;
+}
