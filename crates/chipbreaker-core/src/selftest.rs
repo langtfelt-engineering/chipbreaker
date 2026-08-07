@@ -206,6 +206,7 @@ pub fn run_with(extra: Vec<SuiteResult>) -> SelfTestReport {
         sweep_suite(),
         sweep_arc_suite(),
         contour_suite(),
+        deviation_suite(),
         canonical_hash_suite(),
     ];
     suites.extend(extra);
@@ -1526,6 +1527,212 @@ fn contour_suite() -> SuiteResult {
         name: "contour",
         description: "dual contouring with and without normals, and the octahedral normal codec",
         cases: count + 2197,
+        failures,
+        digest: h.finish(),
+    }
+}
+
+/// The comparison, end to end, inside the cross-platform guarantee.
+///
+/// # Why this suite exists at all
+///
+/// Everything Unit 12 added is new arithmetic on the hot path — an analytic tool
+/// normal, a branch-and-bound closest-point query, a dihedral-angle floor — and
+/// the guarantee this project sells is that the answer is identical on a 32-bit
+/// target with a different libm and a different codegen backend. A verification
+/// tool whose *verdict* moves between machines is worse than no verification
+/// tool, because it is the one number a customer will quote.
+///
+/// Putting it here rather than in a separate WASM test is deliberate: the parity
+/// job already runs `chipbreaker selftest` natively and under `wasmtime` and
+/// compares every suite digest, so a suite added here is inside the guarantee
+/// from the moment it is written, with nothing further to remember.
+///
+/// # What is hashed
+///
+/// Not the verdict. The **whole deviation field, sample by sample** — position,
+/// normal, both magnitudes, and which bundle each came from. A digest over the
+/// summary alone would let a thousand samples move in compensating directions
+/// and call it identical, which is exactly the sort of quiet divergence a
+/// 32-bit libm produces.
+///
+/// The tool normal is hashed separately at a spread of points, because it is the
+/// input every cut face's normal comes from and a divergence there would be
+/// diluted by the time it reached a summary.
+fn deviation_suite() -> SuiteResult {
+    use crate::deviation::{compare, facet_size};
+    use crate::dexel::tri::{TriBuildOptions, TriDexelField};
+    use crate::mesh::shapes;
+    use crate::sweep::batch::{DEFAULT_BATCH, cut_all};
+    use crate::sweep::cut::{CutScratch, SweepMethod};
+    use crate::sweep::{LinearMove, Motion};
+    use crate::tool::catalog::{Shank, ball_end_mill, flat_end_mill};
+
+    let mut failures = Vec::new();
+    let mut h = CanonicalHash::new();
+    h.begin("deviation");
+    let mut count = 0usize;
+
+    // Small on purpose. The suite runs on every `selftest` invocation, including
+    // under `wasmtime`, and its job is to detect divergence rather than to
+    // measure anything -- a handful of samples through the same code paths
+    // catches a differing libm exactly as well as a hundred thousand.
+    let stock = shapes::box_solid(Vec3::new(0.0, 0.0, 0.0), Vec3::new(12.0, 9.0, 6.0));
+    let cases: [(&str, bool, f64); 3] = [
+        ("flat-slot", false, 3.0),
+        ("ball-skim", true, 5.4),
+        ("ball-deep", true, 2.5),
+    ];
+
+    for (name, ball, depth) in cases {
+        h.begin(name);
+        let profile = if ball {
+            ball_end_mill(3.0, 20.0, &Shank::plain(3.0, 40.0))
+        } else {
+            flat_end_mill(3.0, 20.0, &Shank::plain(3.0, 40.0))
+        };
+        let Ok(profile) = profile else {
+            failures.push(Failure {
+                case: format!("{name}/tool"),
+                detail: "the catalogue refused a standard cutter".to_owned(),
+            });
+            h.end();
+            continue;
+        };
+        let built = TriDexelField::build(
+            &stock,
+            &TriBuildOptions {
+                spacing_xyz: None,
+                spacing: 0.6,
+                ..TriBuildOptions::default()
+            },
+        );
+        let Ok((mut field, _)) = built else {
+            failures.push(Failure {
+                case: format!("{name}/build"),
+                detail: "the stock field would not build".to_owned(),
+            });
+            h.end();
+            continue;
+        };
+        let mut scratch = CutScratch::new(&profile);
+        cut_all(
+            &mut field,
+            &profile,
+            &[Motion::Linear(LinearMove {
+                // Right through, so the cut faces are planes and a divergence
+                // shows up as a moved plane rather than as a resampled curve.
+                start: Vec3::new(-3.0, 4.5, depth),
+                end: Vec3::new(15.0, 4.5, depth),
+            })],
+            SweepMethod::Analytic { tolerance: 0.06 },
+            &mut scratch,
+            DEFAULT_BATCH,
+        );
+
+        let field_of = compare(&field, &stock, Some(&stock));
+        // Every sample, not the summary. See the header.
+        h.add_all(field_of.samples.iter());
+        h.f64(field_of.worst_gouge_mm);
+        h.f64(field_of.worst_excess_mm);
+        h.f64(field_of.rms_mm);
+        h.f64(field_of.worst_projection_gap_mm);
+        h.f64(field_of.tolerance_floor_mm());
+        count += field_of.samples.len();
+
+        // A cut program compared against the uncut stock has a deep gouge where
+        // the channel is, and nothing standing proud anywhere. Stated as a
+        // comparison rather than as "excess is zero": every sample on an
+        // untouched outer face lies exactly on the nominal, and half of those
+        // round to a hair on the positive side. That is nought point nought
+        // nought nought nought nought something, not a finding, and an absolute
+        // test on it fails for reasons that have nothing to do with the sign.
+        if field_of.worst_excess_mm >= field_of.worst_gouge_mm {
+            failures.push(Failure {
+                case: format!("{name}/sign"),
+                detail: format!(
+                    "cutting material away and comparing against the uncut stock \
+                     reported {:.6} mm of excess against {:.6} mm of gouge. \
+                     Positive is excess and negative is a gouge; this is the \
+                     convention inverted.",
+                    field_of.worst_excess_mm, field_of.worst_gouge_mm
+                ),
+            });
+        }
+        if field_of.worst_gouge_mm < 0.5 {
+            failures.push(Failure {
+                case: format!("{name}/depth"),
+                detail: format!(
+                    "a channel cut right through the stock produced only \
+                     {:.6} mm of gouge, so this case is not exercising the \
+                     comparison it was written for",
+                    field_of.worst_gouge_mm
+                ),
+            });
+        }
+        if field_of.samples.is_empty() {
+            failures.push(Failure {
+                case: format!("{name}/samples"),
+                detail: "no samples at all, so the digest below covers nothing".to_owned(),
+            });
+        }
+        h.end();
+    }
+
+    // The analytic tool normal, directly. Every cut face's normal comes from it,
+    // and a divergence here would be diluted by the time it reached a summary.
+    h.begin("tool-normal");
+    if let Ok(profile) = crate::tool::catalog::bull_end_mill(
+        8.0,
+        1.5,
+        20.0,
+        &crate::tool::catalog::Shank::plain(8.0, 40.0),
+    ) {
+        for i in 0..9 {
+            for j in 0..9 {
+                let r = f64::from(i) * 0.5;
+                let z = f64::from(j) * 2.5;
+                let p = Vec3::new(r, 0.4 * r, z);
+                match crate::tool::surface_normal(&profile, p) {
+                    Some(n) => {
+                        h.f64(n.x).f64(n.y).f64(n.z);
+                        crate::math::OctNormal::encode(n).hash_canonical(&mut h);
+                        count += 1;
+                    }
+                    None => failures.push(Failure {
+                        case: format!("tool-normal/{i}/{j}"),
+                        detail: "a validated profile reported no surface".to_owned(),
+                    }),
+                }
+            }
+        }
+    } else {
+        failures.push(Failure {
+            case: "tool-normal/tool".to_owned(),
+            detail: "the catalogue refused a standard bull mill".to_owned(),
+        });
+    }
+    h.end();
+
+    // And the tessellation floor, which walks every edge of a mesh and takes an
+    // `acos` per edge -- new transcendental use on new code.
+    h.begin("facet-size");
+    for (name, mesh) in [
+        ("box", shapes::box_solid(Vec3::ZERO, Vec3::new(4.0, 3.0, 2.0))),
+        ("sphere", shapes::icosphere(4.0, 2)),
+        ("torus", shapes::torus(6.0, 2.0, 24, 12)),
+    ] {
+        h.str(name).f64(facet_size(&mesh));
+        count += 1;
+    }
+    h.end();
+
+    h.end();
+    SuiteResult {
+        name: "deviation",
+        description: "comparison against a nominal, the analytic tool normal, and the \
+                      tessellation floor",
+        cases: count,
         failures,
         digest: h.finish(),
     }
