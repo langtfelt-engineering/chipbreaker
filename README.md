@@ -7,21 +7,28 @@ answers: **what shape is left at the end, and does it match the part we
 intended?** It finds gouges, leftover stock and tool-holder collisions before a
 real machine drives into a real workpiece.
 
-> **Status: Unit 8 of 20 complete.** Chipbreaker can now simulate a whole
-> 3-axis NC program end to end: build a tri-dexel field from a stock mesh, cut it
-> with linear moves, arcs and helices across a multi-tool program, and write the
-> result back out. 500,000 segments over a 100 × 60 × 20 mm field at 0.5 mm takes
-> **43 seconds** when every move is level and **103 seconds** when every move
-> ramps.
+> **Status: Unit 11 of 20 complete.** Chipbreaker simulates a whole 3-axis NC
+> program end to end — build a tri-dexel field from a stock mesh, cut it with
+> linear moves, arcs and helices across a multi-tool program, contour the result
+> back to a watertight mesh, and write it out — on as many threads as you have,
+> with the answer unchanged at every thread count.
+>
+> 500,000 segments over a 100 × 60 × 20 mm field at 0.5 mm takes **43 seconds**
+> when every move is level and **103 seconds** when every move ramps. Extraction
+> runs at about 1.7 M triangles/second and holds a working set of a few
+> megabytes regardless of field size.
 >
 > Underneath: exact geometric predicates, interval spans, canonical binary
 > hashing, a deterministic root solver validated against an exact Sturm oracle,
 > ray casting against tool solids of revolution, an RS-274 parser producing a
-> canonical toolpath IR, and closed-form swept volumes for every motion case that
-> has one. Native/WASM parity is proved in CI across all of it.
+> canonical toolpath IR, closed-form swept volumes for every motion case that has
+> one, manifold dual contouring, and a memory ceiling that predicts a job's
+> footprint exactly and refuses over-budget work before allocating. Native/WASM
+> parity is proved in CI across all of it.
 >
-> **Not there yet:** surface extraction. The field knows where material is; it
-> cannot yet hand you a mesh of the cut part. That is Unit 9. See
+> **Not there yet:** the verification layer. The engine can tell you what shape
+> is left; it cannot yet tell you where that differs from the part you meant, or
+> turn those differences into a list of findings. That is Units 12 to 15. See
 > [Roadmap](#roadmap).
 
 ## The guarantee
@@ -30,10 +37,16 @@ real machine drives into a real workpiece.
 platforms, and the WASM build.**
 
 Neither major incumbent publishes such a guarantee. It is enforced from the first
-commit rather than bolted on later, and CI proves it on every push by running the
-self-test natively on Windows, Linux and macOS and under `wasmtime`, then
-comparing the resulting hashes byte for byte. All four currently agree on a
-single hash over 13 suites and 20,482 cases.
+commit rather than bolted on later, and CI checks it by running the self-test
+natively on Windows, Linux and macOS and under `wasmtime`, then comparing the
+resulting hashes byte for byte. All four currently agree on a single hash over 14
+suites and 22,687 cases, at every thread count.
+
+Linux and `wasm32-wasip1` run on every push; the full four-target comparison runs
+nightly and on tags. That is a billing decision, not a confidence one — GitHub
+charges macOS at ten times and Windows at twice the Linux rate, so a three-OS
+matrix costs about 277 billed minutes per push against 39 for Linux alone. Every
+target still runs and still gates; it gates once a day rather than once a commit.
 
 The rules that make it hold — `f64` only, no FMA, no unordered iteration reaching
 a float, no parallelism without a deterministic partition, exact predicates
@@ -209,7 +222,7 @@ chord-derived bound would claim an accuracy the sweep does not have.
 
 | Path | Contents |
 |---|---|
-| `crates/chipbreaker-core` | `math`, `predicates`, `transcendental`, `eps`, `spans`, `roots`, `mesh`, `tool`, `toolpath`, `dexel`, `sweep`, `golden`, `selftest` |
+| `crates/chipbreaker-core` | `math`, `predicates`, `transcendental`, `eps`, `spans`, `roots`, `mesh`, `tool`, `toolpath`, `dexel`, `sweep`, `contour`, `budget`, `golden`, `selftest` |
 | `crates/chipbreaker-gcode` | RS-274 parser: the only place that reads G-code text |
 | `crates/chipbreaker-cli` | the `chipbreaker` binary |
 | `docs/adr` | architecture decisions, and the measurements behind them |
@@ -246,6 +259,7 @@ because that is usually the more useful half.
 | [0005](docs/adr/0005-deviation-not-volume.md) | Volume is a diagnostic; deviation is the metric |
 | [0006](docs/adr/0006-arc-closed-form-scope-and-batch-invisibility.md) | The arc closed form's scope, and batching's invisibility |
 | [0007](docs/adr/0007-no-local-refinement.md) | A dexel ray is global, so local refinement is not available |
+| [0008](docs/adr/0008-simd-is-autovectorisation-only.md) | SIMD means autovectorisation; intrinsics are ruled out |
 
 ## Roadmap
 
@@ -260,14 +274,52 @@ because that is usually the more useful half.
 | U7 | 3-axis material removal: linear moves | **done** |
 | U8 | Arcs, helices, motion batching | **done** |
 | U9 | Dual contouring to a watertight mesh | **done** |
-| U10–U11 | Rectilinear graded resolution, deterministic parallelism | next |
-| U12–U15 | Deviation fields, gouge classification, collision detection, multi-setup | |
-| U16–U18 | 5-axis kinematics, tilted swept volumes, error-bounded sub-stepping | |
-| U19–U20 | WASM target and demo, commercial packaging (C ABI, Python bindings) | |
+| U10 | Memory ceiling, anisotropic resolution | **done** |
+| U11 | Deterministic parallelism | **done** |
+| U12–U15 | Deviation fields, gouge classification, collision detection, multi-setup | next |
+| U16 | WASM target and demo | |
+| U17 | Commercial packaging: C ABI, bindings, evaluation kit | |
+| U18 | Assurance package: SBOM, signed reproducible builds, error-budget specification | |
+| U19–U20 | 5-axis kinematics and tilted swept volumes — **conditional**, see below | |
+
+5-axis is last and conditional. It is necessary for top-tier CAM and aerospace
+work, but those channels are closed to a new entrant for structural reasons that
+have nothing to do with capability, so building it before a customer asks would
+mean spending a year to arrive at a locked door. The insurance is already in
+place and costs nothing: the toolpath IR carries an `orientation` field that
+stays `None`.
 
 Chipbreaker ships as a **library plus CLI**. There is no GUI in the core and there
 will not be one; everything must be exercisable from the command line. The
 eventual browser demo is a consumer of the library, never part of it.
+
+## What this is for
+
+Stock simulation — showing the shape a program leaves — is commoditised. It ships
+with every CAM system and sells standalone from about ten dollars a month.
+Chipbreaker is not aimed there.
+
+The target is **assurance-grade verification**: not only an answer, but an answer
+you can put in front of someone who has to sign for it. Reproducible execution,
+tolerances stated rather than implied, machine-readable evidence, traceable
+versions, and approximation that is bounded and says so. Eleven units of exact
+predicates, canonical hashing and cross-target parity exist to make that claim
+supportable rather than aspirational.
+
+### What a deviation bound does and does not cover
+
+A bound from this engine covers the distance between the **computed stock** and
+the **ideal geometric cutting model**. That is all it covers.
+
+It says nothing about tool wear, deflection under load, thermal growth, spindle
+runout, backlash, or how a particular controller interpolates between the points
+it was given. A part can match the simulation exactly and still be out of
+tolerance for any of those reasons. Chipbreaker verifies the *program*, not the
+machine and not the part.
+
+That distinction is kept in the code, the documentation and the output, and it is
+not modesty — a verification tool that lets a customer believe it covers physics
+it never modelled is worse than one that admits its scope.
 
 ## Licence
 
