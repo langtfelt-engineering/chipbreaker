@@ -61,7 +61,8 @@ fn write_stl(path: &Path, vertices: &[[f64; 3]], triangles: &[[usize; 3]]) {
         }
         for index in tri {
             for component in vertices[*index] {
-                #[allow(clippy::cast_possible_truncation, reason = "STL is f32 by definition")]
+                // ALLOW-f32-WIRE-FORMAT
+                #[allow(clippy::cast_possible_truncation, reason = "the format is 32-bit")]
                 bytes.extend_from_slice(&(component as f32).to_le_bytes()); // ALLOW-f32-WIRE-FORMAT
             }
         }
