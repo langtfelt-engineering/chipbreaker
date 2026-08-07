@@ -22,13 +22,30 @@
 //!   onto the intersection, and the error is a different quantity with a
 //!   different bound.
 //!
-//! # The comparison that justifies four bytes an endpoint
+//! # The comparison that justifies four bytes an endpoint, in two halves
 //!
-//! `sharp_edges_survive_only_when_normals_are_stored` extracts the same field
-//! twice — once with normals and once with them discarded — and measures the
-//! edge both ways. It is the test that decides whether Unit 9 section 1b was
-//! worth its memory, and it belongs here rather than in a one-off measurement
-//! because the answer has to keep being true.
+//! The same field is extracted twice — once with normals and once with them
+//! discarded — and the edge is measured both ways. It is the test that decides
+//! whether Unit 9 section 1b was worth its memory, and it belongs here rather
+//! than in a one-off measurement because the answer has to keep being true.
+//!
+//! It is run on **two** geometries, and the reason is a defect that lived for
+//! five units. A field built from a mesh takes every endpoint normal from the
+//! triangle its ray crossed; a field that has been *cut* takes them from the
+//! tool. Only the first was ever implemented, so every cut face in the engine
+//! carried `(0, 0, -1)` and this test — run on an uncut box — passed throughout
+//! without being able to notice.
+//!
+//! | | `..._only_when_normals_are_stored` | `..._on_cut_geometry_too` |
+//! |---|---|---|
+//! | shape | an uncut block | a slot cut through a block |
+//! | normals from | construction | `tool::normal` |
+//! | with normals | exact | exact |
+//! | without | 0.167 mm worst | 0.125 mm worst |
+//!
+//! Both are published. Either alone overstates what the four bytes are known to
+//! buy: the first because it never exercised the sweep, the second because a
+//! part is mostly not cut faces. See ADR 0010.
 
 use chipbreaker_core::contour::{ContourOptions, extract};
 use chipbreaker_core::dexel::tri::{TriBuildOptions, TriDexelField};
@@ -204,11 +221,19 @@ fn a_box_is_reconstructed_with_its_faces_and_edges_measured_apart() {
 
 #[test]
 fn sharp_edges_survive_only_when_normals_are_stored() {
-    // **The measurement that justifies four bytes an endpoint.**
+    // **Half of the measurement that justifies four bytes an endpoint**, and the
+    // half that was mistaken for the whole of it for five units.
     //
-    // The same field twice: once using the stored normals, once discarding them
-    // so the QEF has only points and falls back to the centroid -- plain surface
-    // nets. The box's twelve edges are where the two diverge.
+    // Every normal here comes from **construction**: the field is built from a
+    // mesh and never cut, so each endpoint takes the triangle normal of the
+    // facet its ray crossed. That path was always correct. The other path --
+    // the analytic tool surface normal during a cut -- was not implemented at
+    // all until Unit 12, so this test passed throughout on a field that could
+    // not exercise the defect.
+    //
+    // `sharp_edges_survive_on_cut_geometry_too` is the other half, and both
+    // numbers are published because only together do they say what four bytes
+    // an endpoint actually buys.
     let (lo, hi) = (Vec3::new(0.0, 0.0, 0.0), Vec3::new(16.0, 12.0, 8.0));
     let spacing = 0.5;
     let mesh = shapes::box_solid(lo, hi);
@@ -248,11 +273,18 @@ fn sharp_edges_survive_only_when_normals_are_stored() {
     println!("  without normals: worst {without_worst:.6} mm, rms {without_rms:.6} mm");
     println!("  rank histogram with normals:    {with_ranks:?}");
     println!("  rank histogram without normals: {without_ranks:?}");
-    println!(
-        "  improvement: {:.2}x on worst, {:.2}x on rms",
-        without_worst / with_worst.max(1.0e-12),
-        without_rms / with_rms.max(1.0e-12)
-    );
+    // Printed as a ratio only when there is a ratio to print. Dividing by a
+    // floor of 1e-12 to avoid an infinity yields "126361907901x", which is not a
+    // measurement of anything.
+    if with_rms > 0.0 {
+        println!(
+            "  improvement: {:.2}x on worst, {:.2}x on rms",
+            without_worst / with_worst,
+            without_rms / with_rms
+        );
+    } else {
+        println!("  improvement: with normals the edge is reconstructed exactly");
+    }
 
     // Without normals every system is rank 0 -- no planes at all -- so the
     // solver returns the centroid every time. That is the definition of surface
@@ -271,6 +303,138 @@ fn sharp_edges_survive_only_when_normals_are_stored() {
         with_rms < without_rms,
         "storing normals must improve edge fidelity, or section 1b bought \
          nothing: with {with_rms:.6} mm rms against without {without_rms:.6} mm"
+    );
+}
+
+#[test]
+fn sharp_edges_survive_on_cut_geometry_too() {
+    // **The other half of the four-byte measurement, on the geometry that
+    // matters.**
+    //
+    // The uncut test above takes every normal from construction, and construction
+    // was never the broken path. A cut face's normal comes from the tool, and
+    // until Unit 12 the sweep set none at all -- so the claim that four bytes buy
+    // sharp features had, for five units, been demonstrated only where it was
+    // never in doubt.
+    //
+    // The shape here is a through slot in a block. Its edges are the ones a
+    // machinist measures: the two top rims where the slot meets the face, and the
+    // two bottom fillets where the walls meet the floor. Every one of them is a
+    // **cut** edge, so every normal in play comes from `tool::normal`.
+    use chipbreaker_core::sweep::batch::{DEFAULT_BATCH, cut_all};
+    use chipbreaker_core::sweep::cut::{CutScratch, SweepMethod};
+    use chipbreaker_core::sweep::{LinearMove, Motion};
+    use chipbreaker_core::tool::catalog::{Shank, flat_end_mill};
+
+    let (lo, hi) = (Vec3::new(0.0, 0.0, 0.0), Vec3::new(24.0, 18.0, 10.0));
+    let spacing = 0.5;
+    let floor = 6.0;
+    let (centre_y, radius) = (9.0, 3.0);
+
+    let mut field = field_from(&shapes::box_solid(lo, hi), spacing);
+    let profile = flat_end_mill(2.0 * radius, 30.0, &Shank::plain(2.0 * radius, 60.0))
+        .expect("valid");
+    let mut scratch = CutScratch::new(&profile);
+    cut_all(
+        &mut field,
+        &profile,
+        &[Motion::Linear(LinearMove {
+            // Right through, so the slot has no rounded ends to complicate the
+            // planes: two walls, a floor, and four straight edges.
+            start: Vec3::new(-4.0, centre_y, floor),
+            end: Vec3::new(28.0, centre_y, floor),
+        })],
+        SweepMethod::Analytic {
+            tolerance: spacing / 10.0,
+        },
+        &mut scratch,
+        DEFAULT_BATCH,
+    );
+
+    // Distance to the exact surface of the slotted block, which is a plane in
+    // every direction that matters here.
+    let wall = |y: f64| (y - (centre_y - radius)).abs().min((y - (centre_y + radius)).abs());
+    let surface = |p: Vec3| -> f64 {
+        // Inside the slot's width the surface is the floor; outside it, the top.
+        if (p.y - centre_y).abs() <= radius {
+            (p.z - floor).abs().min(wall(p.y))
+        } else {
+            (p.z - hi.z).abs().min(wall(p.y))
+        }
+    };
+
+    let measure = |use_normals: bool| -> (f64, f64, [u64; 4]) {
+        let (extracted, stats) = extract(
+            &field,
+            &ContourOptions {
+                use_normals,
+                ..ContourOptions::default()
+            },
+        )
+        .expect("extracts");
+        // Only vertices on one of the four slot edges: within a cell of a wall
+        // and within a cell of either the floor or the top face. Away from an
+        // edge both methods do equally well, and including those would dilute
+        // the comparison exactly as it would on the box.
+        let mut edge_error = Vec::new();
+        for p in extracted.vertices() {
+            let near_wall = wall(p.y) < spacing;
+            let near_step = (p.z - floor).abs() < spacing || (p.z - hi.z).abs() < spacing;
+            // Away from the ends of the block, so the stock's own construction
+            // edges cannot creep into a measurement about cut ones.
+            let interior = p.x > lo.x + 2.0 && p.x < hi.x - 2.0;
+            if near_wall && near_step && interior {
+                edge_error.push(surface(*p));
+            }
+        }
+        let (worst, rms) = worst_and_rms(&edge_error);
+        assert!(
+            edge_error.len() > 100,
+            "only {} vertices landed on a cut edge; the filter matched almost \
+             nothing and the comparison would mean nothing",
+            edge_error.len()
+        );
+        (worst, rms, stats.rank_histogram)
+    };
+
+    let (with_worst, with_rms, with_ranks) = measure(true);
+    let (without_worst, without_rms, without_ranks) = measure(false);
+
+    println!("edge fidelity on a {spacing} mm grid, CUT slot edges only:");
+    println!("  with normals:    worst {with_worst:.6} mm, rms {with_rms:.6} mm");
+    println!("  without normals: worst {without_worst:.6} mm, rms {without_rms:.6} mm");
+    println!("  rank histogram with normals:    {with_ranks:?}");
+    println!("  rank histogram without normals: {without_ranks:?}");
+    // Printed as a ratio only when there is a ratio to print. Dividing by a
+    // floor of 1e-12 to avoid an infinity yields "126361907901x", which is not a
+    // measurement of anything.
+    if with_rms > 0.0 {
+        println!(
+            "  improvement: {:.2}x on worst, {:.2}x on rms",
+            without_worst / with_worst,
+            without_rms / with_rms
+        );
+    } else {
+        println!("  improvement: with normals the edge is reconstructed exactly");
+    }
+
+    assert_eq!(
+        without_ranks[1] + without_ranks[2] + without_ranks[3],
+        0,
+        "discarding normals must leave the QEF with no constrained directions; \
+         got ranks {without_ranks:?}"
+    );
+    assert!(
+        with_ranks[2] + with_ranks[3] > 0,
+        "a slot has four long edges and the corners where they meet the ends; \
+         with normals the QEF found none: {with_ranks:?}"
+    );
+    assert!(
+        with_rms < without_rms,
+        "on cut geometry, storing normals must improve edge fidelity: with \
+         {with_rms:.6} mm rms against without {without_rms:.6} mm. This is the \
+         assertion the uncut version could not make, because an uncut field \
+         takes every normal from construction and never exercises the sweep."
     );
 }
 

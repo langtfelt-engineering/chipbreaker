@@ -11,11 +11,28 @@
 //! still watertight, and with every sharp edge rounded off.
 //!
 //! It exists so the cost of storing normals can be checked rather than asserted.
-//! On a 16 x 12 x 8 mm block at 0.5 mm, edge vertices land **exactly** on the
-//! box's edges with normals and up to 0.167 mm away without — a third of a cell,
-//! on the feature a machinist would measure first.
+//! At 0.5 mm, on the edges a machinist measures first:
 //!
-//! It is also the honest way to read a version 2 `.tdx`, which predates normals.
+//! | geometry | with normals | without |
+//! |---|---|---|
+//! | an uncut 16 x 12 x 8 mm block | **exact** | 0.167 mm worst, 0.126 rms |
+//! | a slot cut through a 24 x 18 x 10 mm block | **exact** | 0.125 mm worst, 0.125 rms |
+//!
+//! **The second row is the one that was missing, and it was missing for five
+//! units.** The first measures only *construction* normals — a field built from a
+//! mesh takes each endpoint's normal from the triangle its ray crossed, and that
+//! path was always right. A cut face takes its normal from the tool, and until
+//! Unit 12 the sweep set none at all: every cut face in the engine carried
+//! `(0, 0, -1)`, whichever way it faced. So the claim that four bytes an endpoint
+//! buy sharp features had been demonstrated only where it was never in doubt.
+//!
+//! It holds on cut geometry too, and holds exactly. Both rows are published
+//! because only together do they say what the four bytes buy. ADR 0010 records
+//! why the defect survived so long, and `tests/contour_accuracy.rs` is where both
+//! numbers are measured.
+//!
+//! `--no-normals` is also the honest way to read a version 2 `.tdx`, which
+//! predates normals.
 //!
 //! # `--stats` reports the disagreement rather than hiding it
 //!

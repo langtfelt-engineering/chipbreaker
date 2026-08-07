@@ -83,8 +83,17 @@ Nothing infers it from the bits, and nothing should start.
 - The goldens recorded before this fix encoded the defect. They were re-accepted
   in the same change, and the commit says why.
 - The Unit 9 claim that four bytes buy sharp features was measured on
-  construction normals only. It is restated, and re-measured on cut geometry, in
-  the same unit.
+  construction normals only — an uncut box, where the path that was broken is
+  never used. It is restated and re-measured on cut geometry, and **both numbers
+  are published**, because either alone overstates what is known:
+
+  | geometry, at `h = 0.5` | with normals | without |
+  |---|---|---|
+  | uncut 16 x 12 x 8 block | exact | 0.167 mm worst, 0.126 rms |
+  | slot cut through a 24 x 18 x 10 block | exact | 0.125 mm worst, 0.125 rms |
+
+  The claim survives on cut geometry, and survives exactly. That it survives is
+  not the point; that it had never been tested there is.
 - Any future producer of a span endpoint — a new sweep case, a new import path —
   must set a normal at the point of creation. There is no check that will catch
   it later.
