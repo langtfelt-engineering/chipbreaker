@@ -7,11 +7,12 @@ answers: **what shape is left at the end, and does it match the part we
 intended?** It finds gouges, leftover stock and tool-holder collisions before a
 real machine drives into a real workpiece.
 
-> **Status: Unit 11 of 20 complete.** Chipbreaker simulates a whole 3-axis NC
+> **Status: Unit 12 of 20 complete.** Chipbreaker simulates a whole 3-axis NC
 > program end to end — build a tri-dexel field from a stock mesh, cut it with
 > linear moves, arcs and helices across a multi-tool program, contour the result
-> back to a watertight mesh, and write it out — on as many threads as you have,
-> with the answer unchanged at every thread count.
+> back to a watertight mesh — and then **compares it against the part you meant**,
+> reporting gouges and leftover stock as two separate numbers. On as many threads
+> as you have, with the answer unchanged at every thread count.
 >
 > 500,000 segments over a 100 × 60 × 20 mm field at 0.5 mm takes **43 seconds**
 > when every move is level and **103 seconds** when every move ramps. Extraction
@@ -26,10 +27,14 @@ real machine drives into a real workpiece.
 > footprint exactly and refuses over-budget work before allocating. Native/WASM
 > parity is proved in CI across all of it.
 >
-> **Not there yet:** the verification layer. The engine can tell you what shape
-> is left; it cannot yet tell you where that differs from the part you meant, or
-> turn those differences into a list of findings. That is Units 12 to 15. See
-> [Roadmap](#roadmap).
+> A program plunged one millimetre too deep reports exactly `1.0000 mm` of
+> gouge over 1102 samples and exits non-zero; the same program a millimetre
+> shallow reports one millimetre of excess and passes, because material left
+> standing is what a roughing pass is for.
+>
+> **Not there yet:** turning a field of deviations into a short list of
+> *findings* a machinist can act on, tool-holder collision detection, and
+> multi-setup work. That is Units 13 to 15. See [Roadmap](#roadmap).
 
 ## The guarantee
 
@@ -39,8 +44,8 @@ platforms, and the WASM build.**
 Neither major incumbent publishes such a guarantee. It is enforced from the first
 commit rather than bolted on later, and CI checks it by running the self-test
 natively on Windows, Linux and macOS and under `wasmtime`, then comparing the
-resulting hashes byte for byte. All four currently agree on a single hash over 14
-suites and 22,687 cases, at every thread count.
+resulting hashes byte for byte. All four currently agree on a single hash over 15
+suites and 27,039 cases, at every thread count.
 
 Linux and `wasm32-wasip1` run on every push; the full four-target comparison runs
 nightly and on tags. That is a billing decision, not a confidence one — GitHub
@@ -218,11 +223,95 @@ The step count for the sub-stepped cases comes from the **helical** path length,
 never the chord: on a typical helix a chord under-states the path by 20.8%, so a
 chord-derived bound would claim an accuracy the sweep does not have.
 
+## Verifying a program
+
+`run` says what shape is left. `compare` says whether it is the right shape.
+
+```sh
+chipbreaker compare cut.tdx --nominal part.stl --units mm --tolerance 0.5
+```
+
+```text
+field      cut.tdx
+nominal    part.stl
+samples    11820
+tolerance  0.5000 mm (floor 0.4000 mm: stock 0.0000, nominal 0.0000, lattice 0.4000)
+
+GOUGE      worst 1.0000 mm over 1102 samples
+EXCESS     worst 0.0000 mm over 0 samples
+rms        0.2927 mm
+
+verdict    GOUGED above tolerance
+```
+
+Both blocks above are real output with the file paths shortened; nothing else is
+edited. The program is a 6 mm flat mill through a 24 x 18 x 10 mm block, plunged
+one millimetre below the nominal channel floor.
+
+**The two signs are never blended into one number.** A gouge is unambiguous:
+material that should be there is not, and nothing downstream puts it back.
+Excess stock is usually *expected* — it is what a roughing pass is supposed to
+leave. Only gouges decide the exit code. A tool that failed a correct roughing
+pass would be switched off within a day.
+
+`--tolerance` is checked against the floor before it is used. Asking for 0.01 mm
+against a visibly faceted nominal is refused, with the three inputs named and
+which one is the limit, because "refine your mesh" without saying which mesh is
+not actionable. `--allow-below-floor` overrides it deliberately.
+
+### Two rulers, and why both are printed
+
+`deviation-stat` gives the distribution behind the verdict: bands by depth, a
+split by bundle, and the worst samples with coordinates.
+
+```text
+worst 2 samples:
+    -1.0000 mm at (  21.000,   26.000,   25.000)  normal ( 0.000,  0.000,  1.000)  axis 1  perpendicular -5.0000
+    -1.0000 mm at (  21.000,   26.200,   25.000)  normal ( 0.000,  0.000,  1.000)  axis 2  perpendicular -1.0000
+```
+
+The first sample sits on the corner where a channel wall meets the gouged floor,
+and the two readings disagree by a factor of five. That is not a bug in either:
+
+- **Surface distance**, the metric, is the distance to the nearest point of the
+  nominal. It is what `d_H` is defined as.
+- **Perpendicular distance** is the same thing measured along the surface normal,
+  by casting a ray. At a step edge that ray leaves along the floor's normal,
+  passes the wall beside it and strikes the top face five millimetres away.
+
+The perpendicular reading is an upper bound and nothing more. It is published
+beside the metric rather than discarded, and `worst_projection_gap_mm` reports
+their largest disagreement — which is large exactly where a perpendicular number
+describes the measurement instead of the part.
+
+### The corpus is the oracle
+
+There is no ground truth for "useful", so recall is measured against **295
+injected defects**: eight kinds of operator error, seven locales, ten depths from
+a fifth of a cell to eight cells, each perturbing exactly one segment by a known
+amount at a known place.
+
+| depth | recall |
+|---|---|
+| below ½ cell | 80% |
+| ½ cell and above | **100%** |
+
+Gouges invented on a correctly machined part: **none**.
+
+A corpus like that is only an oracle if its cases genuinely contain what they
+claim, and twice they did not — a locale anchored on the stock surface, and a
+rapid clearing above it, each leaving cases that sat in the denominator and could
+never be found. Every case is now checked, before it counts, by a measurement
+that shares no code with the thing being tested: the Hausdorff distance between
+the two fields' span sets, ray by ray, with no mesh, extraction, normal or
+containment test anywhere in it. All 295 inject; the weakest reaches 94% of the
+depth it claims.
+
 ## Layout
 
 | Path | Contents |
 |---|---|
-| `crates/chipbreaker-core` | `math`, `predicates`, `transcendental`, `eps`, `spans`, `roots`, `mesh`, `tool`, `toolpath`, `dexel`, `sweep`, `contour`, `budget`, `golden`, `selftest` |
+| `crates/chipbreaker-core` | `math`, `predicates`, `transcendental`, `eps`, `spans`, `roots`, `mesh`, `tool`, `toolpath`, `dexel`, `sweep`, `contour`, `deviation`, `defect`, `budget`, `golden`, `selftest` |
 | `crates/chipbreaker-gcode` | RS-274 parser: the only place that reads G-code text |
 | `crates/chipbreaker-cli` | the `chipbreaker` binary |
 | `docs/adr` | architecture decisions, and the measurements behind them |
@@ -278,7 +367,8 @@ because that is usually the more useful half.
 | U9 | Dual contouring to a watertight mesh | **done** |
 | U10 | Memory ceiling, anisotropic resolution | **done** |
 | U11 | Deterministic parallelism | **done** |
-| U12–U15 | Deviation fields, gouge classification, collision detection, multi-setup | next |
+| U12 | Deviation fields: `compare`, the injected-defect corpus, the ladder | **done** |
+| U13–U15 | Gouge classification, collision detection, multi-setup | next |
 | U16 | WASM target and demo | |
 | U17 | Commercial packaging: C ABI, bindings, evaluation kit | |
 | U18 | Assurance package: SBOM, signed reproducible builds, error-budget specification | |
