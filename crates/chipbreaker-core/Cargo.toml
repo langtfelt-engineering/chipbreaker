@@ -47,6 +47,10 @@ name = "dexel"
 harness = false
 
 [[bench]]
+name = "contour"
+harness = false
+
+[[bench]]
 name = "sweep"
 harness = false
 

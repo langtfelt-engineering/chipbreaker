@@ -57,6 +57,31 @@
 //! cell's copy of the inside corner. Two disconnected sheets in a cell therefore
 //! draw from two different vertices and never meet.
 
+//! # Memory, and what it means for Unit 10
+//!
+//! Extraction holds the whole corner grid at once: one byte of sign per corner
+//! and three `Option<Crossing>` arrays, which is **49 bytes per corner**.
+//! Measured:
+//!
+//! ```text
+//! h = 1.00      29,568 corners      1.4 MiB
+//! h = 0.50     213,528 corners     10.0 MiB
+//! h = 0.25   1,620,648 corners     75.7 MiB
+//! ```
+//!
+//! Cost scales with the field's **volume** while output scales with the
+//! surface's **area**, which is why triangles-per-second falls as the grid
+//! refines even though nothing is getting slower: at `h = 0.25` a 40x30x20 mm
+//! block spends most of its time classifying corners that produce no surface.
+//!
+//! A 100M-ray field would need roughly 1.5 GiB for the grid on top of 4.7 GiB
+//! for the field itself, held together. **Slab-wise extraction is not
+//! implemented**, so that size is currently out of reach rather than merely
+//! slow. The structure needed is a sweep in `z` holding two planes of corner
+//! signs, the crossings on those planes, and one plane of cell vertices for the
+//! quads that span a slab boundary — which is the natural shape of the loops
+//! here but is not the shape they have.
+
 pub mod qef;
 
 use crate::dexel::tri::{AXES, TriDexelField};
