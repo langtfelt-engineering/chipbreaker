@@ -21,7 +21,7 @@
 //!
 //! ```text
 //! magic       8 bytes   b"CBDEXEL\0"
-//! version     u32       FORMAT_VERSION; a reader refuses anything else
+//! version     u32       FORMAT_VERSION; 2 is still accepted, see below
 //! axis        u32       0 = X, 1 = Y, 2 = Z
 //! counts      2 x u32   rays along each lattice axis
 //! origin      3 x f64   lower corner of the workspace
@@ -50,6 +50,7 @@
 use std::io::{Read, Write};
 
 use crate::golden::Digest;
+use crate::math::OctNormal;
 use crate::math::{Axis, Mat4, Vec3};
 use crate::spans::Span;
 
@@ -71,7 +72,7 @@ pub const MAGIC: [u8; 8] = *b"CBDEXEL\0";
 /// read needs the true extent, because `counts * spacing` has already rounded
 /// up. Version 1 files are refused rather than read with the wrong ray
 /// positions.
-pub const FORMAT_VERSION: u32 = 2;
+pub const FORMAT_VERSION: u32 = 3;
 
 /// Why a `.dexel` file could not be read or written.
 #[derive(Debug)]
@@ -204,6 +205,14 @@ pub fn write<W: Write>(field: &DexelField, w: &mut W) -> Result<(), FormatError>
         for span in spans {
             put_f64(w, span.t0)?;
             put_f64(w, span.t1)?;
+            // Version 3. Four bytes of outward normal per endpoint, written
+            // after both bounds so the bounds stay 16-byte aligned within the
+            // record and a version 2 reader's stride error is immediate rather
+            // than subtle.
+            put_u16(w, span.n0.u)?;
+            put_u16(w, span.n0.v)?;
+            put_u16(w, span.n1.u)?;
+            put_u16(w, span.n1.v)?;
         }
     }
     Ok(())
@@ -220,7 +229,9 @@ pub fn read<R: Read>(r: &mut R) -> Result<DexelField, FormatError> {
         return Err(FormatError::NotADexelFile { found: magic });
     }
     let version = get_u32(r, "the version")?;
-    if version != FORMAT_VERSION {
+    // Version 2 is still readable; see the span loop below. Anything older, or
+    // anything newer than this build knows, is refused.
+    if version == 0 || version > FORMAT_VERSION {
         return Err(FormatError::UnknownVersion {
             found: version,
             expected: FORMAT_VERSION,
@@ -281,7 +292,24 @@ pub fn read<R: Read>(r: &mut R) -> Result<DexelField, FormatError> {
         for _ in 0..count {
             let t0 = get_f64(r, "a span")?;
             let t1 = get_f64(r, "a span")?;
-            spans.push(Span::new(t0, t1));
+            // Version 2 predates normals. Its spans load with the placeholder,
+            // which extraction treats exactly as `--no-normals` does: a valid,
+            // manifold, smooth mesh with sharp edges rounded off. Refusing the
+            // file instead would be worse -- the geometry in it is still good.
+            let span = if version >= 3 {
+                let n0 = OctNormal {
+                    u: get_u16(r, "a span normal")?,
+                    v: get_u16(r, "a span normal")?,
+                };
+                let n1 = OctNormal {
+                    u: get_u16(r, "a span normal")?,
+                    v: get_u16(r, "a span normal")?,
+                };
+                Span::with_normals(t0, t1, n0, n1)
+            } else {
+                Span::new(t0, t1)
+            };
+            spans.push(span);
         }
         total += u64::from(count);
         if count > 0 {
@@ -328,6 +356,11 @@ fn put_u32<W: Write>(w: &mut W, value: u32) -> Result<(), FormatError> {
     Ok(())
 }
 
+fn put_u16<W: Write>(w: &mut W, value: u16) -> Result<(), FormatError> {
+    w.write_all(&value.to_le_bytes())?;
+    Ok(())
+}
+
 fn put_u64<W: Write>(w: &mut W, value: u64) -> Result<(), FormatError> {
     w.write_all(&value.to_le_bytes())?;
     Ok(())
@@ -353,6 +386,12 @@ fn get_u32<R: Read>(r: &mut R, what: &'static str) -> Result<u32, FormatError> {
     let mut bytes = [0u8; 4];
     fill(r, &mut bytes, what)?;
     Ok(u32::from_le_bytes(bytes))
+}
+
+fn get_u16<R: Read>(r: &mut R, what: &'static str) -> Result<u16, FormatError> {
+    let mut bytes = [0u8; 2];
+    fill(r, &mut bytes, what)?;
+    Ok(u16::from_le_bytes(bytes))
 }
 
 fn get_u64<R: Read>(r: &mut R, what: &'static str) -> Result<u64, FormatError> {

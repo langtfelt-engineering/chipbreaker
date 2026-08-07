@@ -65,8 +65,25 @@ use core::fmt;
 
 use crate::eps::{EPS_SPAN_MERGE, EPS_SPAN_MIN};
 use crate::golden::{CanonicalHash, Hashable};
+use crate::math::OctNormal;
 
-/// A single half-open interval `[t0, t1)`.
+/// A single half-open interval `[t0, t1)`, with the surface normal at each end.
+///
+/// # Why the normals live here and not beside here
+///
+/// They are attributes of the *endpoints*, and the endpoints are what the
+/// boolean algebra creates and destroys. A cut is a subtraction, and subtraction
+/// is precisely the operation that invents an endpoint that did not exist
+/// before; only the merge-scan knows, at that moment, that the new endpoint lies
+/// on the cutter rather than on the stock. A parallel array maintained outside
+/// the scan would have to re-derive that afterwards by matching positions, which
+/// is both slower and a guess.
+///
+/// So the scan carries them, and `Span` grows from 16 bytes to 24.
+///
+/// The normals take no part in ordering, validity, measure or merging. Two spans
+/// with the same bounds and different normals are *not* `==`, which is
+/// deliberate: it is what makes a golden hash notice a flipped cut face.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Span {
@@ -74,14 +91,47 @@ pub struct Span {
     pub t0: f64,
     /// Exclusive upper bound.
     pub t1: f64,
+    /// Outward surface normal at `t0`. See [`OctNormal`] for the convention.
+    pub n0: OctNormal,
+    /// Outward surface normal at `t1`.
+    pub n1: OctNormal,
 }
 
 impl Span {
-    /// Constructs a span. Does not reorder: see [`Span::is_valid`].
+    /// Constructs a span with no recorded normals.
+    ///
+    /// Both ends get [`OctNormal::PLACEHOLDER`]. Use this where the geometry is
+    /// what matters and the orientation is genuinely unknown — interval algebra
+    /// under test, clipping bounds, a legacy file. Use [`Span::with_normals`]
+    /// wherever a real surface is being described, because a placeholder that
+    /// reaches the extractor costs a sharp edge.
+    ///
+    /// Does not reorder: see [`Span::is_valid`].
     #[inline]
     #[must_use]
     pub const fn new(t0: f64, t1: f64) -> Self {
-        Self { t0, t1 }
+        Self {
+            t0,
+            t1,
+            n0: OctNormal::PLACEHOLDER,
+            n1: OctNormal::PLACEHOLDER,
+        }
+    }
+
+    /// Constructs a span carrying the outward normal at each end.
+    #[inline]
+    #[must_use]
+    pub const fn with_normals(t0: f64, t1: f64, n0: OctNormal, n1: OctNormal) -> Self {
+        Self { t0, t1, n0, n1 }
+    }
+
+    /// The same interval with both normals replaced by the placeholder.
+    ///
+    /// What `extract --no-normals` uses to produce the surface-nets control.
+    #[inline]
+    #[must_use]
+    pub const fn without_normals(self) -> Self {
+        Self::new(self.t0, self.t1)
     }
 
     /// Constructs a span from two parameters in either order.
@@ -130,7 +180,7 @@ impl Span {
     #[inline]
     #[must_use]
     pub fn translated(self, d: f64) -> Self {
-        Self::new(self.t0 + d, self.t1 + d)
+        Self::with_normals(self.t0 + d, self.t1 + d, self.n0, self.n1)
     }
 }
 
@@ -142,7 +192,12 @@ impl fmt::Display for Span {
 
 impl Hashable for Span {
     fn hash_canonical(&self, h: &mut CanonicalHash) {
-        h.begin("Span").f64(self.t0).f64(self.t1).end();
+        h.begin("Span").f64(self.t0).f64(self.t1);
+        // Hashed, so an inverted cut face moves the digest instead of producing
+        // a mesh that validates and is inside out.
+        self.n0.hash_canonical(h);
+        self.n1.hash_canonical(h);
+        h.end();
     }
 }
 
@@ -180,6 +235,7 @@ fn boolean_scan<const OP: u8>(a: &[Span], b: &[Span], out: &mut Vec<Span>) {
     let mut in_a = false;
     let mut in_b = false;
     let mut open_at = 0.0f64;
+    let mut open_normal = OctNormal::PLACEHOLDER;
     let mut open = false;
 
     loop {
@@ -218,6 +274,31 @@ fn boolean_scan<const OP: u8>(a: &[Span], b: &[Span], out: &mut Vec<Span>) {
             }
         };
 
+        // The normal to attach if this endpoint ends up on the output boundary.
+        //
+        // `a` wins a tie. `a` is the material and `b` the cutter, so when a cut
+        // lands exactly on an existing face, the face that was already there is
+        // the one that survives -- and, more to the point, the rule has to be
+        // *some* fixed rule rather than whichever stream the loop happened to
+        // examine first.
+        //
+        // A `b` endpoint is **negated**. Its stored normal points out of the
+        // cutter, and the cutter's material sits on the side the workpiece's
+        // does not, so out-of-the-remaining-material is the reverse. This one
+        // sign is the whole of the convention in `OctNormal`, and getting it
+        // backwards yields a watertight, manifold, inside-out mesh.
+        let normal_here = if ea == Some(t) {
+            Some(if in_a { a[ia].n1 } else { a[ia].n0 })
+        } else if eb == Some(t) && OP == OP_DIFFERENCE {
+            Some(if in_b { b[ib].n1 } else { b[ib].n0 }.negated())
+        } else if eb == Some(t) {
+            // Union and intersection do not reverse anything: both operands are
+            // solids and their surfaces keep facing the way they faced.
+            Some(if in_b { b[ib].n1 } else { b[ib].n0 })
+        } else {
+            None
+        };
+
         if ea == Some(t) {
             if in_a {
                 ia += 1;
@@ -234,9 +315,15 @@ fn boolean_scan<const OP: u8>(a: &[Span], b: &[Span], out: &mut Vec<Span>) {
         let inside = combine::<OP>(in_a, in_b);
         if inside && !open {
             open_at = t;
+            open_normal = normal_here.unwrap_or(OctNormal::PLACEHOLDER);
             open = true;
         } else if !inside && open {
-            out.push(Span::new(open_at, t));
+            out.push(Span::with_normals(
+                open_at,
+                t,
+                open_normal,
+                normal_here.unwrap_or(OctNormal::PLACEHOLDER),
+            ));
             open = false;
         }
     }
@@ -265,9 +352,16 @@ fn normalize_in_place(v: &mut Vec<Span>) {
         let next = v[read];
         if next.t0 - current.t1 <= EPS_SPAN_MERGE {
             // Overlapping or close enough to fuse. `max` because `next` may be
-            // wholly contained in `current`.
+            // wholly contained in `current` -- in which case `current` keeps its
+            // own far end, normal included.
+            //
+            // The normal must travel with the bound it belongs to. Moving `t1`
+            // and leaving `n1` behind would leave the fused span describing its
+            // far face with the normal of a face that is now in its interior,
+            // which the extractor would then use to place a vertex.
             if next.t1 > current.t1 {
                 current.t1 = next.t1;
+                current.n1 = next.n1;
             }
         } else {
             // `current` is final. Keep it only if it survives the drop
@@ -424,8 +518,11 @@ impl Spans {
                 if span.t0 - last.t1 <= EPS_SPAN_MERGE {
                     // Fuse. `last` can only grow to the right, so its gap to the
                     // span before it is unchanged and the invariant holds.
+                    // The normal travels with the bound; see
+                    // `normalize_in_place`.
                     if span.t1 > last.t1 {
                         last.t1 = span.t1;
+                        last.n1 = span.n1;
                     }
                 } else {
                     self.spans.push(span);
@@ -625,6 +722,188 @@ impl Hashable for Spans {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::math::Vec3;
+
+    /// A span whose ends carry recognisable directions.
+    fn sn(t0: f64, t1: f64, a: Vec3, b: Vec3) -> Span {
+        Span::with_normals(t0, t1, OctNormal::encode(a), OctNormal::encode(b))
+    }
+
+    fn dir(n: OctNormal) -> Vec3 {
+        n.decode()
+    }
+
+    /// Roughly equal directions, to within the encoding's own resolution.
+    fn same_dir(a: Vec3, b: Vec3) -> bool {
+        a.x * b.x + a.y * b.y + a.z * b.z > 0.999
+    }
+
+    #[test]
+    fn subtracting_puts_the_cutter_normal_on_the_new_faces_reversed() {
+        // **The sign convention, which is the one that produces an inside-out
+        // mesh if it is wrong.**
+        //
+        // Material occupies [0, 10) along the ray, with its own outward normals
+        // pointing away from it: -Z at the near end, +Z at the far end. A cutter
+        // occupies [4, 6), with ITS outward normals pointing away from IT: -Z at
+        // 4, +Z at 6.
+        //
+        // The result is [0, 4) and [6, 10). The face at 4 is new, lies on the
+        // cutter, and must point +Z -- out of the remaining material at 4, which
+        // is the OPPOSITE of the cutter's own -Z there. Likewise at 6.
+        let material = sn(
+            0.0,
+            10.0,
+            Vec3::new(0.0, 0.0, -1.0),
+            Vec3::new(0.0, 0.0, 1.0),
+        );
+        let cutter = sn(
+            4.0,
+            6.0,
+            Vec3::new(0.0, 0.0, -1.0),
+            Vec3::new(0.0, 0.0, 1.0),
+        );
+
+        let out = Spans::from_span(material).subtract(&Spans::from_span(cutter));
+        assert_eq!(pairs(&out), [(0.0, 4.0), (6.0, 10.0)]);
+        let v = out.as_slice();
+
+        assert!(
+            same_dir(dir(v[0].n0), Vec3::new(0.0, 0.0, -1.0)),
+            "the untouched near face kept its own normal, got {:?}",
+            dir(v[0].n0)
+        );
+        assert!(
+            same_dir(dir(v[0].n1), Vec3::new(0.0, 0.0, 1.0)),
+            "the cut face at 4 must point OUT of the material that remains below              it, i.e. +Z -- the reverse of the cutter's -Z there. Got {:?}. If              this is -Z the whole mesh will be inside out on cut faces only.",
+            dir(v[0].n1)
+        );
+        assert!(
+            same_dir(dir(v[1].n0), Vec3::new(0.0, 0.0, -1.0)),
+            "the cut face at 6 must point -Z, got {:?}",
+            dir(v[1].n0)
+        );
+        assert!(
+            same_dir(dir(v[1].n1), Vec3::new(0.0, 0.0, 1.0)),
+            "the untouched far face kept its own normal, got {:?}",
+            dir(v[1].n1)
+        );
+    }
+
+    #[test]
+    fn an_untouched_span_keeps_its_normals_exactly() {
+        // Not merely close: a cut elsewhere on the ray must not perturb a face
+        // it never reached, or a thousand cuts would drift the normals the way
+        // Unit 7 proved the positions do not.
+        let a = sn(
+            0.0,
+            2.0,
+            Vec3::new(-1.0, 0.0, 0.0),
+            Vec3::new(0.3, 0.5, 0.8),
+        );
+        let far = Spans::from_span(Span::new(50.0, 60.0));
+        let out = Spans::from_span(a).subtract(&far);
+        assert_eq!(
+            out.as_slice(),
+            &[a],
+            "an untouched span must survive bit for bit"
+        );
+    }
+
+    #[test]
+    fn fusing_two_spans_takes_the_far_normal_from_the_far_span() {
+        // The merge path. Fusing [0,4) with [4,8) must describe the result's far
+        // face with the SECOND span's normal, not the first's -- the first's
+        // face is now interior and does not exist.
+        let a = sn(
+            0.0,
+            4.0,
+            Vec3::new(-1.0, 0.0, 0.0),
+            Vec3::new(1.0, 0.0, 0.0),
+        );
+        let b = sn(
+            4.0,
+            8.0,
+            Vec3::new(-1.0, 0.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+        );
+        let out = Spans::from_unsorted(vec![a, b]);
+        assert_eq!(pairs(&out), [(0.0, 8.0)]);
+        assert!(
+            same_dir(dir(out.as_slice()[0].n1), Vec3::new(0.0, 1.0, 0.0)),
+            "fused span kept the interior face's normal, got {:?}",
+            dir(out.as_slice()[0].n1)
+        );
+        assert!(
+            same_dir(dir(out.as_slice()[0].n0), Vec3::new(-1.0, 0.0, 0.0)),
+            "fused span lost its near normal"
+        );
+    }
+
+    #[test]
+    fn normals_do_not_affect_the_geometry_of_any_operation() {
+        // The guarantee that keeps the Unit 1 property tests meaningful: the
+        // algebra must be blind to the attribute it carries.
+        let bare = |x: &Spans| -> Vec<(f64, f64)> { pairs(x) };
+        let a_plain = s(&[(0.0, 4.0), (6.0, 10.0)]);
+        let b_plain = s(&[(2.0, 7.0)]);
+        let a_norm = Spans::from_unsorted(vec![
+            sn(
+                0.0,
+                4.0,
+                Vec3::new(1.0, 2.0, 3.0),
+                Vec3::new(-3.0, 1.0, 0.5),
+            ),
+            sn(
+                6.0,
+                10.0,
+                Vec3::new(0.0, -1.0, 0.0),
+                Vec3::new(0.2, 0.2, -1.0),
+            ),
+        ]);
+        let b_norm = Spans::from_unsorted(vec![sn(
+            2.0,
+            7.0,
+            Vec3::new(0.0, 0.0, -1.0),
+            Vec3::new(0.0, 0.0, 1.0),
+        )]);
+        assert_eq!(bare(&a_plain.union(&b_plain)), bare(&a_norm.union(&b_norm)));
+        assert_eq!(
+            bare(&a_plain.intersect(&b_plain)),
+            bare(&a_norm.intersect(&b_norm))
+        );
+        assert_eq!(
+            bare(&a_plain.subtract(&b_plain)),
+            bare(&a_norm.subtract(&b_norm))
+        );
+        assert_eq!(a_plain.measure(), a_norm.measure());
+    }
+
+    #[test]
+    fn a_span_differing_only_in_its_normals_is_not_equal() {
+        // Deliberate: it is what lets the golden hash catch a flipped cut face.
+        let up = sn(
+            0.0,
+            1.0,
+            Vec3::new(0.0, 0.0, -1.0),
+            Vec3::new(0.0, 0.0, 1.0),
+        );
+        let down = sn(
+            0.0,
+            1.0,
+            Vec3::new(0.0, 0.0, 1.0),
+            Vec3::new(0.0, 0.0, -1.0),
+        );
+        assert_ne!(up, down);
+        let (mut h1, mut h2) = (CanonicalHash::new(), CanonicalHash::new());
+        up.hash_canonical(&mut h1);
+        down.hash_canonical(&mut h2);
+        assert_ne!(
+            h1.finish(),
+            h2.finish(),
+            "an inverted face must move the digest"
+        );
+    }
 
     /// Builds a `Spans` from `[t0, t1]` pairs, asserting it is already in
     /// canonical form so the test data itself cannot hide a normalization bug.

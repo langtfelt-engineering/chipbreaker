@@ -34,6 +34,7 @@
 mod aabb3;
 mod mat3;
 mod mat4;
+mod oct;
 mod ray;
 mod vec2;
 mod vec3;
@@ -41,6 +42,7 @@ mod vec3;
 pub use aabb3::{Aabb3, Axis};
 pub use mat3::Mat3;
 pub use mat4::Mat4;
+pub use oct::OctNormal;
 pub use ray::Ray;
 pub use vec2::Vec2;
 pub use vec3::Vec3;

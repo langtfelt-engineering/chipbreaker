@@ -41,7 +41,7 @@
 use std::borrow::Cow;
 
 use crate::golden::{CanonicalHash, Hashable};
-use crate::math::{Aabb3, Axis, Mat4, Ray, Vec3};
+use crate::math::{Aabb3, Axis, Mat4, OctNormal, Ray, Vec3};
 use crate::mesh::TriMesh;
 use crate::mesh::bvh::{Bvh, RayError, RayStats};
 use crate::spans::Span;
@@ -54,6 +54,16 @@ use super::lattice::{Lattice, LatticeError};
 pub enum BuildError {
     /// The lattice itself was rejected.
     Lattice(LatticeError),
+    /// The three bundles do not share one corner lattice.
+    ///
+    /// Dual contouring needs a single grid whose corners are ray positions;
+    /// see `TriDexelField::check_registration`.
+    Registration {
+        /// Which world axis the bundles disagree along.
+        axis: &'static str,
+        /// What disagreed.
+        detail: String,
+    },
     /// A ray query failed.
     Ray {
         /// Which ray.
@@ -99,6 +109,10 @@ impl core::fmt::Display for BuildError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Lattice(e) => write!(f, "{e}"),
+            Self::Registration { axis, detail } => write!(
+                f,
+                "the three bundles do not share one corner lattice along {axis}: {detail}.                  Dual contouring needs a single grid whose corners are ray positions, because                  the three bundles are that grid's three edge directions, so this is not                  something extraction can work around."
+            ),
             Self::Ray {
                 ray,
                 origin,
@@ -314,7 +328,28 @@ impl DexelField {
             // span, which `push_merge` folds away.
             spans.clear();
             for pair in hits.chunks_exact(2) {
-                let span = Span::ordered(pair[0].t, pair[1].t);
+                // The triangle normal at each crossing, which Unit 9's dual
+                // contouring needs and which is free right here. `face_normal`
+                // is computed from the winding, and the mesh has already been
+                // validated closed and consistently oriented, so it points out
+                // of the material without further adjustment -- which is exactly
+                // the convention `OctNormal` documents.
+                //
+                // A degenerate triangle yields `None`; those are dropped before
+                // casting, so this cannot normally fire, and the placeholder is
+                // the honest answer rather than a guessed direction.
+                let normal_of = |hit: &crate::mesh::bvh::Hit| {
+                    placed
+                        .as_ref()
+                        .face_normal(hit.triangle)
+                        .map_or(OctNormal::PLACEHOLDER, OctNormal::encode)
+                };
+                let (na, nb) = (normal_of(&pair[0]), normal_of(&pair[1]));
+                let span = if pair[0].t <= pair[1].t {
+                    Span::with_normals(pair[0].t, pair[1].t, na, nb)
+                } else {
+                    Span::with_normals(pair[1].t, pair[0].t, nb, na)
+                };
                 match spans.last_mut() {
                     // Adjacent or overlapping spans are merged as they are built,
                     // which keeps the arena's contents normalised without a
@@ -324,7 +359,11 @@ impl DexelField {
                     // two, because inventing a tolerance here would quietly
                     // erase thin walls.
                     Some(previous) if span.t0 <= previous.t1 => {
-                        previous.t1 = previous.t1.max(span.t1);
+                        // The normal travels with the bound it names.
+                        if span.t1 > previous.t1 {
+                            previous.t1 = span.t1;
+                            previous.n1 = span.n1;
+                        }
                     }
                     _ => spans.push(span),
                 }

@@ -15,7 +15,7 @@
       "rays_rejected": 4600,
       "span_distribution": [[0, 1200], [1, 4800], [2, 1600]],
       "spilled_rays": 0,
-      "digest": "f44e2b89dba95db8c82042120fae2677146af45caacc3e3c99228a66ed85e347"
+      "digest": "ec584ca6ce591f5e209b29f3b7e3c7d07e46209e0548d884771823406b156eee"
     },
     {
       "id": "case-a-diagonal-ball",
@@ -29,7 +29,7 @@
       "rays_rejected": 1490,
       "span_distribution": [[1, 6072], [2, 1528]],
       "spilled_rays": 0,
-      "digest": "e21235c34914b811554403faa3e13ee002a7e4c89123d4d849520db66e2f8477"
+      "digest": "431e7ba1519f915f5fc28d35e38e9698bf2bbdcfb32a47a83deff3e054243852"
     },
     {
       "id": "case-a-along-x-ray-degenerate",
@@ -43,7 +43,7 @@
       "rays_rejected": 5446,
       "span_distribution": [[0, 120], [1, 6680], [2, 800]],
       "spilled_rays": 0,
-      "digest": "a2cde5b2d4837f1342fb4bc3308f0a484a23e1c40d8a069f8d4967935cad2395"
+      "digest": "de16533a48ad13e761f969eb60bc9cbbf729df647d4f5efdc29bbc51129f57f8"
     },
     {
       "id": "case-b-plunge-drill",
@@ -57,7 +57,7 @@
       "rays_rejected": 6928,
       "span_distribution": [[1, 7260], [2, 340]],
       "spilled_rays": 0,
-      "digest": "2eea1398a1754012901257a652b29d56f1801bacc685cfdc29cf1b5f579fa1aa"
+      "digest": "2037b7b34cabb184a3f34d55e3f87092af9b02e01c9fa48fc91e745573f4755f"
     },
     {
       "id": "case-b-plunge-necked-shank",
@@ -71,7 +71,7 @@
       "rays_rejected": 6280,
       "span_distribution": [[1, 6892], [2, 708]],
       "spilled_rays": 0,
-      "digest": "e8e6d1585266b3ee258ec4ecbfeffd24e9e6547130bf913a1478af436f132055"
+      "digest": "d829d2258fdad36d5f832b8961a12b3d57c75bd7fcb026b947700935c12bce88"
     },
     {
       "id": "case-b-retract",
@@ -85,7 +85,7 @@
       "rays_rejected": 13968,
       "span_distribution": [[1, 7264], [2, 336]],
       "spilled_rays": 0,
-      "digest": "10e060ab0b8ec7212dbccf4d5a8ec428b43eee7cd9af682689176d2f0be81dfe"
+      "digest": "566f878738e4e40217b2ec05401be0340fb074f33f77cab1af2dc2ee09faa81e"
     },
     {
       "id": "case-c-ramp-entry",
@@ -99,7 +99,7 @@
       "rays_rejected": 5896,
       "span_distribution": [[1, 7122], [2, 478]],
       "spilled_rays": 0,
-      "digest": "4030d4e2d3a7d48c19d30de943bc215b93220ec849a2ee646ae52f251facc403"
+      "digest": "671fac1c7c84908d9f809012445ac94a976fdd820d7fa6bdca11985ba720c78b"
     },
     {
       "id": "case-c-ramp-diagonal",
@@ -113,7 +113,7 @@
       "rays_rejected": 2244,
       "span_distribution": [[1, 6958], [2, 642]],
       "spilled_rays": 0,
-      "digest": "dfca04f7f385168108fe6e22ac4164c4fe680ff4d49ded0f8fb38c4a418f929e"
+      "digest": "765c273cb44e8e33d1dac32086e86e9d0dc0b838438434a3da62de200b763cf6"
     },
     {
       "id": "mixed-pocket-rib",
@@ -127,7 +127,7 @@
       "rays_rejected": 9200,
       "span_distribution": [[0, 2400], [1, 3600], [3, 1600]],
       "spilled_rays": 1600,
-      "digest": "8180e5d608adf9aef271ed3a17ecd141c83f4a3df7c79372457a5e853b73c9a7"
+      "digest": "673eeef80cbd50483e63a3592cdf4b94167e492f55c8beacef856925da0d1574"
     },
     {
       "id": "arc-a-prime-full-circle",
@@ -141,7 +141,7 @@
       "rays_rejected": 4200,
       "span_distribution": [[1, 6832], [2, 384], [3, 384]],
       "spilled_rays": 384,
-      "digest": "9e7617cf92e3399b6f2eb0446f9eecb9cf294b161d218a5b8505ac96443f7c38"
+      "digest": "5c4c4836fb3a24ceb712a768a3d3bffeb15b40d2009fbad3d4c50c6bff9b1098"
     },
     {
       "id": "arc-a-prime-quarter-with-caps",
@@ -155,7 +155,7 @@
       "rays_rejected": 6225,
       "span_distribution": [[1, 7080], [2, 509], [3, 11]],
       "spilled_rays": 11,
-      "digest": "ebae47c9305a93008b8394f6310d8b46ee254e21dcd06d655abd1820a5a1b392"
+      "digest": "073c027d46f3d32819f2a56b8a48482393960596963b88064c313b90cc5cd153"
     },
     {
       "id": "arc-a-prime-clockwise-across-zero",
@@ -169,7 +169,7 @@
       "rays_rejected": 4748,
       "span_distribution": [[1, 6592], [2, 936], [3, 72]],
       "spilled_rays": 72,
-      "digest": "f7781ff99a727f2563d9748a14b65c796f3a64ecc53be8992404d165c0c1a097"
+      "digest": "43c0a548c3e1af491e3bba0917f160706682599fdf74c104eadef90c65362eeb"
     },
     {
       "id": "arc-b-prime-helical-bore",
@@ -183,7 +183,7 @@
       "rays_rejected": 5696,
       "span_distribution": [[1, 7079], [2, 434], [3, 87]],
       "spilled_rays": 87,
-      "digest": "99b4571b990160f07336e4882be127db96500693b83f86271154ea878ca25f8f"
+      "digest": "bac67d691b4dd57c16310a30522bb9644dc58af09af52cd950a4a814dfcd801e"
     },
     {
       "id": "arc-g18-vertical-plane",
@@ -197,7 +197,7 @@
       "rays_rejected": 6436,
       "span_distribution": [[0, 112], [1, 6883], [2, 605]],
       "spilled_rays": 0,
-      "digest": "36c05caceccddc9f3d64ae4e1c1495dd9db84350b391206e1d911dabb0bd6e0c"
+      "digest": "8cca5046574549b4d701024004cfb6d6881eed2f7bb40b9876881d257a77bbe0"
     },
     {
       "id": "mixed-arc-with-lead-in-and-out",
@@ -211,7 +211,7 @@
       "rays_rejected": 18640,
       "span_distribution": [[1, 6560], [2, 860], [3, 180]],
       "spilled_rays": 180,
-      "digest": "a34433da801a80b50790fe62aa28076d752bbfa4370cd0c57a3ae751edad8d3f"
+      "digest": "f8f0b4e76347149eb1245b5c078b9019d711e98e437b3a92897634b75fe5cfcf"
     },
     {
       "id": "mixed-raster-with-plunges",
@@ -225,7 +225,7 @@
       "rays_rejected": 33184,
       "span_distribution": [[1, 6896], [2, 320], [3, 384]],
       "spilled_rays": 384,
-      "digest": "66857b80a916b870fd5ecb1c582a216e388eae5db6ce586e44e8700a986cee64"
+      "digest": "e930bb32ecaad6fb1a238ce0b1d1dc2ebf93f5e919de57b75e9a6abb799c962f"
     }
   ]
 }

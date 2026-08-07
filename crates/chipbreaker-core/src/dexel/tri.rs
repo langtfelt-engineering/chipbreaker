@@ -383,13 +383,139 @@ impl TriDexelField {
         }
         totals.per_axis = per_axis;
 
-        Ok((
-            Self {
-                bundles,
-                provenance,
-            },
-            totals,
-        ))
+        let field = Self {
+            bundles,
+            provenance,
+        };
+        field.check_registration()?;
+        Ok((field, totals))
+    }
+
+    /// Corner coordinates along one world axis, from whichever bundle sees it.
+    ///
+    /// Returns `None` when no built bundle has a transverse coordinate along
+    /// `world` — with a single bundle, two of the three axes are like that.
+    #[must_use]
+    pub fn corner_coordinates(&self, world: Axis) -> Option<Vec<f64>> {
+        for bundle_axis in AXES {
+            let Some(bundle) = self.bundle(bundle_axis) else {
+                continue;
+            };
+            let lattice = bundle.lattice();
+            let [u, v, _] = bundle_axis.cyclic();
+            let which = if u == world.index() {
+                0
+            } else if v == world.index() {
+                1
+            } else {
+                continue;
+            };
+            let n = lattice.counts()[which];
+            return Some(
+                (0..n)
+                    .map(|k| {
+                        let (i, j) = if which == 0 { (k, 0) } else { (0, k) };
+                        lattice.origin_of(i, j).to_array()[world.index()]
+                    })
+                    .collect(),
+            );
+        }
+        None
+    }
+
+    /// Verifies that the three bundles share one corner lattice.
+    ///
+    /// # Why this is an invariant and not a coincidence
+    ///
+    /// Unit 6 recorded that the three bundles need not be co-registered. That
+    /// was wrong, and Unit 9 is where it comes due: dual contouring needs a
+    /// single grid whose **corners** are ray positions, because the three
+    /// bundles *are* the three edge directions of that grid. An X-directed edge
+    /// from `(x_i, y_j, z_k)` to `(x_{i+1}, y_j, z_k)` has to be a sub-segment
+    /// of the X-bundle ray at transverse `(y_j, z_k)`, which requires all three
+    /// bundles to draw their transverse coordinates from one common set.
+    ///
+    /// The Unit 6 centring already delivers this, and to the bit: `pad` depends
+    /// only on the axis extent and the spacing, both shared, so the Y ordinates
+    /// of the X-bundle's rays and of the Z-bundle's rays are computed from
+    /// identical inputs by identical arithmetic. Measured at 0 ULP across five
+    /// stock sizes including deliberately awkward spacings.
+    ///
+    /// It is checked anyway, because it is now load-bearing and was previously
+    /// free to change. Unit 10's adaptive subdivision is the thing most likely
+    /// to break it.
+    ///
+    /// **Note on the half-cell offset.** This puts the DC cell grid half a cell
+    /// away from the dexel cell grid: dexel cell centres are the DC grid's
+    /// corners. That is a relabelling, not a violation of Unit 5's rule that
+    /// ray origins avoid the integer lattice — the rays are exactly where they
+    /// always were, and only the name of the grid they define has changed.
+    ///
+    /// # Errors
+    /// [`BuildError::Registration`] if two bundles disagree about the position
+    /// or the count of the corners along a shared axis.
+    pub fn check_registration(&self) -> Result<(), BuildError> {
+        for world in AXES {
+            let mut reference: Option<(Axis, Vec<f64>)> = None;
+            for bundle_axis in AXES {
+                let Some(bundle) = self.bundle(bundle_axis) else {
+                    continue;
+                };
+                let lattice = bundle.lattice();
+                let [u, v, _] = bundle_axis.cyclic();
+                let which = if u == world.index() {
+                    0
+                } else if v == world.index() {
+                    1
+                } else {
+                    continue;
+                };
+                let n = lattice.counts()[which];
+                let coords: Vec<f64> = (0..n)
+                    .map(|k| {
+                        let (i, j) = if which == 0 { (k, 0) } else { (0, k) };
+                        lattice.origin_of(i, j).to_array()[world.index()]
+                    })
+                    .collect();
+                match &reference {
+                    None => reference = Some((bundle_axis, coords)),
+                    Some((first_axis, first)) => {
+                        if first.len() != coords.len() {
+                            return Err(BuildError::Registration {
+                                axis: world.as_str(),
+                                detail: format!(
+                                    "bundle {} has {} corners along {} but bundle {} has {}",
+                                    first_axis.as_str(),
+                                    first.len(),
+                                    world.as_str(),
+                                    bundle_axis.as_str(),
+                                    coords.len()
+                                ),
+                            });
+                        }
+                        // Bit equality, not a tolerance. These are the same
+                        // arithmetic on the same inputs; anything else means the
+                        // lattices were derived differently, and a tolerance
+                        // would let that through until it mattered.
+                        for (k, (a, b)) in first.iter().zip(coords.iter()).enumerate() {
+                            if a.to_bits() != b.to_bits() {
+                                return Err(BuildError::Registration {
+                                    axis: world.as_str(),
+                                    detail: format!(
+                                        "corner {k} along {} is {a} in bundle {} and {b} in \
+                                         bundle {}",
+                                        world.as_str(),
+                                        first_axis.as_str(),
+                                        bundle_axis.as_str()
+                                    ),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Reassembles from parts, for the `.tdx` reader.
