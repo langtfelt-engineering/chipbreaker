@@ -258,6 +258,14 @@ fn line(a: [f64; 3], b: [f64; 3]) -> Motion {
 /// The stock every case is cut from: 40 x 30 x 12 mm at the origin.
 pub const STOCK: [f64; 3] = [40.0, 30.0, 12.0];
 
+/// How far inside the stock a pass must begin and end, in millimetres.
+///
+/// Half the tool diameter, so a plunge at either end of a pass lands with the
+/// whole cutter over material. Without it an anchor near an edge puts an end of
+/// its own pass in mid-air, and a defect injected there is injected into
+/// nothing.
+const MARGIN: f64 = 3.0;
+
 /// The depth ladder, in millimetres.
 ///
 /// Deliberately straddling a 0.4 mm cell from a fifth of one to eight of them.
@@ -394,6 +402,19 @@ const fn rationale(kind: DefectKind, locale: Locale) -> &'static str {
     }
 }
 
+/// A `y` offset by `distance` toward the middle of the stock.
+///
+/// Which side depends on where the anchor already sits, so that a case near the
+/// far edge does not send its return leg off the part -- which is the same
+/// mistake, in `y`, that clipping the pass extent fixes in `x`.
+fn away_from(y: f64, distance: f64) -> f64 {
+    if y <= 0.5 * STOCK[1] {
+        y + distance
+    } else {
+        y - distance
+    }
+}
+
 /// Where each locale sits on the part.
 ///
 /// **Every anchor is below the stock top**, so the clean program cuts a real
@@ -425,30 +446,49 @@ fn program(
     depth: f64,
 ) -> (Vec<Motion>, Vec<Motion>, Option<usize>) {
     // A short, ordinary program: approach, a cut across the anchor, retract.
+    //
+    // The pass is **clipped to the stock**, with a margin, rather than running a
+    // fixed 14 mm either side of the anchor. Two anchors sit close enough to an
+    // edge that the unclipped form put an end of the pass in mid-air:
+    // `near-through-hole` at `x = 30` ran to `x = 44` against a 40 mm stock, so
+    // its plunge and its retract both happened outside the part. Every
+    // `missing-retract` case there dragged the tool out through empty space and
+    // injected nothing at all, while sitting in the recall denominator.
     let z = at.z;
+    let x0 = (at.x - 14.0).max(MARGIN);
+    let x1 = (at.x + 14.0).min(STOCK[0] - MARGIN);
+    //
+    // Four segments, not three. The fourth is the traverse home at clearance,
+    // which cuts nothing at 16 mm over a 12 mm stock and exists so that the two
+    // kinds whose mistake *is* a traverse have a level segment to spoil. Without
+    // it they had to be modelled as a ramp out of the slot, and a ramp's deepest
+    // point is wherever it happens to leave the slot rather than the depth the
+    // case claims -- `rapid-clips-stock` at a claimed 1.4 mm injected 3.4.
+    let back = away_from(at.y, 8.0);
     let clean = vec![
-        line([at.x - 14.0, at.y, 16.0], [at.x - 14.0, at.y, z]),
-        line([at.x - 14.0, at.y, z], [at.x + 14.0, at.y, z]),
-        line([at.x + 14.0, at.y, z], [at.x + 14.0, at.y, 16.0]),
+        line([x0, at.y, 16.0], [x0, at.y, z]),
+        line([x0, at.y, z], [x1, at.y, z]),
+        line([x1, at.y, z], [x1, at.y, 16.0]),
+        line([x1, at.y, 16.0], [x0, back, 16.0]),
     ];
     let mut motions = clean.clone();
 
     let segment = match kind {
         // The plunge goes deeper than it should. One segment, one mistake.
         DefectKind::PlungeTooDeep => {
-            motions[0] = line([at.x - 14.0, at.y, 16.0], [at.x - 14.0, at.y, z - depth]);
+            motions[0] = line([x0, at.y, 16.0], [x0, at.y, z - depth]);
             motions[1] = line(
-                [at.x - 14.0, at.y, z - depth],
-                [at.x + 14.0, at.y, z - depth],
+                [x0, at.y, z - depth],
+                [x1, at.y, z - depth],
             );
-            motions[2] = line([at.x + 14.0, at.y, z - depth], [at.x + 14.0, at.y, 16.0]);
+            motions[2] = line([x1, at.y, z - depth], [x1, at.y, 16.0]);
             Some(1)
         }
         // The cut wanders sideways into a wall.
         DefectKind::HorizontalOvercut => {
             motions[1] = line(
-                [at.x - 14.0, at.y - depth, z],
-                [at.x + 14.0, at.y - depth, z],
+                [x0, at.y - depth, z],
+                [x1, at.y - depth, z],
             );
             Some(1)
         }
@@ -457,32 +497,53 @@ fn program(
         DefectKind::ToolTooLarge | DefectKind::ToolTooLong => None,
         // A rapid at a clearance height that is not clear.
         //
-        // Measured from the stock top, not from the retract height. The first
-        // version retracted to `16 - depth`, which for any depth under 4 mm is
-        // still above the 12 mm stock and so injected no defect at all -- the
-        // case was in the corpus, counted in the denominator, and impossible to
-        // detect because there was nothing there. It cost about a fifth of the
-        // apparent recall.
+        // Three things have to be true at once, and this case was got wrong
+        // three times, once for each of them.
+        //
+        // 1. The height is measured from the **stock top**, not from the retract
+        //    height. The first version cleared to `16 - depth`, still above a
+        //    12 mm stock at every depth in the ladder, and clipped nothing.
+        // 2. The return leg has to cross **uncut** ground. The second travelled
+        //    back along `at.y`, the line the pass had just cut a slot down, and
+        //    ran along the inside of it removing nothing.
+        // 3. The damaging segment has to be **level**. The third ramped out of
+        //    the slot to the clearance height, so its deepest bite was wherever
+        //    it crossed the slot edge rather than the depth claimed: 3.4 mm
+        //    against a stated 1.4.
+        //
+        // The retract is lowered with it. It rises inside the slot the pass has
+        // just cut, so it removes nothing and the whole of the injected defect
+        // is the traverse.
         DefectKind::RapidClipsStock => {
             let clip = STOCK[2] - depth;
-            motions[2] = line([at.x + 14.0, at.y, z], [at.x - 14.0, at.y, clip]);
-            Some(2)
+            motions[2] = line([x1, at.y, z], [x1, at.y, clip]);
+            motions[3] = line([x1, at.y, clip], [x0, back, clip]);
+            Some(3)
         }
-        // The retract never happens, so the tool drags out at depth.
+        // The retract stops short, so the next move drags through material.
+        //
+        // Level at the same shortfall, for reason 3 above, and sideways rather
+        // than back along the pass, for reason 2. It differs from the rapid in
+        // extent rather than depth: a short move across the end of the pass
+        // instead of a scar the width of the part, which is what a localisation
+        // test has to be able to tell apart.
         DefectKind::MissingRetract => {
-            motions[2] = line([at.x + 14.0, at.y, z], [at.x + 14.0, at.y + 6.0, z - depth]);
-            Some(2)
+            let clip = STOCK[2] - depth;
+            let out = away_from(at.y, 6.0);
+            motions[2] = line([x1, at.y, z], [x1, at.y, clip]);
+            motions[3] = line([x1, at.y, clip], [x1, out, clip]);
+            Some(3)
         }
         // The arc turns about the wrong centre.
         DefectKind::ArcWrongCentre => {
-            motions[1] = line([at.x - 14.0, at.y, z], [at.x + 14.0, at.y + depth, z]);
+            motions[1] = line([x0, at.y, z], [x1, at.y + depth, z]);
             Some(1)
         }
         // The pass stops short, leaving material.
         DefectKind::ExcessStock => {
             motions[1] = line(
-                [at.x - 14.0, at.y, z + depth],
-                [at.x + 14.0, at.y, z + depth],
+                [x0, at.y, z + depth],
+                [x1, at.y, z + depth],
             );
             Some(1)
         }

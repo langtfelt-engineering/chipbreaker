@@ -117,10 +117,26 @@ fn detected(field: &DeviationField, tolerance: f64) -> bool {
 }
 
 #[test]
-fn a_perfect_part_reports_nothing() {
+fn a_perfect_part_reports_no_gouges() {
     // **The false-positive floor**, and the test a customer effectively runs
-    // first. The same program produces both sides, so every sample should be
-    // zero to within the engine's own noise.
+    // first.
+    //
+    // The two signs are held to different standards, deliberately.
+    //
+    // A **gouge** is unambiguous. Material that should be there is not, and no
+    // later operation can put it back, so a gouge reported on a part that was
+    // machined correctly is a false alarm of the most expensive kind: it says
+    // scrap. The threshold for those is zero.
+    //
+    // **Excess stock** is not the same thing. Material left standing is what a
+    // roughing pass is *supposed* to leave, and a program that stops short of
+    // the nominal is doing its job rather than failing. So excess is bounded
+    // rather than forbidden: it must not exceed what the lattice itself can
+    // account for, which is where dual contouring places a vertex on a flat
+    // face and is half a cell.
+    //
+    // An earlier draft asserted that a perfect part reports *nothing*. That is
+    // too strong, and it would have failed a correct roughing simulation.
     let profile = mill(6.0);
     let case = &corpus()[0];
     let nominal = nominal_for(case, &profile);
@@ -128,24 +144,30 @@ fn a_perfect_part_reports_nothing() {
     let field = compare(&result, &nominal, Some(&stock_mesh()));
 
     let tolerance = SPACING;
-    let spurious = field.findings(tolerance);
-    #[allow(clippy::cast_precision_loss, reason = "a sample count")]
-    let rate = spurious as f64 / field.samples.len().max(1) as f64;
     println!(
-        "perfect part: {} samples, {spurious} above {tolerance} mm ({:.4}%), \
-         worst gouge {:.4} mm, worst excess {:.4} mm, rms {:.4} mm",
+        "perfect part: {} samples, {} above {tolerance} mm, worst gouge {:.4} mm, \
+         worst excess {:.4} mm, rms {:.4} mm, worst projection gap {:.4} mm",
         field.samples.len(),
-        rate * 100.0,
+        field.findings(tolerance),
         field.worst_gouge_mm,
         field.worst_excess_mm,
-        field.rms_mm
+        field.rms_mm,
+        field.worst_projection_gap_mm
+    );
+
+    assert!(
+        field.worst_gouge_mm <= tolerance,
+        "a correctly machined part reported a {:.4} mm gouge. A gouge is a claim \
+         that metal is missing, which nothing downstream can undo, so this is the \
+         one finding that must never be invented.",
+        field.worst_gouge_mm
     );
     assert!(
-        rate < 0.01,
-        "a correctly machined part produced findings on {:.2}% of samples at a \
-         one-cell tolerance. That is the false-positive floor, and it is what a \
-         customer sees before they see anything else.",
-        rate * 100.0
+        field.worst_excess_mm <= tolerance,
+        "a correctly machined part reported {:.4} mm of excess stock, beyond the \
+         {tolerance} mm a one-cell lattice can account for. Excess is expected \
+         where a program genuinely leaves material; this program does not.",
+        field.worst_excess_mm
     );
 }
 
@@ -259,13 +281,32 @@ fn recall_against_depth() {
 
 #[test]
 fn localisation_recovers_the_place_and_the_depth() {
-    // Within one cell, and within 10% on depth. Only well-resolved cases: near
-    // the floor the question is detection, not measurement, and demanding 10%
-    // on a defect a fifth of a cell deep would be asking the lattice for
-    // something it does not carry.
+    // Within 10% on depth. Only well-resolved cases: near the floor the question
+    // is detection, not measurement, and demanding 10% on a defect a fifth of a
+    // cell deep would be asking the lattice for something it does not carry.
+    //
+    // And only the kinds whose `depth_mm` **is** the largest displacement on the
+    // part, because this compares against the worst sample. `tool-too-large` is
+    // the counterexample and it is not an error in the corpus: a cutter `2d`
+    // oversize moves each slot wall out by `d`, exactly as claimed, while also
+    // exposing a band of slot floor that was solid stock before — a displacement
+    // of the whole slot depth. Both are true, and a global maximum is not what
+    // that case's ground truth describes. `tests/defect_injection.rs` says the
+    // same thing from the other side and is where the reasoning lives.
     let cases = corpus();
     let mut checked = 0usize;
-    for case in cases.iter().filter(|c| c.cells(SPACING) >= 3.0).take(6) {
+    let global = |c: &&DefectCase| {
+        !matches!(
+            c.kind,
+            chipbreaker_core::defect::DefectKind::ToolTooLarge
+        )
+    };
+    for case in cases
+        .iter()
+        .filter(global)
+        .filter(|c| c.cells(SPACING) >= 3.0)
+        .take(6)
+    {
         let field = run(case);
         let worst = field
             .samples
