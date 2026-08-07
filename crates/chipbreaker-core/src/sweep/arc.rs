@@ -65,7 +65,7 @@
 //! convexity again — the same precondition Case B carries, checked the same way
 //! and declined the same way when it fails.
 
-use crate::math::{Ray, Vec3};
+use crate::math::{OctNormal, Ray, Vec3};
 use crate::spans::{Span, Spans};
 use crate::tool::Profile;
 use crate::tool::raycast::{RaycastScratch, RaycastStats};
@@ -422,6 +422,36 @@ fn middle_into(
     stats: &mut RaycastStats,
 ) {
     out.clear();
+    middle_spans_into(profile, arc, ray, along_axis, scratch, out, stats);
+
+    // The normals, stamped once at the end rather than carried through.
+    //
+    // Both branches assemble their answer out of mapped casts and boolean
+    // operations — an annulus is a disc minus a disc, clipped by a wedge — and
+    // threading a normal through each of those steps means getting a sign right
+    // in four places instead of one. Every bound of the result is a point on the
+    // swept surface, and the swept surface of a **level** arc is the tool's own
+    // surface at the nearest position on the arc circle. So the world position of
+    // the bound determines the normal on its own, and stating it once here is
+    // both shorter and harder to get wrong.
+    //
+    // This holds because the arc is level: the tool's height is constant, so the
+    // nearest arc position is found in plan alone. A helical arc has no such
+    // collapse, and is sub-stepped instead — where each sub-step is a linear
+    // motion whose own case supplies the normal.
+    out.set_normals_with(|t| middle_normal(profile, arc, ray.at(t)));
+}
+
+/// The wedge-restricted annular middle, without normals.
+fn middle_spans_into(
+    profile: &Profile,
+    arc: &ArcMove,
+    ray: &Ray,
+    along_axis: bool,
+    scratch: &mut RaycastScratch,
+    out: &mut Spans,
+    stats: &mut RaycastStats,
+) {
     if along_axis {
         // `p_xy` is fixed, so `d` and `phi` are constant: one wedge test, then a
         // vertical cast at radius `|d - R|` against the tool's own profile.
@@ -473,6 +503,27 @@ fn middle_into(
             out.push_merge(*piece);
         }
     }
+}
+
+/// The outward normal of the swept surface at a world point on it.
+///
+/// The tool that produced this point sits at the nearest position on the arc
+/// circle, found in plan because the arc is level. Subtracting that position puts
+/// the point in the tool's own frame, where the profile answers directly.
+fn middle_normal(profile: &Profile, arc: &ArcMove, p: Vec3) -> OctNormal {
+    let dx = p.x - arc.center.x;
+    let dy = p.y - arc.center.y;
+    let d = t::hypot(dx, dy);
+    // On the arc's own centre every bearing is equidistant. The point is then
+    // inside the tool wherever it is placed, so no bound of the result can land
+    // here; answering with a fixed bearing keeps the function total.
+    let (ux, uy) = if d > 0.0 { (dx / d, dy / d) } else { (1.0, 0.0) };
+    let local = Vec3::new(
+        p.x - (arc.center.x + arc.radius * ux),
+        p.y - (arc.center.y + arc.radius * uy),
+        p.z - arc.z,
+    );
+    crate::tool::surface_normal(profile, local).map_or(OctNormal::PLACEHOLDER, OctNormal::encode)
 }
 
 /// The `t` interval where the ray lies inside a disc of `radius` about the arc

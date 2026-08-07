@@ -440,6 +440,24 @@ impl Spans {
         self.spans.iter()
     }
 
+    /// Replaces every endpoint's normal with `f` of that endpoint's parameter.
+    ///
+    /// Deliberately narrower than an `iter_mut`. The invariant this type holds is
+    /// entirely about the `t` values — sorted, disjoint, gapped — and a general
+    /// mutable iterator would let a caller break it silently. Rewriting only the
+    /// normals cannot.
+    ///
+    /// The case it exists for: a sweep whose spans are produced in a mapped frame
+    /// or assembled by boolean operations, where the geometrically correct normal
+    /// is known from the *world* position of each bound and is easier to state
+    /// once at the end than to carry through every intermediate step.
+    pub fn set_normals_with(&mut self, mut f: impl FnMut(f64) -> OctNormal) {
+        for span in &mut self.spans {
+            span.n0 = f(span.t0);
+            span.n1 = f(span.t1);
+        }
+    }
+
     /// The number of spans.
     #[inline]
     #[must_use]

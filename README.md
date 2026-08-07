@@ -260,6 +260,8 @@ because that is usually the more useful half.
 | [0006](docs/adr/0006-arc-closed-form-scope-and-batch-invisibility.md) | The arc closed form's scope, and batching's invisibility |
 | [0007](docs/adr/0007-no-local-refinement.md) | A dexel ray is global, so local refinement is not available |
 | [0008](docs/adr/0008-simd-is-autovectorisation-only.md) | SIMD means autovectorisation; intrinsics are ruled out |
+| [0009](docs/adr/0009-debt-register.md) | The rolling debt register, closed |
+| [0010](docs/adr/0010-unset-normals-are-not-distinguishable.md) | An unset normal is not distinguishable from `+Z`, and stays that way |
 
 ## Roadmap
 

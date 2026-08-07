@@ -232,6 +232,39 @@ that `serde_json` itself has not regressed.
 - New geometry code comes with cases in `tests/corpus/`, which is versioned and
   grows every unit.
 
+### A test that asserts an invariant must carry evidence it can fail
+
+**Show that the assertion breaks when the invariant does.** Not in the pull
+request description — in the repository, as something that runs.
+
+A passing test that cannot fail is worse than a missing one, because a missing
+test looks like a gap and a vacuous one looks like coverage. Two got through in a
+single unit:
+
+- Counting placeholder normals to prove normals were set. `PLACEHOLDER` **is**
+  `+Z` — the four-byte encoding has no reserved pattern, deliberately — so every
+  up-facing endpoint of an uncut box already counted as one.
+- Asserting that a slot's cut endpoints did not all share a normal. They did not:
+  the *outer stock* faces carried correct normals from construction, and only the
+  cut faces were wrong.
+
+Both passed for five units while every cut face in the engine carried
+`(0, 0, -1)`.
+
+Any of these counts as evidence, in rough order of preference:
+
+1. A test in the same file that runs the check against a deliberately broken
+   input and asserts it fails. `tests/sweep_normals.rs` does this: it substitutes
+   the exact normal the defect produced and asserts the comparison rejects it.
+2. A floor on the number of things checked, so a filter that quietly matches
+   nothing fails instead of passing.
+3. An oracle computed **independently of the code under test**. Comparing a
+   sweep's stored normal against the function the sweep itself calls is a
+   spelling check; comparing it against the Minkowski-sum geometry is a test.
+
+If none of the three is practical, say so in the test's own documentation and say
+what would make it possible.
+
 ## Commit style
 
 Small, logical commits. One deliverable per commit is about right. Explain *why*

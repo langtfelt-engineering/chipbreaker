@@ -57,7 +57,7 @@
 //! bounded sub-stepping when it fails, so an exotic profile degrades in accuracy
 //! rather than in correctness.
 
-use crate::math::Ray;
+use crate::math::{OctNormal, Ray};
 use crate::spans::{Span, Spans};
 use crate::tool::raycast::{RaycastScratch, RaycastStats};
 use crate::tool::{Profile, ProfileElement};
@@ -81,11 +81,26 @@ const CONVEXITY_SAMPLES: u32 = 64;
 /// the window, which is the honest answer: the tool is not there.
 #[must_use]
 pub fn max_radius_over_z(profile: &Profile, lo: f64, hi: f64) -> f64 {
+    max_radius_over_z_at(profile, lo, hi).0
+}
+
+/// The moving maximum, and **the height at which it is attained**.
+///
+/// The height is what a normal needs. The swept boundary at a given `w` is the
+/// tool's own surface at whichever position in the window reaches furthest out,
+/// so the outward direction there is the tool's surface normal at `(r, z)` — not
+/// simply radial. On a cylinder the two agree; on a taper, a corner radius, or a
+/// ball nose they do not, and the difference is the whole of the surface's
+/// slope.
+#[must_use]
+pub fn max_radius_over_z_at(profile: &Profile, lo: f64, hi: f64) -> (f64, f64) {
     let (lo, hi) = if lo <= hi { (lo, hi) } else { (hi, lo) };
     let mut best = 0.0f64;
+    let mut best_z = lo;
     let mut consider = |r: f64, z: f64| {
-        if z >= lo && z <= hi {
-            best = best.max(r);
+        if z >= lo && z <= hi && r > best {
+            best = r;
+            best_z = z;
         }
     };
 
@@ -136,7 +151,7 @@ pub fn max_radius_over_z(profile: &Profile, lo: f64, hi: f64) -> f64 {
             }
         }
     }
-    best
+    (best, best_z)
 }
 
 /// True if the solid fills continuously from the axis outward.
@@ -224,7 +239,15 @@ pub fn swept_spans_into(
             (0.0, shift)
         };
         for span in base.iter() {
-            out.push_merge(Span::ordered(span.t0 + lo, span.t1 + hi));
+            // Both bounds keep their normals. A rigid translation along the ray
+            // slides each end to the *same point on the tool surface* at the
+            // extreme position, so the surface has moved but not turned.
+            out.push_merge(Span::with_normals(
+                span.t0 + lo,
+                span.t1 + hi,
+                span.n0,
+                span.n1,
+            ));
         }
         return true;
     }
@@ -234,7 +257,7 @@ pub fn swept_spans_into(
         // there is a disc.
         out.clear();
         let w = ray.origin.z - motion.start.z;
-        let radius = max_radius_over_z(profile, w - dz, w);
+        let (radius, at_z) = max_radius_over_z_at(profile, w - dz, w);
         if radius <= 0.0 {
             return true;
         }
@@ -254,7 +277,19 @@ pub fn swept_spans_into(
             return true;
         }
         let half = inside.sqrt() / speed2.sqrt();
-        out.push_merge(Span::ordered(closest - half, closest + half));
+        let (t0, t1) = (closest - half, closest + half);
+        // The chord's two ends lie on the tool's surface at the height that
+        // reaches furthest out. Asking the profile there rather than assuming a
+        // radial normal is what keeps a ball nose or a corner radius from
+        // reporting a vertical wall.
+        let normal_at = |t: f64| {
+            let p = ray.at(t);
+            let local = crate::math::Vec3::new(p.x - ax, p.y - ay, at_z);
+            crate::tool::surface_normal(profile, local).map_or(OctNormal::PLACEHOLDER, |n| {
+                OctNormal::encode(n)
+            })
+        };
+        out.push_merge(Span::with_normals(t0, t1, normal_at(t0), normal_at(t1)));
         return true;
     }
 

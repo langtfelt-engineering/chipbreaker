@@ -162,9 +162,28 @@ fn prism_spans_into(
     }
 
     // Back into the caller's parameter, then clipped to the slab.
+    //
+    // The normals come back in the cross-section's own frame, where `x` is the
+    // perpendicular offset `b` and `z` is the height `w`. The prism's surface
+    // has no component along the motion -- that is what makes it a prism -- so
+    // rotating `(n_b, n_w)` back into the world is one linear combination of
+    // `across` and the vertical, with nothing along `along`.
+    let restore = |n: crate::math::OctNormal| {
+        let local = n.decode();
+        crate::math::OctNormal::encode(Vec3::new(
+            local.x * across.x,
+            local.x * across.y,
+            local.z,
+        ))
+    };
     let mut rescaled = Spans::with_capacity(cross.len());
     for span in cross.iter() {
-        rescaled.push_merge(Span::ordered(span.t0 / speed, span.t1 / speed));
+        rescaled.push_merge(Span::with_normals(
+            span.t0 / speed,
+            span.t1 / speed,
+            restore(span.n0),
+            restore(span.n1),
+        ));
     }
     let clipped = rescaled.clipped_to(slab);
     for span in clipped.iter() {

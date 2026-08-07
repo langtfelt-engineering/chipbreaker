@@ -41,12 +41,13 @@
 //! on when it reconciles three ray bundles that all describe the same solid.
 
 use crate::eps::{EPS_LENGTH, EPS_SPAN_MIN, eps_tangent};
-use crate::math::{Ray, Vec3};
+use crate::math::{OctNormal, Ray, Vec3};
 use crate::roots::{solve_quadratic, solve_quartic};
 use crate::spans::{Span, Spans};
 use crate::transcendental as t;
 
 use super::Tool;
+use super::normal::surface_normal;
 use super::profile::{Profile, ProfileElement};
 
 /// Angular slack, in radians, when deciding whether a hit lies on an arc.
@@ -284,6 +285,14 @@ fn on_arc(element: &ProfileElement, ray: &Ray, hit: f64) -> bool {
     element.contains_angle(t::atan2(dz, dr), ARC_ANGLE_SLACK)
 }
 
+/// The outward tool normal at `p`, quantised for storage in a span.
+///
+/// Falls back to the placeholder only when the profile has no surface at all,
+/// which [`Profile::new`] rejects — so in practice this always answers.
+fn encode_normal(profile: &Profile, p: Vec3) -> OctNormal {
+    surface_normal(profile, p).map_or(OctNormal::PLACEHOLDER, OctNormal::encode)
+}
+
 impl Profile {
     /// The intervals of the ray, in `t`, that lie inside the solid.
     ///
@@ -315,6 +324,10 @@ impl Profile {
     ) {
         out.clear();
         stats.rays += 1;
+
+        // Decided before any candidate is pushed, because the answer changes the
+        // meaning of a span that begins at `t = 0`.
+        let started_outside = !self.contains_xyz(ray.origin);
 
         let candidates = &mut scratch.candidates;
         candidates.clear();
@@ -371,7 +384,23 @@ impl Profile {
                 stats.grazes += 1;
                 continue;
             }
-            out.push_merge(Span::ordered(lo, hi));
+            // The outward tool normal at each end, analytically. Both endpoints
+            // lie on the surface by construction -- they are roots of an
+            // element's equation -- so this is a lookup of which element, not a
+            // reconstruction from neighbours.
+            //
+            // The exception is `lo == 0.0` when the ray *starts* inside the
+            // tool: that bound is the ray's origin rather than a surface, and
+            // there is no normal to record. It is left as the placeholder, which
+            // is honest about knowing nothing, and no dexel ray meets it since
+            // every bundle originates outside the stock.
+            let n0 = if lo == 0.0 && !started_outside {
+                OctNormal::PLACEHOLDER
+            } else {
+                encode_normal(self, ray.at(lo))
+            };
+            let n1 = encode_normal(self, ray.at(hi));
+            out.push_merge(Span::with_normals(lo, hi, n0, n1));
         }
         stats.spans += out.len() as u64;
         out.debug_check_invariant();

@@ -143,16 +143,16 @@
           "is_manifold": true,
           "is_watertight": true,
           "is_orientation_consistent": true,
-          "signed_volume": 3.74353645833333348e3,
+          "signed_volume": 3.74400000000000000e3,
           "euler_characteristic": [2],
-          "rank_histogram": [0, 6950, 436, 8],
+          "rank_histogram": [0, 6762, 616, 16],
           "corners": 41800,
           "corner_disagreements": 0,
           "crossing_edges": 7392,
           "multi_crossing_edges": 0,
           "cells_with_multiple_vertices": 0,
           "clamped_vertices": 0,
-          "digest": "5df8006656aee8efa1c4d06cf27b41970846f4bb6a3e72ce79c22af8e781b06a"
+          "digest": "da6b9b3d3e2fe72937eb7f817743ad8e2ed0f25155659ed0ab0f6dbb4c946a65"
         },
         {
           "normals": false,
@@ -229,7 +229,7 @@
           "is_manifold": true,
           "is_watertight": true,
           "is_orientation_consistent": true,
-          "signed_volume": 3.83946768346398903e3,
+          "signed_volume": 3.83946781080355004e3,
           "euler_characteristic": [2],
           "rank_histogram": [0, 5878, 388, 8],
           "corners": 37400,
@@ -238,7 +238,7 @@
           "multi_crossing_edges": 0,
           "cells_with_multiple_vertices": 0,
           "clamped_vertices": 0,
-          "digest": "e6c45b181aceb7eb53294a98903f66b047a956f112a0f673079fcc602ce50cf5"
+          "digest": "abe69a359950edf25d4185c4e40b25ff8740b3d3cb0b11c47f1fc09e1ad7680d"
         },
         {
           "normals": false,

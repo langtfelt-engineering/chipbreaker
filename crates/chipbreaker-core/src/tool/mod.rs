@@ -36,6 +36,7 @@
 
 pub mod catalog;
 pub mod io;
+pub mod normal;
 pub mod profile;
 pub mod properties;
 pub mod raycast;
@@ -44,6 +45,7 @@ pub mod tessellate;
 
 pub use catalog::{CatalogError, HolderStage, Shank};
 pub use io::{TOOL_FILE_VERSION, ToolFileError, ToolLibrary};
+pub use normal::surface_normal;
 pub use profile::{ArcDirection, ElementRole, Profile, ProfileElement, ProfileError, RoledElement};
 pub use properties::{BoundingCylinder, Contact, TOP_CAP};
 pub use raycast::{RaycastScratch, RaycastStats};
