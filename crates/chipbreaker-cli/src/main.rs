@@ -10,6 +10,7 @@
 //! of the library, never a part of it.
 
 mod dexel;
+mod extract;
 mod mesh;
 mod path;
 mod report;
@@ -85,6 +86,8 @@ enum Command {
     Run(run::RunArgs),
     /// Describe a field after cutting: volume, spans, spill, per bundle.
     CutStat(run::CutStatArgs),
+    /// Contour a cut field back to a watertight triangle mesh.
+    Extract(extract::ExtractArgs),
     /// Print version information.
     Version {
         /// Emit JSON instead of a single line of text.
@@ -134,6 +137,11 @@ fn main() -> ExitCode {
         Command::CutStat(args) => {
             let as_json = args.json;
             let (outcome, elapsed) = mesh::timed(|| run::cut_stat(&args));
+            emit(outcome, elapsed, as_json)
+        }
+        Command::Extract(args) => {
+            let as_json = args.json;
+            let (outcome, elapsed) = mesh::timed(|| extract::extract(&args));
             emit(outcome, elapsed, as_json)
         }
         Command::Version { json } => {

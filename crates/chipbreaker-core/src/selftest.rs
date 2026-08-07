@@ -205,6 +205,7 @@ pub fn run_with(extra: Vec<SuiteResult>) -> SelfTestReport {
         dexel_field_suite(),
         sweep_suite(),
         sweep_arc_suite(),
+        contour_suite(),
         canonical_hash_suite(),
     ];
     suites.extend(extra);
@@ -1382,6 +1383,144 @@ fn sweep_arc_suite() -> SuiteResult {
         name: "sweep.arc",
         description: "arcs, helices and batching across three tools and five motions",
         cases,
+        failures,
+        digest: h.finish(),
+    }
+}
+
+/// Dual contouring, inside the cross-platform guarantee.
+///
+/// Extraction is the newest float-to-integer-to-float path in the engine: an
+/// octahedral quantisation, a Jacobi eigensolver, and a pseudo-inverse, none of
+/// which existed before Unit 9. Each is written to be deterministic by
+/// construction rather than by convergence, and this is where that claim is
+/// checked on four targets instead of argued.
+///
+/// The mesh itself is hashed, not a summary of it: vertex positions and
+/// connectivity both, so a vertex that moved by an ULP on one platform is a
+/// parity failure rather than a rounding nobody looks at.
+fn contour_suite() -> SuiteResult {
+    use crate::contour::{ContourOptions, extract};
+    use crate::dexel::tri::{TriBuildOptions, TriDexelField};
+    use crate::mesh::shapes;
+    use crate::mesh::validate::validate;
+
+    let mut failures = Vec::new();
+    let mut h = CanonicalHash::new();
+    h.begin("contour");
+
+    let cases: [(&str, f64); 4] = [
+        ("box", 0.6),
+        ("sphere", 0.7),
+        ("torus", 0.8),
+        ("box-fine", 0.35),
+    ];
+    let mut count = 0usize;
+
+    for (name, spacing) in cases {
+        let mesh = match name {
+            "sphere" => shapes::icosphere(6.0, 2),
+            "torus" => shapes::torus(6.0, 2.0, 32, 16),
+            _ => shapes::box_solid(Vec3::new(0.0, 0.0, 0.0), Vec3::new(9.0, 7.0, 5.0)),
+        };
+        let built = TriDexelField::build(
+            &mesh,
+            &TriBuildOptions {
+                spacing,
+                ..TriBuildOptions::default()
+            },
+        );
+        let Ok((field, _)) = built else {
+            failures.push(Failure {
+                case: format!("build/{name}"),
+                detail: "the field would not build".to_owned(),
+            });
+            continue;
+        };
+
+        // Both paths: with normals and without. The second is the surface-nets
+        // control, and it exercises the centroid fallback, which is a different
+        // branch of the solver and so deserves its own digest.
+        for use_normals in [true, false] {
+            h.begin(name);
+            h.bool(use_normals);
+            match extract(
+                &field,
+                &ContourOptions {
+                    use_normals,
+                    ..ContourOptions::default()
+                },
+            ) {
+                Ok((extracted, stats)) => {
+                    count += 1;
+                    extracted.hash_canonical(&mut h);
+                    h.u64(stats.corners);
+                    h.u64(stats.corner_disagreements);
+                    h.u64(stats.crossing_edges);
+                    h.u64(stats.multi_crossing_edges);
+                    h.u64(stats.cells_with_vertices);
+                    h.u64(stats.cells_with_multiple_vertices);
+                    for r in stats.rank_histogram {
+                        h.u64(r);
+                    }
+                    h.u64(stats.clamped_vertices);
+
+                    // The exit criterion, checked here as well as in the test
+                    // suite, so a target that produced a hole would fail loudly
+                    // rather than merely hash differently.
+                    let report = validate(&extracted);
+                    if !report.is_manifold || !report.is_watertight {
+                        failures.push(Failure {
+                            case: format!("{name}/normals={use_normals}"),
+                            detail: format!(
+                                "not manifold or not watertight: {} finding(s)",
+                                report.findings.len()
+                            ),
+                        });
+                    }
+                    if report.signed_volume <= 0.0 {
+                        failures.push(Failure {
+                            case: format!("{name}/normals={use_normals}"),
+                            detail: format!(
+                                "signed volume {} is not positive, so the mesh is \
+                                 inside out",
+                                report.signed_volume
+                            ),
+                        });
+                    }
+                }
+                Err(e) => failures.push(Failure {
+                    case: format!("{name}/normals={use_normals}"),
+                    detail: e.to_string(),
+                }),
+            }
+            h.end();
+        }
+    }
+
+    // The octahedral encoding, directly. It is new float-to-integer code on the
+    // hot path, which is exactly the sort of thing that diverges between
+    // targets, so the codes are hashed rather than only their consequences.
+    h.begin("oct");
+    for i in -6..=6 {
+        for j in -6..=6 {
+            for k in -6..=6 {
+                let v = Vec3::new(f64::from(i), f64::from(j), f64::from(k));
+                let code = crate::math::OctNormal::encode(v);
+                code.hash_canonical(&mut h);
+                let back = code.decode();
+                h.f64(back.x).f64(back.y).f64(back.z);
+                code.negated().hash_canonical(&mut h);
+            }
+        }
+    }
+    h.end();
+
+    h.end();
+    SuiteResult {
+        name: "contour",
+        description: "dual contouring with and without normals, and the octahedral normal codec",
+        cases: count + 2197,
         failures,
         digest: h.finish(),
     }
