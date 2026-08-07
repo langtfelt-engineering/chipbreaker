@@ -23,6 +23,7 @@ fn a_field() -> DexelField {
     // seventeen significant digits.
     let mesh = shapes::icosphere(9.0, 3);
     let options = BuildOptions {
+        spacing_xyz: None,
         spacing: 0.7,
         placement: Mat4::from_translation(Vec3::new(1.0 / 3.0, -7.125e-3, 12.0)),
         ..BuildOptions::default()
@@ -98,6 +99,7 @@ fn writing_the_same_field_twice_gives_the_same_bytes() {
 fn two_builds_of_the_same_stock_write_the_same_file() {
     let mesh = shapes::cylinder(8.0, 20.0, 48);
     let options = BuildOptions {
+        spacing_xyz: None,
         spacing: 0.6,
         ..BuildOptions::default()
     };
@@ -141,6 +143,7 @@ fn the_placement_round_trips_exactly() {
     let (field, _) = DexelField::build(
         &mesh,
         &BuildOptions {
+            spacing_xyz: None,
             spacing: 0.5,
             placement,
             ..BuildOptions::default()
@@ -233,9 +236,12 @@ fn a_corrupted_span_total_is_caught() {
     // The span total sits immediately after the ray count. Derived from the
     // layout rather than written as one number: this was `21 * 8` until the
     // format grew two transverse extents at U6, and a stale literal made the
-    // test corrupt a placement matrix instead of the field it meant to.
+    // test corrupt a placement matrix instead of the field it meant to. It
+    // moved again at U10, when a lattice gained a second transverse spacing --
+    // the same failure, caught the same way, which is why the derivation stays.
     const U32S: usize = 4; // version, axis, two counts
-    const F64S: usize = 3 + 1 + 1 + 2 + 16; // origin, spacing, length, extents, placement
+    // origin, TWO spacings, length, extents, placement.
+    const F64S: usize = 3 + 2 + 1 + 2 + 16;
     let offset = MAGIC.len() + U32S * 4 + F64S * 8 + size_of::<u32>();
     let corrupted = (field.total_spans() as u64 + 1).to_le_bytes();
     bytes[offset..offset + 8].copy_from_slice(&corrupted);
@@ -276,6 +282,7 @@ fn the_lattice_round_trips_exactly_for_awkward_extents() {
             let (field, _) = DexelField::build(
                 &mesh,
                 &BuildOptions {
+                    spacing_xyz: None,
                     spacing,
                     axis,
                     ..BuildOptions::default()

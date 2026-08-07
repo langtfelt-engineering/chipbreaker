@@ -15,8 +15,8 @@
       "deviation_best_max_mm": 1.09301144223463309e0,
       "deviation_constant": 6.83132151396645626e-1,
       "worst_cosine": 1.00000000000000000e0,
-      "file_bytes": 13964,
-      "file_digest": "18ea6b7b2bd17ce15f703be0fc574dbfbf6a897dbd2c12bb85adf5afdc0bc27f",
+      "file_bytes": 13988,
+      "file_digest": "eb22329c0ed1c888af984b0a8dc4d0177da28fec612ed523b5e4edf59ae6c52f",
       "digest": "8fab6f6433ca5c3199eed14934588f65e4e61fde0a70d94206f395b131f88689"
     },
     {
@@ -32,8 +32,8 @@
       "deviation_best_max_mm": 3.15087028280992498e-1,
       "deviation_constant": 6.30174056561984997e-1,
       "worst_cosine": 5.77350269189625842e-1,
-      "file_bytes": 77576,
-      "file_digest": "a16f910be262695852a92a3a296a63c782f68a199a0d03e41201c7b83965f4bc",
+      "file_bytes": 77600,
+      "file_digest": "d623e0899e052c0c4c30a4ea5aa5b04f8f2658e74fc7896d63b392b93af6e2dd",
       "digest": "028b41a27a685bc7d19026fcdcacca190a578ce5884e07fe316a65f8322ea615"
     },
     {
@@ -49,8 +49,8 @@
       "deviation_best_max_mm": 3.13761426522454923e-1,
       "deviation_constant": 7.84403566306137279e-1,
       "worst_cosine": 5.77350269189625842e-1,
-      "file_bytes": 247592,
-      "file_digest": "df8be5934121045cd2f5baa2f20aa28770854cac107b1adb7dbd15d0536a1218",
+      "file_bytes": 247616,
+      "file_digest": "62690f976096ae24584b0beb39d3ee368314c682476538128063239b2b346a5b",
       "digest": "39760041f2993236022b27de100b912508298755782198e82f42eded6e0531d3"
     },
     {
@@ -66,8 +66,8 @@
       "deviation_best_max_mm": 3.15190780002721826e-1,
       "deviation_constant": 6.30381560005443653e-1,
       "worst_cosine": 7.24247082951466226e-1,
-      "file_bytes": 110376,
-      "file_digest": "99b0e060ad0c0857cbf3d80e6247849bcc27296b5688c4ac7afa323bb40bd2af",
+      "file_bytes": 110400,
+      "file_digest": "cf7cb52e4c748d04350baf6b5c7ea99753a66ea69c2ce73fcaa19190a77b715a",
       "digest": "c13f65bad0fde875716b5051065a696cf536f817e8570b1650455caea303513c"
     },
     {
@@ -83,8 +83,8 @@
       "deviation_best_max_mm": 3.74099535320112586e-1,
       "deviation_constant": 7.48199070640225172e-1,
       "worst_cosine": 6.06960084918920062e-1,
-      "file_bytes": 198056,
-      "file_digest": "1c29ed3bab505de1e759c30244827da72318247427fbd6891ad9f9ca4c43ab17",
+      "file_bytes": 198080,
+      "file_digest": "cfd694447e59101c495878fe4c2fda91043f9aece268825348a5d9d276ba66ed",
       "digest": "2f5f5877741d1517575c56f9aaabc645b4626ef8183ebd6809ad84d2d78b9f1d"
     },
     {
@@ -100,8 +100,8 @@
       "deviation_best_max_mm": 2.74985970461435414e-1,
       "deviation_constant": 5.49971940922870828e-1,
       "worst_cosine": 1.00000000000000000e0,
-      "file_bytes": 9176,
-      "file_digest": "4b108ada77d157556a545c84b62ebf3bd82ace02e359ebe295c0b9647d48499d",
+      "file_bytes": 9200,
+      "file_digest": "c51ad7c124350e11f306f6d2edd424fc41f9140e39ddcb76fa52f0f17f787529",
       "digest": "8a6c98a9540f11a85d5cf822a0009c43e0703fa34307bf72858f8c219ca4c3fc"
     },
     {
@@ -117,8 +117,8 @@
       "deviation_best_max_mm": 1.62077870389723366e0,
       "deviation_constant": 4.05194675974308360e0,
       "worst_cosine": 3.85330449714586798e-2,
-      "file_bytes": 165100,
-      "file_digest": "5e29a055e61bc1cce677af4802247087b6f80d46f42729e8a65a3a8e9f018d77",
+      "file_bytes": 165116,
+      "file_digest": "1ca66503501dc387ee907acea9a175233f09ceaf6bca353796d54a156c63efdb",
       "digest": "2d88e0b5ed408f44ceba978bcff0b1258a46e504fe9bdc5e8dce0e12900cf377"
     }
   ]

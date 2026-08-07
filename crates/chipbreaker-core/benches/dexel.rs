@@ -50,6 +50,7 @@ fn build(c: &mut Criterion) {
         let mesh = if mesh_name == "box" { stock() } else { part() };
         for spacing in SPACINGS {
             let options = BuildOptions {
+                spacing_xyz: None,
                 spacing,
                 ..BuildOptions::default()
             };
@@ -189,6 +190,7 @@ fn serialization(c: &mut Criterion) {
     let (field, _) = DexelField::build(
         &mesh,
         &BuildOptions {
+            spacing_xyz: None,
             spacing: 0.25,
             ..BuildOptions::default()
         },
@@ -214,6 +216,7 @@ fn volume(c: &mut Criterion) {
         let (field, _) = DexelField::build(
             &part(),
             &BuildOptions {
+                spacing_xyz: None,
                 spacing,
                 ..BuildOptions::default()
             },
@@ -286,6 +289,7 @@ fn tri(c: &mut Criterion) {
 
     for spacing in [1.0, 0.5, 0.25] {
         let options = TriBuildOptions {
+            spacing_xyz: None,
             spacing,
             ..TriBuildOptions::default()
         };
@@ -319,6 +323,7 @@ fn tri(c: &mut Criterion) {
     let (field, _) = TriDexelField::build(
         &mesh,
         &TriBuildOptions {
+            spacing_xyz: None,
             spacing: 0.5,
             ..TriBuildOptions::default()
         },

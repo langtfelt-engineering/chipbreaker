@@ -163,6 +163,7 @@ fn main() {
     for (index, case) in all.iter().enumerate() {
         let mesh = (case.mesh)();
         let options = BuildOptions {
+            spacing_xyz: None,
             spacing: case.spacing,
             axis: case.axis,
             placement: case.placement,

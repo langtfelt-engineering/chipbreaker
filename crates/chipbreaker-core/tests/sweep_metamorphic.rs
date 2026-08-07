@@ -33,6 +33,7 @@ fn stock_at(offset: Vec3) -> TriDexelField {
     TriDexelField::build(
         &mesh,
         &TriBuildOptions {
+            spacing_xyz: None,
             spacing: 0.5,
             placement: Mat4::from_translation(offset),
             ..TriBuildOptions::default()

@@ -39,6 +39,7 @@ fn field_from(mesh: &TriMesh, spacing: f64) -> TriDexelField {
     TriDexelField::build(
         mesh,
         &TriBuildOptions {
+            spacing_xyz: None,
             spacing,
             ..TriBuildOptions::default()
         },

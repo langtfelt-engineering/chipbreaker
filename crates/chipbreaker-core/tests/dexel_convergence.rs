@@ -89,6 +89,7 @@ fn the_upright_cylinder_error_is_exactly_lattice_point_counting() {
         let (field, _) = DexelField::build(
             &mesh,
             &BuildOptions {
+                spacing_xyz: None,
                 spacing,
                 ..BuildOptions::default()
             },

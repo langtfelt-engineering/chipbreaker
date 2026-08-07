@@ -81,6 +81,7 @@ fn rebuild(id: &str) -> (TriMesh, TriDexelField) {
     let (field, _) = TriDexelField::build(
         &mesh,
         &TriBuildOptions {
+            spacing_xyz: None,
             spacing,
             axes: AxisSet::parse(axes).expect("valid"),
             placement: Mat4::IDENTITY,

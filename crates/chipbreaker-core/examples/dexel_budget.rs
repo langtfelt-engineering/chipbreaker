@@ -282,6 +282,7 @@ fn safety_gate() {
     let result = DexelField::build(
         &aligned,
         &BuildOptions {
+            spacing_xyz: None,
             spacing: 1.0,
             ..BuildOptions::default()
         },
@@ -388,6 +389,7 @@ fn memory_budget() {
         let (field, _) = DexelField::build(
             &mesh,
             &BuildOptions {
+                spacing_xyz: None,
                 spacing,
                 ..BuildOptions::default()
             },

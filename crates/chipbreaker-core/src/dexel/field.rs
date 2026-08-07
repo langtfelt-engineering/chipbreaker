@@ -40,6 +40,7 @@
 
 use std::borrow::Cow;
 
+use crate::budget::Spacing;
 use crate::golden::{CanonicalHash, Hashable};
 use crate::math::{Aabb3, Axis, Mat4, OctNormal, Ray, Vec3};
 use crate::mesh::TriMesh;
@@ -162,7 +163,13 @@ impl From<LatticeError> for BuildError {
 #[derive(Debug, Clone, PartialEq)]
 pub struct BuildOptions {
     /// Cell size, in millimetres.
+    ///
+    /// The isotropic shorthand. When [`Self::spacing_xyz`] is set it wins, and
+    /// this is ignored; keeping both means every existing caller and test keeps
+    /// working unchanged while anisotropy is opt-in.
     pub spacing: f64,
+    /// Independent cell size per world axis, overriding [`Self::spacing`].
+    pub spacing_xyz: Option<Spacing>,
     /// Which axis the rays run along. Unit 5 only exercises `Z`.
     pub axis: Axis,
     /// Where the stock sits in machine coordinates.
@@ -184,6 +191,7 @@ impl Default for BuildOptions {
     fn default() -> Self {
         Self {
             spacing: 0.5,
+            spacing_xyz: None,
             axis: Axis::Z,
             placement: Mat4::IDENTITY,
             margin: 0.0,
@@ -277,7 +285,10 @@ impl DexelField {
         let (clean, degenerate) = drop_degenerate(mesh);
         let placed = place(clean.as_ref(), &options.placement);
         let bounds = grow(placed.bounds(), options.margin);
-        let lattice = Lattice::new(bounds, options.spacing, options.axis)?;
+        let spacing = options
+            .spacing_xyz
+            .unwrap_or_else(|| Spacing::uniform(options.spacing));
+        let lattice = Lattice::anisotropic(bounds, spacing.to_array(), options.axis)?;
         let bvh = Bvh::build(placed.as_ref());
 
         let mut arena = Arena::new(lattice.ray_count());
@@ -464,7 +475,7 @@ impl DexelField {
             };
             let (i, j) = self.lattice.coords(ray);
             let origin = self.lattice.origin_of(i, j).to_array();
-            let half = 0.5 * self.lattice.spacing();
+            let half = 0.5 * self.lattice.spacing_max();
             let mut lo = [0.0; 3];
             let mut hi = [0.0; 3];
             lo[u] = origin[u] - half;

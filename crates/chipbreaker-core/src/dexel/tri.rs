@@ -146,6 +146,7 @@
 //! global, and Unit 5's corner-versus-centre table (247 and 857 coplanar
 //! rejections against zero) is why it cannot be relaxed on any of the three.
 
+use crate::budget::Spacing;
 use crate::golden::{CanonicalHash, Digest, Hashable};
 use crate::math::{Aabb3, Axis, Mat4, Vec3};
 use crate::mesh::TriMesh;
@@ -282,8 +283,17 @@ impl Default for AxisSet {
 /// How to build a tri-dexel field.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TriBuildOptions {
-    /// Cell size, in millimetres. Shared by every bundle at Unit 6.
+    /// Cell size, in millimetres. The isotropic shorthand.
+    ///
+    /// Ignored when [`Self::spacing_xyz`] is set.
     pub spacing: f64,
+    /// Independent cell size per world axis.
+    ///
+    /// Registration-safe by construction: each axis still draws its ordinates
+    /// from one shared set, the sets simply have different steps. Every bundle
+    /// takes the two that are transverse to it, so the three still agree about
+    /// where a corner is.
+    pub spacing_xyz: Option<Spacing>,
     /// Which bundles to build.
     pub axes: AxisSet,
     /// Where the stock sits in machine coordinates.
@@ -296,6 +306,7 @@ impl Default for TriBuildOptions {
     fn default() -> Self {
         Self {
             spacing: 0.5,
+            spacing_xyz: None,
             axes: AxisSet::XYZ,
             placement: Mat4::IDENTITY,
             margin: 0.0,
@@ -369,6 +380,7 @@ impl TriDexelField {
                 mesh,
                 &BuildOptions {
                     spacing: options.spacing,
+                    spacing_xyz: options.spacing_xyz,
                     axis,
                     placement: options.placement,
                     margin: options.margin,

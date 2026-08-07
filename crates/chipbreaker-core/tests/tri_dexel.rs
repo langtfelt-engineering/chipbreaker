@@ -21,6 +21,7 @@ fn digest(field: &TriDexelField) -> String {
 
 fn options(spacing: f64) -> TriBuildOptions {
     TriBuildOptions {
+        spacing_xyz: None,
         spacing,
         ..TriBuildOptions::default()
     }
@@ -232,6 +233,7 @@ fn a_partial_field_is_allowed_but_says_it_is_incomplete() {
     let (field, stats) = TriDexelField::build(
         &mesh,
         &TriBuildOptions {
+            spacing_xyz: None,
             spacing: 0.5,
             axes: AxisSet::parse("xz").expect("valid"),
             ..TriBuildOptions::default()
@@ -271,6 +273,7 @@ fn a_tri_field_survives_a_round_trip_bit_identically() {
     let (field, _) = TriDexelField::build(
         &mesh,
         &TriBuildOptions {
+            spacing_xyz: None,
             spacing: 0.7,
             placement: Mat4::from_translation(Vec3::new(1.0 / 3.0, -7.125e-3, 12.0)),
             ..TriBuildOptions::default()
@@ -314,6 +317,7 @@ fn a_partial_field_round_trips_and_does_not_hash_like_a_complete_one() {
     let (partial, _) = TriDexelField::build(
         &mesh,
         &TriBuildOptions {
+            spacing_xyz: None,
             spacing: 0.6,
             axes: AxisSet::parse("xz").expect("valid"),
             ..TriBuildOptions::default()
@@ -340,6 +344,7 @@ fn both_formats_stay_readable_and_are_told_apart() {
     let (single, _) = DexelField::build(
         &mesh,
         &BuildOptions {
+            spacing_xyz: None,
             spacing: 1.0,
             ..BuildOptions::default()
         },
@@ -476,6 +481,7 @@ fn best_of_three_deviation_falls_monotonically_and_is_bounded_by_c_times_h() {
             let (field, _) = TriDexelField::build(
                 mesh,
                 &TriBuildOptions {
+                    spacing_xyz: None,
                     spacing,
                     ..TriBuildOptions::default()
                 },
@@ -548,6 +554,7 @@ fn a_single_bundle_is_visibly_worse_than_three_and_that_is_the_point() {
         let (field, _) = TriDexelField::build(
             &mesh,
             &TriBuildOptions {
+                spacing_xyz: None,
                 spacing,
                 ..TriBuildOptions::default()
             },
@@ -622,6 +629,7 @@ fn the_sample_distance_bound_is_tight_at_a_body_diagonal_vertex() {
     let (field, _) = TriDexelField::build(
         &mesh,
         &TriBuildOptions {
+            spacing_xyz: None,
             spacing,
             ..TriBuildOptions::default()
         },
@@ -666,6 +674,7 @@ fn an_axis_aligned_box_attains_the_cos_one_floor() {
     let (field, _) = TriDexelField::build(
         &mesh,
         &TriBuildOptions {
+            spacing_xyz: None,
             spacing,
             ..TriBuildOptions::default()
         },
@@ -702,6 +711,7 @@ fn the_fields_own_samples_have_zero_perpendicular_error() {
     let (field, _) = TriDexelField::build(
         &mesh,
         &TriBuildOptions {
+            spacing_xyz: None,
             spacing: 0.5,
             ..TriBuildOptions::default()
         },

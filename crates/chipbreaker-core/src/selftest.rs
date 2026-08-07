@@ -823,6 +823,7 @@ fn dexel_field_suite() -> SuiteResult {
     for (name, mesh, axis, placement) in &cases {
         h.begin(name);
         let options = BuildOptions {
+            spacing_xyz: None,
             spacing: DEXEL_SPACING,
             axis: *axis,
             placement: *placement,
@@ -1028,6 +1029,7 @@ fn sweep_suite() -> SuiteResult {
             match TriDexelField::build(
                 &mesh,
                 &TriBuildOptions {
+                    spacing_xyz: None,
                     spacing: SWEEP_SPACING,
                     ..TriBuildOptions::default()
                 },
@@ -1277,6 +1279,7 @@ fn sweep_arc_suite() -> SuiteResult {
 
             let mesh = shapes::box_solid(Vec3::new(0.0, 0.0, 0.0), Vec3::new(28.0, 24.0, 10.0));
             let options = TriBuildOptions {
+                spacing_xyz: None,
                 spacing: SPACING,
                 ..TriBuildOptions::default()
             };
@@ -1335,6 +1338,7 @@ fn sweep_arc_suite() -> SuiteResult {
         ];
         let mesh = shapes::box_solid(Vec3::new(0.0, 0.0, 0.0), Vec3::new(28.0, 24.0, 10.0));
         let options = TriBuildOptions {
+            spacing_xyz: None,
             spacing: SPACING,
             ..TriBuildOptions::default()
         };
@@ -1426,6 +1430,7 @@ fn contour_suite() -> SuiteResult {
         let built = TriDexelField::build(
             &mesh,
             &TriBuildOptions {
+                spacing_xyz: None,
                 spacing,
                 ..TriBuildOptions::default()
             },

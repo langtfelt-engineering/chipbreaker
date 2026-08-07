@@ -408,6 +408,7 @@ fn a_box_builds_at_the_spacing_that_used_to_abort() {
         let (_field, stats) = DexelField::build(
             &mesh,
             &BuildOptions {
+                spacing_xyz: None,
                 spacing: 1.6,
                 axis,
                 ..BuildOptions::default()
@@ -444,6 +445,7 @@ fn a_lattice_that_does_not_divide_the_stock_over_counts_volume_by_a_known_factor
         let (field, _) = DexelField::build(
             &mesh,
             &BuildOptions {
+                spacing_xyz: None,
                 spacing: 1.6,
                 axis,
                 ..BuildOptions::default()
@@ -479,6 +481,7 @@ fn a_lattice_that_divides_the_stock_is_exact() {
         let (field, _) = DexelField::build(
             &mesh,
             &BuildOptions {
+                spacing_xyz: None,
                 spacing: 0.5,
                 axis,
                 ..BuildOptions::default()

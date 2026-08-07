@@ -281,7 +281,7 @@ pub fn cut_bundle_motion(
         // The rejection that decides the runtime. A ray whose transverse
         // position is outside the swept box cannot meet the tool anywhere along
         // its length, so no cast is needed and no span is touched.
-        if !transverse_overlaps(&bounds, axis, origin, lattice.spacing()) {
+        if !transverse_overlaps(&bounds, axis, origin, lattice.spacing_uv()) {
             stats.rays_rejected += 1;
             continue;
         }
@@ -457,14 +457,18 @@ pub(crate) fn transverse_overlaps(
     bounds: &Aabb3,
     axis: Axis,
     origin: crate::math::Vec3,
-    spacing: f64,
+    spacing: [f64; 2],
 ) -> bool {
     let [u, v, _] = axis.cyclic();
     let p = origin.to_array();
     let lo = bounds.min.to_array();
     let hi = bounds.max.to_array();
-    let slack = 0.5 * spacing;
-    for k in [u, v] {
+    // Half a cell of slack, **per lattice axis**. One number would be wrong in
+    // both directions under anisotropy: too tight on the coarse axis, which
+    // rejects a ray that does meet the tool and silently loses material, and
+    // needlessly loose on the fine one.
+    for (n, k) in [u, v].into_iter().enumerate() {
+        let slack = 0.5 * spacing[n];
         if p[k] < lo[k] - slack || p[k] > hi[k] + slack {
             return false;
         }

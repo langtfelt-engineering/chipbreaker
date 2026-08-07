@@ -287,7 +287,6 @@ struct Grid<'a> {
     coords: [Vec<f64>; 3],
     /// Corner counts per world axis.
     n: [usize; 3],
-    spacing: f64,
 }
 
 impl Grid<'_> {
@@ -343,7 +342,9 @@ pub fn extract(
     // a real span endpoint on a real ray. The other two bundles have no
     // transverse coordinate there, so such a corner gets fewer votes -- and with
     // no vote for material it classifies as outside, which is the truth.
-    let spacing = field.bundle(Axis::X).map_or(1.0, |b| b.lattice().spacing());
+    let spacing = field
+        .bundle(Axis::X)
+        .map_or(1.0, |b| b.lattice().spacing_max());
     for c in &mut coords {
         let (first, last) = (c[0], c[c.len() - 1]);
         c.insert(0, first - spacing);
@@ -355,12 +356,7 @@ pub fn extract(
         return Err(ContourError::TooSmall { counts: n });
     }
 
-    let grid = Grid {
-        field,
-        coords,
-        n,
-        spacing,
-    };
+    let grid = Grid { field, coords, n };
 
     let mut vertices: Vec<Vec3> = Vec::new();
     // Triangles are bucketed by edge axis and concatenated at the end.
@@ -827,10 +823,14 @@ fn slab_crossing(
 
 /// Keeps a vertex within its own cell, expanded by `slack` cells.
 fn clamp_into_cell(grid: &Grid, cell: [usize; 3], v: Vec3, slack: f64) -> (Vec3, bool) {
-    let pad = grid.spacing * slack;
     let mut out = v.to_array();
     let mut clamped = false;
     for a in 0..3 {
+        // The slack is a fraction of **this cell along this axis**, taken from
+        // the corner ordinates rather than from a single spacing. Under
+        // anisotropy a shared number would clamp a fine axis far too loosely,
+        // and it is the form that survives graded planes should they ever land.
+        let pad = (grid.coords[a][cell[a] + 1] - grid.coords[a][cell[a]]) * slack;
         let lo = grid.coords[a][cell[a]] - pad;
         let hi = grid.coords[a][cell[a] + 1] + pad;
         if !out[a].is_finite() {

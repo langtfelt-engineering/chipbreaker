@@ -32,6 +32,7 @@ fn stock(spacing: f64) -> TriDexelField {
     TriDexelField::build(
         &mesh,
         &TriBuildOptions {
+            spacing_xyz: None,
             spacing,
             ..TriBuildOptions::default()
         },

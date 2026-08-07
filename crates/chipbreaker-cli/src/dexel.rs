@@ -17,6 +17,7 @@
 
 use std::path::PathBuf;
 
+use chipbreaker_core::budget::Spacing;
 use chipbreaker_core::dexel::convergence::{
     ErrorModel, GAUSS_CIRCLE_EXPONENT, measure as measure_convergence, standard_cases,
     standard_ratios,
@@ -63,12 +64,76 @@ pub struct BuildArgs {
     /// Extra room around the stock bounds, in millimetres.
     #[arg(long, default_value_t = 0.0, value_name = "MM")]
     pub margin: f64,
+    /// Cell size along X, overriding `--res` for that axis alone.
+    #[arg(long, value_name = "MM")]
+    pub res_x: Option<f64>,
+    /// Cell size along Y.
+    #[arg(long, value_name = "MM")]
+    pub res_y: Option<f64>,
+    /// Cell size along Z.
+    #[arg(long, value_name = "MM")]
+    pub res_z: Option<f64>,
+    /// Choose the three spacings automatically, holding the accuracy of `--res`.
+    ///
+    /// Picks the spacings that minimise memory **subject to the worst-case
+    /// sample distance being no worse than `--res` would have given**. So the
+    /// guarantee is never quietly weakened: a part that cannot benefit, such as
+    /// a cube, simply comes back isotropic, and one that can — a plate, a bar —
+    /// gets the saving for free.
+    #[arg(long)]
+    pub auto_res: bool,
+    /// Refuse the job if it would need more than this, e.g. `512M` or `2G`.
+    #[arg(long, value_name = "BYTES", value_parser = parse_bytes)]
+    pub mem_limit: Option<u64>,
+    /// Predict the footprint and exit without building.
+    #[arg(long)]
+    pub mem_dry_run: bool,
+}
+
+/// Parses `512M`, `2G`, `1048576`.
+fn parse_bytes(s: &str) -> Result<u64, String> {
+    let t = s.trim();
+    let (digits, scale) = match t.chars().last() {
+        Some('k' | 'K') => (&t[..t.len() - 1], 1024u64),
+        Some('m' | 'M') => (&t[..t.len() - 1], 1024 * 1024),
+        Some('g' | 'G') => (&t[..t.len() - 1], 1024 * 1024 * 1024),
+        _ => (t, 1),
+    };
+    let n: f64 = digits
+        .trim()
+        .parse()
+        .map_err(|_| format!("expected a byte count such as 512M or 2G; got {s:?}"))?;
+    if !n.is_finite() || n <= 0.0 {
+        return Err(format!("a memory limit must be positive; got {s:?}"));
+    }
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "checked positive and finite"
+    )]
+    Ok((n * scale as f64) as u64)
 }
 
 impl BuildArgs {
+    /// The explicit per-axis spacings, if any were given.
+    ///
+    /// `--auto-res` is resolved later, once the stock's extents are known, so it
+    /// is not visible here.
+    fn spacing_xyz(&self) -> Option<Spacing> {
+        if self.res_x.is_none() && self.res_y.is_none() && self.res_z.is_none() {
+            return None;
+        }
+        Some(Spacing {
+            x: self.res_x.unwrap_or(self.res),
+            y: self.res_y.unwrap_or(self.res),
+            z: self.res_z.unwrap_or(self.res),
+        })
+    }
+
     fn options(&self) -> TriBuildOptions {
         TriBuildOptions {
             spacing: self.res,
+            spacing_xyz: self.spacing_xyz(),
             axes: self.axes,
             placement: self.at.map_or(Mat4::IDENTITY, Mat4::from_translation),
             margin: self.margin,

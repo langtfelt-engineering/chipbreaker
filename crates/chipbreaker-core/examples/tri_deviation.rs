@@ -185,6 +185,7 @@ fn main() {
             let (field, _) = TriDexelField::build(
                 &mesh,
                 &TriBuildOptions {
+                    spacing_xyz: None,
                     spacing,
                     ..TriBuildOptions::default()
                 },

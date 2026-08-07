@@ -16,6 +16,7 @@ fn digest(field: &DexelField) -> String {
 
 fn options(spacing: f64) -> BuildOptions {
     BuildOptions {
+        spacing_xyz: None,
         spacing,
         ..BuildOptions::default()
     }
@@ -103,6 +104,7 @@ fn a_transverse_hole_gives_two_span_rays() {
     // through the middle enter, leave, enter and leave again.
     let mesh = shapes::torus(20.0, 6.0, 64, 32);
     let lying_down = BuildOptions {
+        spacing_xyz: None,
         spacing: 0.5,
         // Rotate 90 degrees about X: the torus axis moves from Z to Y.
         placement: Mat4::from_rows_array([
@@ -312,6 +314,7 @@ fn every_axis_measures_the_same_box() {
         let (field, stats) = DexelField::build(
             &mesh,
             &BuildOptions {
+                spacing_xyz: None,
                 spacing: 0.5,
                 axis,
                 ..BuildOptions::default()
@@ -427,6 +430,7 @@ fn the_safety_gate_holds_across_every_synthetic_solid() {
             let result = DexelField::build(
                 mesh,
                 &BuildOptions {
+                    spacing_xyz: None,
                     spacing: 0.5,
                     axis,
                     ..BuildOptions::default()

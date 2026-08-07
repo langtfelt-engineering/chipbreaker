@@ -33,6 +33,7 @@ fn build(size: Vec3, spacing: f64) -> TriDexelField {
     TriDexelField::build(
         &shapes::box_solid(Vec3::new(0.0, 0.0, 0.0), size),
         &TriBuildOptions {
+            spacing_xyz: None,
             spacing,
             ..TriBuildOptions::default()
         },

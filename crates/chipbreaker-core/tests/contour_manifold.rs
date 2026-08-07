@@ -27,6 +27,7 @@ fn field_from(mesh: &TriMesh, spacing: f64) -> TriDexelField {
     TriDexelField::build(
         mesh,
         &TriBuildOptions {
+            spacing_xyz: None,
             spacing,
             ..TriBuildOptions::default()
         },
@@ -343,6 +344,7 @@ fn a_field_missing_a_bundle_is_refused_rather_than_guessed() {
     let (field, _) = TriDexelField::build(
         &mesh,
         &TriBuildOptions {
+            spacing_xyz: None,
             spacing: 0.5,
             axes: AxisSet::parse("z").expect("valid"),
             ..TriBuildOptions::default()

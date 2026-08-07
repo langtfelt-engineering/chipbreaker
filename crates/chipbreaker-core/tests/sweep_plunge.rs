@@ -204,6 +204,7 @@ fn a_plunge_removes_the_same_material_through_the_cut_path() {
         TriDexelField::build(
             &shapes::box_solid(Vec3::new(0.0, 0.0, 0.0), Vec3::new(30.0, 30.0, 12.0)),
             &TriBuildOptions {
+                spacing_xyz: None,
                 spacing: 0.4,
                 ..TriBuildOptions::default()
             },

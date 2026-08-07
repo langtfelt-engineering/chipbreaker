@@ -72,7 +72,7 @@ pub const MAGIC: [u8; 8] = *b"CBDEXEL\0";
 /// read needs the true extent, because `counts * spacing` has already rounded
 /// up. Version 1 files are refused rather than read with the wrong ray
 /// positions.
-pub const FORMAT_VERSION: u32 = 3;
+pub const FORMAT_VERSION: u32 = 4;
 
 /// Why a `.dexel` file could not be read or written.
 #[derive(Debug)]
@@ -176,7 +176,11 @@ pub fn write<W: Write>(field: &DexelField, w: &mut W) -> Result<(), FormatError>
     for value in lattice.origin().to_array() {
         put_f64(w, value)?;
     }
-    put_f64(w, lattice.spacing())?;
+    // Version 4: both transverse spacings. A version 3 file carried one,
+    // because a lattice had one.
+    let uv = lattice.spacing_uv();
+    put_f64(w, uv[0])?;
+    put_f64(w, uv[1])?;
     // The value itself, not `ray_length() - 2 * spacing`. That reconstruction
     // is not exact -- a 30 mm extent at 1.6 mm cells returned
     // 30.000000000000004 -- so a file reloaded to a lattice that was not the
@@ -245,7 +249,13 @@ pub fn read<R: Read>(r: &mut R) -> Result<DexelField, FormatError> {
         get_f64(r, "the origin")?,
         get_f64(r, "the origin")?,
     );
-    let spacing = get_f64(r, "the spacing")?;
+    // Version 3 and earlier stored a single spacing for both lattice axes.
+    let spacing = if version >= 4 {
+        [get_f64(r, "the spacing")?, get_f64(r, "the spacing")?]
+    } else {
+        let h = get_f64(r, "the spacing")?;
+        [h, h]
+    };
     let length = get_f64(r, "the length")?;
     let extent = [
         get_f64(r, "the transverse extents")?,

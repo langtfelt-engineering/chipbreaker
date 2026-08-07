@@ -129,6 +129,7 @@ fn main() {
         let (field, stats) = TriDexelField::build(
             &mesh,
             &TriBuildOptions {
+                spacing_xyz: None,
                 spacing: case.spacing,
                 axes,
                 placement: Mat4::IDENTITY,

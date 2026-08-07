@@ -222,7 +222,7 @@ fn cut_batch_bundle(
     for ray_index in 0..rays {
         let (i, j) = lattice.coords(ray_index);
         let origin = lattice.origin_of(i, j);
-        if !transverse_overlaps(&union, axis, origin, lattice.spacing()) {
+        if !transverse_overlaps(&union, axis, origin, lattice.spacing_uv()) {
             // Rejected against the whole batch at once, which is the point.
             stats.rays_rejected += motions.len() as u64;
             continue;
@@ -233,7 +233,7 @@ fn cut_batch_bundle(
         };
 
         for (index, motion) in motions.iter().enumerate() {
-            if !transverse_overlaps(&boxes[index], axis, origin, lattice.spacing())
+            if !transverse_overlaps(&boxes[index], axis, origin, lattice.spacing_uv())
                 || bundle.arena().span_count(ray_index) == 0
             {
                 stats.rays_rejected += 1;

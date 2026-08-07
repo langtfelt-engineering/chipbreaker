@@ -112,6 +112,7 @@ fn rebuild(id: &str) -> (DexelField, u64) {
         ),
     };
     let options = BuildOptions {
+        spacing_xyz: None,
         spacing,
         axis,
         placement,

@@ -274,6 +274,7 @@ fn the_analytic_cut_path_agrees_with_the_reference_cut_path() {
         TriDexelField::build(
             &shapes::box_solid(Vec3::new(0.0, 0.0, 0.0), Vec3::new(40.0, 30.0, 10.0)),
             &TriBuildOptions {
+                spacing_xyz: None,
                 spacing: 0.5,
                 ..TriBuildOptions::default()
             },

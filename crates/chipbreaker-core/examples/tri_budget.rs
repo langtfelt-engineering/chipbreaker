@@ -101,6 +101,7 @@ fn memory() {
         let (field, _) = TriDexelField::build(
             &mesh,
             &TriBuildOptions {
+                spacing_xyz: None,
                 spacing,
                 ..TriBuildOptions::default()
             },
@@ -127,6 +128,7 @@ fn memory() {
         let (field, _) = TriDexelField::build(
             &mesh,
             &TriBuildOptions {
+                spacing_xyz: None,
                 spacing,
                 ..TriBuildOptions::default()
             },
@@ -176,6 +178,7 @@ fn volume_monotonicity() {
         let (field, _) = TriDexelField::build(
             &mesh,
             &TriBuildOptions {
+                spacing_xyz: None,
                 spacing,
                 ..TriBuildOptions::default()
             },

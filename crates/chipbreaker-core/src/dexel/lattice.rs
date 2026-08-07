@@ -121,7 +121,13 @@ pub struct Lattice {
     axis: Axis,
     /// Lower corner of the workspace the lattice covers.
     origin: Vec3,
-    spacing: f64,
+    /// Cell size along the two lattice axes, in `axis.cyclic()` order.
+    ///
+    /// Two values rather than one, because Unit 10 allows an independent cell
+    /// size per world axis. Isotropic is the common case and simply has the two
+    /// equal; nothing here special-cases it, so there is one code path rather
+    /// than two.
+    spacing: [f64; 2],
     /// Ray counts along the two lattice axes, in `axis.cyclic()` order.
     counts: [u32; 2],
     /// Workspace extents along the two lattice axes.
@@ -145,8 +151,22 @@ impl Lattice {
     /// # Errors
     /// See [`LatticeError`].
     pub fn new(bounds: Aabb3, spacing: f64, axis: Axis) -> Result<Self, LatticeError> {
-        if !spacing.is_finite() || spacing <= 0.0 {
-            return Err(LatticeError::BadSpacing { found: spacing });
+        Self::anisotropic(bounds, [spacing; 3], axis)
+    }
+
+    /// Builds a lattice with an independent cell size per **world** axis.
+    ///
+    /// `spacing` is indexed by world axis, not by lattice axis; the lattice
+    /// takes the two that are transverse to its own. Passing three equal values
+    /// is exactly [`Lattice::new`] and produces a bit-identical lattice.
+    ///
+    /// # Errors
+    /// See [`LatticeError`].
+    pub fn anisotropic(bounds: Aabb3, spacing: [f64; 3], axis: Axis) -> Result<Self, LatticeError> {
+        for h in spacing {
+            if !h.is_finite() || h <= 0.0 {
+                return Err(LatticeError::BadSpacing { found: h });
+            }
         }
         if bounds.is_empty() || !bounds.is_finite() {
             return Err(LatticeError::BadBounds { found: bounds });
@@ -154,16 +174,16 @@ impl Lattice {
 
         let extent = bounds.extent().to_array();
         let [u, v, w] = axis.cyclic();
-        let count = |e: f64| -> u64 {
+        let count = |e: f64, h: f64| -> u64 {
             #[allow(
                 clippy::cast_possible_truncation,
                 clippy::cast_sign_loss,
                 reason = "the value is finite and positive; the range is checked by the caller"
             )]
-            let n = (e / spacing).ceil() as u64;
+            let n = (e / h).ceil() as u64;
             n.max(1)
         };
-        let counts = [count(extent[u]), count(extent[v])];
+        let counts = [count(extent[u], spacing[u]), count(extent[v], spacing[v])];
         let wanted = counts[0].saturating_mul(counts[1]);
         if wanted > u64::from(u32::MAX) {
             return Err(LatticeError::TooManyRays { wanted, counts });
@@ -172,7 +192,7 @@ impl Lattice {
         Ok(Self {
             axis,
             origin: bounds.min,
-            spacing,
+            spacing: [spacing[u], spacing[v]],
             counts: [
                 u32::try_from(counts[0]).unwrap_or(u32::MAX),
                 u32::try_from(counts[1]).unwrap_or(u32::MAX),
@@ -191,7 +211,7 @@ impl Lattice {
     pub const fn from_parts(
         axis: Axis,
         origin: Vec3,
-        spacing: f64,
+        spacing: [f64; 2],
         counts: [u32; 2],
         extent: [f64; 2],
         length: f64,
@@ -214,8 +234,8 @@ impl Lattice {
     #[must_use]
     pub fn pad(&self) -> [f64; 2] {
         [
-            (f64::from(self.counts[0]) * self.spacing - self.extent[0]) / 2.0,
-            (f64::from(self.counts[1]) * self.spacing - self.extent[1]) / 2.0,
+            (f64::from(self.counts[0]) * self.spacing[0] - self.extent[0]) / 2.0,
+            (f64::from(self.counts[1]) * self.spacing[1] - self.extent[1]) / 2.0,
         ]
     }
 
@@ -240,11 +260,38 @@ impl Lattice {
         self.origin
     }
 
-    /// Cell size.
+    /// Cell size along the two lattice axes, in `axis.cyclic()` order.
     #[inline]
     #[must_use]
-    pub const fn spacing(&self) -> f64 {
+    pub const fn spacing_uv(&self) -> [f64; 2] {
         self.spacing
+    }
+
+    /// The larger of the two transverse cell sizes.
+    ///
+    /// For a caller that needs one conservative number -- a search radius, a
+    /// rejection margin -- rather than the cell's true shape. Taking the larger
+    /// is the safe direction: it over-covers rather than missing.
+    #[inline]
+    #[must_use]
+    pub fn spacing_max(&self) -> f64 {
+        self.spacing[0].max(self.spacing[1])
+    }
+
+    /// Cell size, for a lattice whose two transverse spacings agree.
+    ///
+    /// # Panics
+    /// Panics if the two differ, which means the caller assumed isotropy it does
+    /// not have. Use [`Self::spacing_uv`] instead of widening this.
+    #[inline]
+    #[must_use]
+    pub fn spacing(&self) -> f64 {
+        assert!(
+            self.spacing[0] == self.spacing[1],
+            "this lattice is anisotropic ({:?}); ask for spacing_uv or spacing_max",
+            self.spacing
+        );
+        self.spacing[0]
     }
 
     /// Ray counts along the two lattice axes.
@@ -268,7 +315,7 @@ impl Lattice {
     #[inline]
     #[must_use]
     pub fn cell_area(&self) -> f64 {
-        self.spacing * self.spacing
+        self.spacing[0] * self.spacing[1]
     }
 
     /// Ray index from lattice coordinates, row-major in the first axis.
@@ -297,11 +344,13 @@ impl Lattice {
         let [u, v, w] = self.axis.cyclic();
         let pad = self.pad();
         let mut point = self.origin.to_array();
-        point[u] += (f64::from(i) + 0.5) * self.spacing - pad[0];
-        point[v] += (f64::from(j) + 0.5) * self.spacing - pad[1];
+        point[u] += (f64::from(i) + 0.5) * self.spacing[0] - pad[0];
+        point[v] += (f64::from(j) + 0.5) * self.spacing[1] - pad[1];
         // Start behind the workspace, so a surface exactly on the lower bound is
-        // still crossed rather than begun upon.
-        point[w] -= self.spacing;
+        // still crossed rather than begun upon. A cell of the *ray* axis, which
+        // for this lattice is not one of the two it stores -- the larger of the
+        // two is used, which over-reaches and so cannot start inside material.
+        point[w] -= self.spacing_max();
         Vec3::from_array(point)
     }
 
@@ -322,7 +371,7 @@ impl Lattice {
     #[inline]
     #[must_use]
     pub fn ray_length(&self) -> f64 {
-        self.length + 2.0 * self.spacing
+        self.length + 2.0 * self.spacing_max()
     }
 
     /// The ray at a given index.
@@ -342,10 +391,10 @@ impl Lattice {
         let pad = self.pad();
         let mut lo = self.origin.to_array();
         let mut hi = self.origin.to_array();
-        lo[u] += 0.5 * self.spacing - pad[0];
-        lo[v] += 0.5 * self.spacing - pad[1];
-        hi[u] += (f64::from(self.counts[0]) - 0.5) * self.spacing - pad[0];
-        hi[v] += (f64::from(self.counts[1]) - 0.5) * self.spacing - pad[1];
+        lo[u] += 0.5 * self.spacing[0] - pad[0];
+        lo[v] += 0.5 * self.spacing[1] - pad[1];
+        hi[u] += (f64::from(self.counts[0]) - 0.5) * self.spacing[0] - pad[0];
+        hi[v] += (f64::from(self.counts[1]) - 0.5) * self.spacing[1] - pad[1];
         hi[w] += self.length;
         Aabb3::from_min_max(Vec3::from_array(lo), Vec3::from_array(hi))
     }
@@ -356,7 +405,20 @@ impl Hashable for Lattice {
         h.begin("Lattice");
         h.add(&self.axis);
         h.f64_slice(&self.origin.to_array());
-        h.f64(self.spacing);
+        // One value when the two agree, the pair otherwise.
+        //
+        // The conditional is deliberate and load-bearing. Unit 10 gave a lattice
+        // two transverse spacings where it had one, and hashing the pair
+        // unconditionally would have moved the digest of every isotropic field
+        // ever built -- invalidating every golden from Units 1 to 9 for a change
+        // that alters nothing about those fields. An isotropic lattice hashes
+        // exactly as it did, so "anisotropic equals isotropic when the three
+        // agree" holds at the level that decides identity.
+        if self.spacing[0] == self.spacing[1] {
+            h.f64(self.spacing[0]);
+        } else {
+            h.f64_slice(&self.spacing);
+        }
         h.u64(u64::from(self.counts[0]));
         h.u64(u64::from(self.counts[1]));
         h.f64_slice(&self.extent);

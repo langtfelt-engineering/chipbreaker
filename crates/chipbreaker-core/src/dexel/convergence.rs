@@ -393,6 +393,7 @@ pub fn measure(case: &Case, ratios: &[f64]) -> Convergence {
     for &ratio in ratios {
         let spacing = ratio * case.radius;
         let options = BuildOptions {
+            spacing_xyz: None,
             spacing,
             axis: Axis::Z,
             placement: case.placement,

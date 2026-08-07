@@ -39,6 +39,7 @@ fn stock() -> TriDexelField {
     TriDexelField::build(
         &shapes::box_solid(Vec3::new(0.0, 0.0, 0.0), Vec3::new(100.0, 60.0, 20.0)),
         &TriBuildOptions {
+            spacing_xyz: None,
             spacing: SPACING,
             ..TriBuildOptions::default()
         },

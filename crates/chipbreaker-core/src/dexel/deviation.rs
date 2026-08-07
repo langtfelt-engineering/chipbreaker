@@ -247,7 +247,7 @@ fn barycentric(a: Vec3, b: Vec3, c: Vec3, u: f64, v: f64) -> Vec3 {
 pub fn nearest_endpoint(field: &DexelField, p: Vec3) -> f64 {
     let lattice = field.lattice();
     let [u, v, w] = lattice.axis().cyclic();
-    let spacing = lattice.spacing();
+    let spacing = lattice.spacing_max();
     let [nu, nv] = lattice.counts();
     if nu == 0 || nv == 0 || spacing <= 0.0 {
         return f64::INFINITY;
@@ -334,7 +334,7 @@ pub fn measure(field: &TriDexelField, samples: &[SurfacePoint]) -> DeviationRepo
     let spacing = field
         .bundles()
         .next()
-        .map_or(0.0, |(_, b)| b.lattice().spacing());
+        .map_or(0.0, |(_, b)| b.lattice().spacing_max());
 
     let mut per_axis_max: [Option<f64>; 3] = [None, None, None];
     let mut per_axis_sq: [f64; 3] = [0.0; 3];

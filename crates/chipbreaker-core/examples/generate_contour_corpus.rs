@@ -117,6 +117,7 @@ fn field_for(id: &str, spacing: f64) -> TriDexelField {
         TriDexelField::build(
             mesh,
             &TriBuildOptions {
+                spacing_xyz: None,
                 spacing,
                 ..TriBuildOptions::default()
             },

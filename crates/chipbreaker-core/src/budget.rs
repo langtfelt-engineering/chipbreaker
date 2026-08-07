@@ -257,6 +257,111 @@ impl Spacing {
     }
 }
 
+/// Chooses three spacings that minimise memory **without weakening the bound**.
+///
+/// # What is being optimised, and why it is constrained rather than free
+///
+/// Anisotropy is not a free saving. [`Spacing::sample_distance_bound`] is a
+/// quadratic mean, so it is driven by the *largest* spacing: coarsening one axis
+/// degrades the worst case for every surface, not only for surfaces facing that
+/// axis, and no amount of refinement elsewhere rescues it. A rule that simply
+/// scaled each axis by the part's extent — or by the surface area facing it —
+/// would buy memory by quietly spending accuracy.
+///
+/// So this holds the bound fixed at whatever `reference` would have given and
+/// minimises memory subject to it:
+///
+/// ```text
+/// minimise   rays = (D H)/(hy hz) + (H W)/(hz hx) + (W D)/(hx hy)
+/// subject to hx^2 + hy^2 + hz^2 = 3 * reference^2
+/// ```
+///
+/// The constraint is exactly "the sample-distance bound is unchanged", since
+/// `D = sqrt(sum h^2 / 2)`.
+///
+/// # What falls out
+///
+/// For a **cube** the problem is symmetric, so the optimum is isotropic and this
+/// returns the input unchanged — correctly, because there is nothing to win. For
+/// a **plate** the dominant cost is the bundle looking through the thin
+/// direction, whose ray count is `W D / (hx hy)` and does not involve `hz` at
+/// all, so the optimiser coarsens `hx` and `hy` and pays for it with a finer
+/// `hz`. A **bar** is the same argument with the roles swapped.
+///
+/// The search is a fixed-resolution scan over the constraint surface followed by
+/// a fixed number of refinement rounds. Deterministic by construction: no
+/// convergence test, no data-dependent iteration count, and it runs once per
+/// build so its cost is irrelevant.
+#[must_use]
+pub fn auto_spacing(extents: [f64; 3], reference: f64) -> Spacing {
+    let target = Spacing::uniform(reference).sample_distance_bound();
+    // The constraint sphere: hx^2 + hy^2 + hz^2 = 2 * target^2.
+    let radius = (2.0 * target * target).sqrt();
+
+    let cost = |h: Spacing| -> f64 {
+        let counts = ray_counts(extents, h);
+        #[allow(clippy::cast_precision_loss, reason = "comparing magnitudes")]
+        let total = counts.iter().sum::<u64>() as f64;
+        total
+    };
+
+    // Parametrise the positive octant of the sphere by two angles, so every
+    // candidate satisfies the constraint exactly rather than approximately.
+    let candidate = |a: f64, b: f64| -> Spacing {
+        // `transcendental`, not `f64::sin` -- the project forbids std
+        // transcendentals so that every target computes the same bits, and this
+        // runs once per build where a divergence would change the spacings and
+        // so the whole field.
+        let (sa, ca) = crate::transcendental::sin_cos(a);
+        let (sb, cb) = crate::transcendental::sin_cos(b);
+        Spacing {
+            x: radius * sa * cb,
+            y: radius * sa * sb,
+            z: radius * ca,
+        }
+    };
+
+    // Coarse scan, then refinement. Both fixed-size.
+    let half_pi = core::f64::consts::PI / 2.0;
+    let (mut best_a, mut best_b) = (0.0f64, 0.0f64);
+    let mut best = f64::INFINITY;
+    const SCAN: usize = 48;
+    for i in 1..SCAN {
+        for j in 1..SCAN {
+            #[allow(clippy::cast_precision_loss, reason = "small loop indices")]
+            let (a, b) = (
+                half_pi * i as f64 / SCAN as f64,
+                half_pi * j as f64 / SCAN as f64,
+            );
+            let c = cost(candidate(a, b));
+            if c < best {
+                best = c;
+                best_a = a;
+                best_b = b;
+            }
+        }
+    }
+    let mut window = half_pi / SCAN as f64;
+    for _ in 0..6 {
+        let mut improved = (best_a, best_b);
+        for di in -2i32..=2 {
+            for dj in -2i32..=2 {
+                let a = (best_a + f64::from(di) * window / 2.0).clamp(1.0e-6, half_pi - 1.0e-6);
+                let b = (best_b + f64::from(dj) * window / 2.0).clamp(1.0e-6, half_pi - 1.0e-6);
+                let c = cost(candidate(a, b));
+                if c < best {
+                    best = c;
+                    improved = (a, b);
+                }
+            }
+        }
+        best_a = improved.0;
+        best_b = improved.1;
+        window /= 2.0;
+    }
+    candidate(best_a, best_b)
+}
+
 /// A memory budget, and the arithmetic for staying inside it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Budget {
