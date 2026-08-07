@@ -510,7 +510,22 @@ impl Budget {
                 lo = mid;
             }
         }
-        Some(spacing.scaled(hi))
+        // Round to something a person would type, and only keep the rounding if
+        // it still fits.
+        //
+        // The bisection lands on values like 0.049566294919477 mm, which is a
+        // correct answer and a useless message: the wording is the feature, and
+        // nobody retypes seventeen significant figures. Two is what a machinist
+        // would write.
+        let exact = spacing.scaled(hi);
+        for digits in [2i32, 3, 4] {
+            if let Some(nice) = round_up_significant(exact, digits)
+                && fits(nice.x / spacing.x)
+            {
+                return Some(nice);
+            }
+        }
+        Some(exact)
     }
 
     /// Checks a field that has grown under cutting.
@@ -537,6 +552,39 @@ impl Budget {
             segment,
         })
     }
+}
+
+/// Rounds every axis **up** to `digits` significant figures.
+///
+/// Up, never down: a rounded suggestion that no longer fits would be worse than
+/// no suggestion at all. Returns `None` if any axis is not a usable positive
+/// length.
+fn round_up_significant(spacing: Spacing, digits: i32) -> Option<Spacing> {
+    let round_one = |h: f64| -> Option<f64> {
+        if !h.is_finite() || h <= 0.0 {
+            return None;
+        }
+        // The decade of the leading digit, without a log: repeated scaling keeps
+        // this exact for the powers of ten that matter and avoids a
+        // transcendental on a path that must agree across targets.
+        let mut scale = 1.0f64;
+        let mut v = h;
+        while v >= 10.0 {
+            v /= 10.0;
+            scale *= 10.0;
+        }
+        while v < 1.0 {
+            v *= 10.0;
+            scale /= 10.0;
+        }
+        let factor = 10.0f64.powi(digits - 1);
+        Some((v * factor).ceil() / factor * scale)
+    };
+    Some(Spacing {
+        x: round_one(spacing.x)?,
+        y: round_one(spacing.y)?,
+        z: round_one(spacing.z)?,
+    })
 }
 
 /// Rays in each bundle, in `AXES` order.

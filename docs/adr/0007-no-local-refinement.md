@@ -109,3 +109,49 @@ to a sellable product. Deferring it is a scope decision made with the cost known
   problem.
 - The memory ceiling should be built regardless of what refinement lands, since
   it is the only mechanism that turns "too big" into a diagnosable refusal.
+
+## Amendment, Unit 10: graded planes declined, with the measurement
+
+Unit 10 was told to build rectilinear graded planes **only if** anisotropic
+spacing left enough on the table to justify the complexity. It does not.
+
+Holding the sample-distance bound fixed — the ruling that `--auto-res` may buy
+memory with anything except the guarantee — the measured saving at `--res 0.1`
+is:
+
+| part | isotropic KiB/cm³ | auto KiB/cm³ | saving |
+|---|---:|---:|---:|
+| cube 40×40×40 | 366.2 | 366.8 | 1.00× |
+| block 100×60×20 | 374.3 | 356.4 | 1.05× |
+| plate 200×200×6 | 862.6 | 673.8 | **1.28×** |
+| bar 300×20×20 | 504.6 | 481.9 | 1.05× |
+
+Unit 6 observed per-cm³ varying about 5× across shapes like these; measured here
+at 2.36× isotropic. **That spread is the part's geometry, not waste.** Only the
+portion of it that survives holding the bound fixed is recoverable, and that is
+the 1.28×.
+
+The cube is the informative row. It comes back isotropic — very slightly *worse*
+than isotropic, by 0.2%, because the continuous optimum rounds up through a
+`ceil` per axis — and that is correct rather than a defect: the constrained
+problem is symmetric, so there is nothing to win, and a rule that produced
+anisotropy there would be one that had stopped holding the bound.
+
+### Why graded planes are not worth it on that evidence
+
+Inserted planes would add **non-uniform indexing to every consumer**: the sweep's
+transverse rejection, the extraction sweep's window sizing, the deviation
+harness's nearest-endpoint search, and the contour grid's cell extents. Three of
+those four were *already* wrong under mere anisotropy and had to be fixed in this
+unit — including one, `nearest_endpoint`, where a single shared spacing made the
+accuracy harness report six times the true deviation while the field itself was
+perfectly correct.
+
+Paying that cost again, across more code, for an increment on top of a 1.00–1.28×
+base, is not a good trade. Graded planes are **declined**, not deferred pending
+more thought: the measurement that would justify them is the one above, and it
+says no.
+
+If the picture changes — a customer part with feature density concentrated in a
+slab, and a measurement showing anisotropy leaving much more than 1.28× on the
+table for it — reopen this with that measurement attached.

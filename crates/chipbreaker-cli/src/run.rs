@@ -32,6 +32,7 @@
 
 use std::path::PathBuf;
 
+use chipbreaker_core::budget::Budget;
 use chipbreaker_core::dexel::tri::TriDexelField;
 use chipbreaker_core::dexel::{FieldFormat, io as dexel_io};
 use chipbreaker_core::golden::CanonicalHash;
@@ -118,6 +119,15 @@ pub struct RunArgs {
     /// same accuracy by a different route.
     #[arg(long, value_name = "MM")]
     pub linearise_tol: Option<f64>,
+    /// Refuse if the field grows past this while cutting, e.g. `512M`.
+    ///
+    /// Checked **as the job runs**, not only at the start. Cutting splits spans,
+    /// so a field that fitted when built can exceed its budget once pockets are
+    /// cut -- Unit 7 measured a rib that spilled every ray of one bundle. The
+    /// refusal names the operation and the segment so the answer to "how far did
+    /// it get" is in the message.
+    #[arg(long, value_name = "BYTES", value_parser = crate::dexel::parse_bytes)]
+    pub mem_limit: Option<u64>,
     /// Emit JSON instead of text.
     #[arg(long)]
     pub json: bool,
@@ -360,6 +370,13 @@ pub fn run(args: &RunArgs) -> Result<(Value, String, bool), String> {
             &mut removed_per_motion[from..to],
         );
         totals.merge_without_volume(&stats);
+
+        // The ceiling, checked as spill grows rather than only at the start.
+        if let Some(limit) = args.mem_limit {
+            Budget::bytes(limit)
+                .check_growth(field.bytes() as u64, "cutting", (lo + from) as u64)
+                .map_err(|e| e.to_string())?;
+        }
 
         if args.progress && run % 100 == 0 {
             eprintln!(

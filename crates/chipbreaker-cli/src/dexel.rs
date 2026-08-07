@@ -17,7 +17,7 @@
 
 use std::path::PathBuf;
 
-use chipbreaker_core::budget::Spacing;
+use chipbreaker_core::budget::{Budget, Footprint, Spacing, auto_spacing, human, ray_counts};
 use chipbreaker_core::dexel::convergence::{
     ErrorModel, GAUSS_CIRCLE_EXPONENT, measure as measure_convergence, standard_cases,
     standard_ratios,
@@ -91,7 +91,7 @@ pub struct BuildArgs {
 }
 
 /// Parses `512M`, `2G`, `1048576`.
-fn parse_bytes(s: &str) -> Result<u64, String> {
+pub fn parse_bytes(s: &str) -> Result<u64, String> {
     let t = s.trim();
     let (digits, scale) = match t.chars().last() {
         Some('k' | 'K') => (&t[..t.len() - 1], 1024u64),
@@ -391,6 +391,75 @@ fn load_mesh(path: &std::path::Path, units: Option<&str>) -> Result<TriMesh, Str
     crate::mesh::load(&input).map(|(mesh, _)| mesh)
 }
 
+/// `--mem-dry-run`: the prediction, and nothing else.
+fn dry_run_report(
+    args: &BuildArgs,
+    extents: [f64; 3],
+    spacing: Spacing,
+    footprint: &Footprint,
+) -> (Value, String, bool) {
+    let counts = ray_counts(extents, spacing);
+    let bound = spacing.sample_distance_bound();
+    let mut text = format!(
+        "stock     {:.3} x {:.3} x {:.3} mm\n\
+         spacing   {:.6} x {:.6} x {:.6} mm{}\n\
+         bound     {bound:.6} mm worst-case sample distance\n\
+         rays      {} + {} + {} = {}\n",
+        extents[0],
+        extents[1],
+        extents[2],
+        spacing.x,
+        spacing.y,
+        spacing.z,
+        if args.auto_res {
+            " (chosen automatically)"
+        } else {
+            ""
+        },
+        counts[0],
+        counts[1],
+        counts[2],
+        counts.iter().sum::<u64>(),
+    );
+    text.push_str(&format!(
+        "memory    {} total = field {} + spill headroom {}\n",
+        human(footprint.total_bytes()),
+        human(footprint.field_bytes),
+        human(footprint.spill_headroom_bytes),
+    ));
+    if let Some(limit) = args.mem_limit {
+        #[allow(clippy::cast_precision_loss, reason = "a percentage")]
+        let used = footprint.total_bytes() as f64 / limit as f64 * 100.0;
+        text.push_str(&format!("budget    {} ({used:.1}% used)\n", human(limit)));
+    }
+    text.push_str("dry run   nothing was allocated\n");
+    let results = serde_json::json!({
+        "command": "dexel build --mem-dry-run",
+        "extents_mm": extents,
+        "spacing_mm": [spacing.x, spacing.y, spacing.z],
+        "sample_distance_bound_mm": bound,
+        "rays": counts,
+        "memory": {
+            "field_bytes": footprint.field_bytes,
+            "spill_headroom_bytes": footprint.spill_headroom_bytes,
+            "total_bytes": footprint.total_bytes(),
+        },
+        "limit_bytes": args.mem_limit,
+    });
+    (results, text, true)
+}
+
+/// Loads a mesh for `mem-estimate`, which needs only its bounds.
+///
+/// Takes the shared [`Input`] rather than rebuilding one, so unit handling and
+/// welding stay in exactly one place.
+///
+/// # Errors
+/// Returns a message suitable for stderr.
+pub fn load_mesh_for_estimate(input: &Input) -> Result<TriMesh, String> {
+    crate::mesh::load(input).map(|(mesh, _)| mesh)
+}
+
 // --- build -----------------------------------------------------------------
 
 fn run_build(
@@ -404,7 +473,28 @@ fn run_build(
         ));
     }
     let (mesh, mesh_summary) = crate::mesh::load(&args.input)?;
-    let (field, stats) = TriDexelField::build(&mesh, &args.options()).map_err(|e| e.to_string())?;
+
+    // **Predicted before anything is allocated.** The extents come from the
+    // mesh, so this is the real footprint of the job about to run rather than an
+    // estimate of a similar one.
+    let extents = mesh.bounds().extent().to_array();
+    let spacing = if args.auto_res {
+        auto_spacing(extents, args.res)
+    } else {
+        args.spacing_xyz().unwrap_or(Spacing::uniform(args.res))
+    };
+    let budget = args.mem_limit.map_or_else(Budget::unlimited, Budget::bytes);
+    let footprint = budget
+        .check(extents, spacing, 0, false)
+        .map_err(|e| e.to_string())?;
+
+    if args.mem_dry_run {
+        return Ok(dry_run_report(args, extents, spacing, &footprint));
+    }
+
+    let mut options = args.options();
+    options.spacing_xyz = Some(spacing);
+    let (field, stats) = TriDexelField::build(&mesh, &options).map_err(|e| e.to_string())?;
 
     // The tessellation adequacy warning. A customer asking for 0.05 mm on a
     // coarse STL is buying precision their data cannot carry, and delivering it

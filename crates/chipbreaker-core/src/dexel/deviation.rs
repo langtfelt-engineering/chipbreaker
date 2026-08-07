@@ -247,9 +247,22 @@ fn barycentric(a: Vec3, b: Vec3, c: Vec3, u: f64, v: f64) -> Vec3 {
 pub fn nearest_endpoint(field: &DexelField, p: Vec3) -> f64 {
     let lattice = field.lattice();
     let [u, v, w] = lattice.axis().cyclic();
-    let spacing = lattice.spacing_max();
+    // Per lattice axis, not one number for both.
+    //
+    // A `spacing_max()` shim here compiled and silently broke the harness under
+    // anisotropy: the cell index nearest the query point was computed with the
+    // wrong divisor, so the search started several cells away and reported a
+    // deviation six times the true one. The FIELD was correct; the measurement
+    // of it was not, which is the more dangerous of the two failures because it
+    // discredits good geometry.
+    let huv = lattice.spacing_uv();
+    let (hu, hv) = (huv[0], huv[1]);
+    // The ray axis's own cell size is not one of the two this lattice stores;
+    // the larger is used, which over-reaches and so cannot start inside
+    // material. It must match `Lattice::origin_of`.
+    let along = lattice.spacing_max();
     let [nu, nv] = lattice.counts();
-    if nu == 0 || nv == 0 || spacing <= 0.0 {
+    if nu == 0 || nv == 0 || hu <= 0.0 || hv <= 0.0 {
         return f64::INFINITY;
     }
 
@@ -257,25 +270,28 @@ pub fn nearest_endpoint(field: &DexelField, p: Vec3) -> f64 {
     let origin = lattice.origin().to_array();
     // The ray axis origin: rays start one cell behind the workspace, and span
     // parameters are measured from there.
-    let base_w = origin[w] - spacing;
+    let base_w = origin[w] - along;
 
     #[allow(
         clippy::cast_possible_truncation,
         reason = "clamped into the lattice immediately below"
     )]
-    let centre_i = ((point[u] - origin[u]) / spacing - 0.5).round() as i64;
+    let centre_i = ((point[u] - origin[u]) / hu - 0.5).round() as i64;
     #[allow(
         clippy::cast_possible_truncation,
         reason = "clamped into the lattice immediately below"
     )]
-    let centre_j = ((point[v] - origin[v]) / spacing - 0.5).round() as i64;
+    let centre_j = ((point[v] - origin[v]) / hv - 0.5).round() as i64;
 
     let mut best = f64::INFINITY;
     let max_radius = i64::from(nu.max(nv));
     for radius in 0..=max_radius {
         // Nothing in this ring or beyond can beat `best`: the closest a cell at
-        // Chebyshev radius r can be, transversely, is (r - 1) * spacing.
-        let floor = (radius as f64 - 1.0).max(0.0) * spacing;
+        // Chebyshev radius r can be, transversely, is `(r - 1)` times the
+        // SMALLER cell size. The smaller, because the ring is square in index
+        // space and rectangular in millimetres -- using the larger would stop
+        // the search while a nearer endpoint still lay along the fine axis.
+        let floor = (radius as f64 - 1.0).max(0.0) * hu.min(hv);
         if floor > best {
             break;
         }

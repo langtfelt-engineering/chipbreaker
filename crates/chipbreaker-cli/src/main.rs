@@ -11,6 +11,7 @@
 
 mod dexel;
 mod extract;
+mod memest;
 mod mesh;
 mod path;
 mod report;
@@ -88,6 +89,8 @@ enum Command {
     CutStat(run::CutStatArgs),
     /// Contour a cut field back to a watertight triangle mesh.
     Extract(extract::ExtractArgs),
+    /// Predict what a job will cost in memory, without allocating any of it.
+    MemEstimate(memest::MemEstimateArgs),
     /// Print version information.
     Version {
         /// Emit JSON instead of a single line of text.
@@ -142,6 +145,11 @@ fn main() -> ExitCode {
         Command::Extract(args) => {
             let as_json = args.json;
             let (outcome, elapsed) = mesh::timed(|| extract::extract(&args));
+            emit(outcome, elapsed, as_json)
+        }
+        Command::MemEstimate(args) => {
+            let as_json = args.json();
+            let (outcome, elapsed) = mesh::timed(|| memest::mem_estimate(&args));
             emit(outcome, elapsed, as_json)
         }
         Command::Version { json } => {
