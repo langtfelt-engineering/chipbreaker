@@ -373,6 +373,11 @@ fn facet_reach(mesh: &TriMesh, tri: u32, a: u32, b: u32) -> f64 {
 pub fn compare(field: &TriDexelField, nominal: &TriMesh, stock: Option<&TriMesh>) -> DeviationField {
     let bvh = Bvh::build(nominal);
     let mut samples: Vec<Deviation> = Vec::new();
+    // Two buffers, reused across every sample. One query per span endpoint means
+    // hundreds of thousands of them on a real part, and a `Vec` allocated and
+    // freed inside each would be pure overhead.
+    let mut stack: Vec<u32> = Vec::new();
+    let mut hits = Vec::new();
 
     // Bundle, then ray, then span: the same order everything else in the engine
     // walks a field, so the reduction below is in a fixed order by construction.
@@ -395,7 +400,7 @@ pub fn compare(field: &TriDexelField, nominal: &TriMesh, stock: Option<&TriMesh>
                     );
                     let normal = code.decode();
                     if let Some((surface, perpendicular)) =
-                        signed_deviation(nominal, &bvh, at, normal)
+                        signed_deviation(nominal, &bvh, at, normal, &mut stack, &mut hits)
                     {
                         samples.push(Deviation {
                             at,
@@ -491,12 +496,19 @@ pub fn reduce(
 /// which case it falls back to the surface distance rather than to nothing: a
 /// missing cast means the normal points into open space, not that there is no
 /// deviation.
-fn signed_deviation(nominal: &TriMesh, bvh: &Bvh, at: Vec3, normal: Vec3) -> Option<(f64, f64)> {
+fn signed_deviation(
+    nominal: &TriMesh,
+    bvh: &Bvh,
+    at: Vec3,
+    normal: Vec3,
+    stack: &mut Vec<u32>,
+    hits: &mut Vec<crate::mesh::bvh::Hit>,
+) -> Option<(f64, f64)> {
     // Far enough to cross any plausible part, short enough that a stray hit on
     // the far side of the model is not mistaken for a local deviation.
     const REACH: f64 = 200.0;
 
-    let (nearest, _) = bvh.closest_point(nominal, at)?;
+    let (nearest, _) = bvh.closest_point_into(nominal, at, stack)?;
     let surface = nearest.distance(at);
 
     let cast = |direction: Vec3| -> Option<f64> {
@@ -520,7 +532,7 @@ fn signed_deviation(nominal: &TriMesh, bvh: &Bvh, at: Vec3, normal: Vec3) -> Opt
     };
 
     // Inside the nominal: material that should be here is gone.
-    let sign = if contains(nominal, bvh, at, normal) {
+    let sign = if contains(nominal, bvh, at, normal, hits) {
         -1.0
     } else {
         1.0
@@ -535,16 +547,18 @@ fn signed_deviation(nominal: &TriMesh, bvh: &Bvh, at: Vec3, normal: Vec3) -> Opt
 /// face -- which every sample of a correctly machined part does -- resolves the
 /// same way each time rather than according to which axis it happens to be
 /// parallel to.
-fn contains(nominal: &TriMesh, bvh: &Bvh, at: Vec3, normal: Vec3) -> bool {
-    let mut hits = Vec::new();
+fn contains(
+    nominal: &TriMesh,
+    bvh: &Bvh,
+    at: Vec3,
+    normal: Vec3,
+    hits: &mut Vec<crate::mesh::bvh::Hit>,
+) -> bool {
     let query = Ray {
         origin: at,
         direction: normal,
     };
-    if bvh
-        .intersect_ray_all_into(nominal, &query, &mut hits)
-        .is_err()
-    {
+    if bvh.intersect_ray_all_into(nominal, &query, hits).is_err() {
         return false;
     }
     // Strictly ahead: a hit at the origin means the point is ON the surface, not

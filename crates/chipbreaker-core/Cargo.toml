@@ -27,6 +27,10 @@ criterion.workspace = true
 num-rational = "0.4"
 
 [[bench]]
+name = "deviation"
+harness = false
+
+[[bench]]
 name = "predicates"
 harness = false
 

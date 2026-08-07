@@ -14,11 +14,110 @@ cargo bench --bench spans      -- --warm-up-time 1 --measurement-time 3
 cargo bench --bench mesh       -- --warm-up-time 1 --measurement-time 3
 cargo bench --bench tool       -- --warm-up-time 1 --measurement-time 3
 cargo bench --bench gcode      -- --warm-up-time 1 --measurement-time 3
+cargo bench --bench deviation  -- --warm-up-time 1 --measurement-time 3
 ```
 
 CI compiles the benchmarks (`cargo bench --no-run`) but does not time them.
 Timing on shared CI runners produces numbers with more variance than the
 regressions we would be looking for.
+
+---
+
+## 2026-08-07 — Unit 12: comparing a result against the part it was meant to be
+
+- **Commit:** `HEAD` (Unit 12)
+- **Machine:** Intel Core Ultra 7 270K Plus, 24 physical / 24 logical cores,
+  31.5 GB RAM
+- **OS:** Windows 11 Pro 10.0.26200
+- **Toolchain:** the pinned `rust-toolchain.toml`
+- **Command:** `cargo bench --bench deviation`
+
+### Per sample, because that is what transfers between jobs
+
+`compare` visits every span endpoint of all three bundles, so its cost follows
+the **surface area** of the cut result rather than the part's volume or the
+program's length. A 40 x 30 x 12 mm block, raster-faced with a 6 mm flat mill,
+compared against a mesh extracted from the same field:
+
+| cell | samples | nominal triangles | total | per sample |
+|---|---|---|---|---|
+| 0.80 mm | 7,260 | 14,440 | 86.3 ms | 11.9 µs |
+| 0.50 mm | 18,496 | 36,992 | 167.7 ms | 9.1 µs |
+| 0.35 mm | 38,530 | 77,060 | 358.8 ms | 9.3 µs |
+
+Flat in the cell size once the hierarchy is deep enough to matter, which is the
+shape a `log n` traversal should have.
+
+### The three queries, and the one that was not what I expected
+
+Each sample runs a closest-point query for the metric, two ray casts for the
+perpendicular diagnostic, and one more gathering every crossing for the
+containment parity that decides the sign. Timed on 248 points drawn from the
+field itself:
+
+| query | before | after | share |
+|---|---|---|---|
+| `closest_point` | 10.4 µs | **0.64 µs** | 7% |
+| two nearest-hit casts | 7.4 µs | 5.53 µs | 62% |
+| all crossings, for parity | 4.0 µs | 2.72 µs | 31% |
+| **sum** | 21.8 µs | **8.89 µs** | |
+
+The sum tracks the end-to-end figure — 8.89 against 9.3 µs — so the three
+queries account for essentially all of it and there is no fourth cost hiding.
+
+**I predicted the parity cast would dominate**, on the reasoning that it is the
+one query that cannot stop early: a nearest-point search abandons a subtree
+when its bound exceeds the running best and a nearest-hit cast stops at the
+first crossing, but a parity test has to find them all. It was the cheapest of
+the three from the start, and after the fix below it is a third of the cost of
+the two casts that *can* stop early.
+
+### A 13x traversal win that was sitting behind an over-cautious comment
+
+`closest_point` pushed BVH children in index order, with a comment saying that
+sorting them by distance would make the traversal depend on floating-point
+rounding. That is true and it does not matter: ties are broken by **triangle
+index**, so the answer cannot depend on visit order at all — rounding changes
+how much work is pruned, never which triangle comes back.
+
+Descending the nearer child first establishes a tight bound immediately, and
+the far subtree is then usually rejected whole rather than walked to its
+leaves. **13x** on the query, and the reuse of a traversal buffer instead of a
+`Vec` per call took a little more:
+
+| | before | after | change |
+|---|---|---|---|
+| `compare`, h = 0.35 | 920.3 ms | 358.8 ms | **2.6x** |
+| `compare`, h = 0.50 | 374.3 ms | 167.7 ms | 2.2x |
+| `closest_point`, per query | 10.4 µs | 0.64 µs | 16x |
+
+Every golden, ladder rung and recall figure is unchanged, which is the point:
+the ordering affects what is pruned and nothing else.
+
+### What the numbers argue for next
+
+The **perpendicular diagnostic now costs 62% of a comparison** — more than the
+metric it is a diagnostic for. It is genuinely useful (it is what makes the
+step-edge artefact visible rather than silent), so it is not being removed,
+but a `--no-perpendicular` flag would be a 2.5x saving for a customer who only
+wants the verdict. Recorded here rather than implemented, because nothing has
+asked for it yet.
+
+Both casts go through `intersect_ray`, which calls `intersect_ray_all` — a
+`Vec` allocation and a full sort of every crossing, to then take the nearest.
+That is the obvious next target and it is Unit 2 code used everywhere, so it
+wants its own change rather than a drive-by.
+
+### The tessellation floor
+
+| | triangles | time | per triangle |
+|---|---|---|---|
+| `facet_size`, nominal | 36,992 | 6.53 ms | 177 ns |
+
+Once per mesh rather than once per sample, so it is 4% of a comparison at
+h = 0.5 and less at finer cells. Timed anyway, because it walks every edge and
+builds a map to do it, and "expected to be invisible" is the kind of claim that
+turns out to be a third of the runtime.
 
 ---
 
