@@ -395,15 +395,22 @@ const fn rationale(kind: DefectKind, locale: Locale) -> &'static str {
 }
 
 /// Where each locale sits on the part.
+///
+/// **Every anchor is below the stock top**, so the clean program cuts a real
+/// slot and a perturbation has something to differ from. The first version put
+/// `mid-face` at `z = 12`, the stock surface: the clean pass removed nothing,
+/// and any perturbation that stayed at or above it removed nothing either, so
+/// several cases were in the corpus with no defect in them. They counted in the
+/// recall denominator and could not be found, because there was nothing there.
 fn anchor(locale: Locale) -> Vec3 {
     match locale {
-        Locale::MidFace => Vec3::new(20.0, 15.0, 12.0),
+        Locale::MidFace => Vec3::new(20.0, 15.0, 7.0),
         Locale::PocketFloor => Vec3::new(20.0, 15.0, 6.0),
-        Locale::SharpEdge => Vec3::new(8.0, 15.0, 12.0),
+        Locale::SharpEdge => Vec3::new(8.0, 15.0, 7.5),
         Locale::Fillet => Vec3::new(20.0, 8.0, 8.0),
         Locale::ThinWall => Vec3::new(20.0, 22.0, 8.0),
         Locale::NearThroughHole => Vec3::new(30.0, 15.0, 6.0),
-        Locale::BodyDiagonal => Vec3::new(12.0, 10.0, 9.0),
+        Locale::BodyDiagonal => Vec3::new(12.0, 10.0, 8.0),
     }
 }
 
@@ -448,9 +455,17 @@ fn program(
         // The path is correct; the cutter is not. Handled by the deltas on the
         // case rather than here, so the motions stay equal to `clean`.
         DefectKind::ToolTooLarge | DefectKind::ToolTooLong => None,
-        // A rapid at clearance height that is not clear.
+        // A rapid at a clearance height that is not clear.
+        //
+        // Measured from the stock top, not from the retract height. The first
+        // version retracted to `16 - depth`, which for any depth under 4 mm is
+        // still above the 12 mm stock and so injected no defect at all -- the
+        // case was in the corpus, counted in the denominator, and impossible to
+        // detect because there was nothing there. It cost about a fifth of the
+        // apparent recall.
         DefectKind::RapidClipsStock => {
-            motions[2] = line([at.x + 14.0, at.y, z], [at.x + 14.0, at.y, 16.0 - depth]);
+            let clip = STOCK[2] - depth;
+            motions[2] = line([at.x + 14.0, at.y, z], [at.x - 14.0, at.y, clip]);
             Some(2)
         }
         // The retract never happens, so the tool drags out at depth.

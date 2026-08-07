@@ -7,6 +7,7 @@
 pub mod budget;
 pub mod contour;
 pub mod defect;
+pub mod deviation;
 pub mod dexel;
 pub mod eps;
 pub mod golden;
