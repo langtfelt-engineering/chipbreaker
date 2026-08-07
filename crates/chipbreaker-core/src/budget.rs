@@ -84,6 +84,18 @@ pub const EXTRACTION_BYTES_PER_PLANE_CORNER: usize = 130;
 /// Bytes per toolpath segment, measured at Unit 4.
 pub const IR_BYTES_PER_SEGMENT: usize = 192;
 
+/// Scratch a parallel worker holds, in bytes.
+///
+/// A `CutScratch` -- raycast candidates and three `Spans` buffers -- plus the
+/// chunk result it builds. Small per worker and linear in the worker count, so
+/// **a job that fits at one thread and runs out of memory at sixteen is exactly
+/// the failure the ceiling exists to prevent**, and it would be an embarrassing
+/// one to reintroduce here.
+///
+/// Deliberately generous: the buffers grow to the largest ray they meet, and a
+/// ray through a ribbed pocket carries many spans.
+pub const BYTES_PER_WORKER: usize = 64 * 1024;
+
 /// How the spill allowance is derived.
 ///
 /// **Not a fudge factor.** Unit 7's corpus measured post-cut span distributions,
@@ -109,6 +121,8 @@ pub struct Footprint {
     pub extraction_bytes: u64,
     /// The toolpath IR, if a program is loaded alongside.
     pub ir_bytes: u64,
+    /// Per-worker scratch, across all workers.
+    pub worker_bytes: u64,
 }
 
 impl Footprint {
@@ -119,6 +133,7 @@ impl Footprint {
             .saturating_add(self.spill_headroom_bytes)
             .saturating_add(self.extraction_bytes)
             .saturating_add(self.ir_bytes)
+            .saturating_add(self.worker_bytes)
     }
 }
 
@@ -402,6 +417,18 @@ impl Budget {
         segments: u64,
         extracting: bool,
     ) -> Footprint {
+        Self::predict_with_workers(extents, spacing, segments, extracting, 1)
+    }
+
+    /// As [`Self::predict`], for a job that will run on `workers` threads.
+    #[must_use]
+    pub fn predict_with_workers(
+        extents: [f64; 3],
+        spacing: Spacing,
+        segments: u64,
+        extracting: bool,
+        workers: u64,
+    ) -> Footprint {
         let counts = ray_counts(extents, spacing);
         let per_ray = bytes_per_ray() as u64;
         let field_bytes = counts.iter().sum::<u64>().saturating_mul(per_ray);
@@ -431,6 +458,7 @@ impl Budget {
             spill_headroom_bytes,
             extraction_bytes,
             ir_bytes: segments.saturating_mul(IR_BYTES_PER_SEGMENT as u64),
+            worker_bytes: workers.max(1).saturating_mul(BYTES_PER_WORKER as u64),
         }
     }
 
@@ -446,7 +474,27 @@ impl Budget {
         segments: u64,
         extracting: bool,
     ) -> Result<Footprint, BudgetError> {
-        let footprint = Self::predict(extents, spacing, segments, extracting);
+        self.check_with_workers(extents, spacing, segments, extracting, 1)
+    }
+
+    /// As [`Self::check`], for a job that will run on `workers` threads.
+    ///
+    /// The worker count belongs in the *check* and not only in the report: a job
+    /// that fits at one thread and runs out of memory at sixteen is precisely
+    /// the failure this ceiling exists to prevent, and it would be an
+    /// embarrassing one to reintroduce alongside the parallelism.
+    ///
+    /// # Errors
+    /// [`BudgetError::TooLarge`], as [`Self::check`].
+    pub fn check_with_workers(
+        &self,
+        extents: [f64; 3],
+        spacing: Spacing,
+        segments: u64,
+        extracting: bool,
+        workers: u64,
+    ) -> Result<Footprint, BudgetError> {
+        let footprint = Self::predict_with_workers(extents, spacing, segments, extracting, workers);
         let Some(limit) = self.limit_bytes else {
             return Ok(footprint);
         };
@@ -457,7 +505,7 @@ impl Budget {
             footprint,
             limit,
             spacing,
-            suggestion: self.coarsest_that_fits(extents, spacing, segments, extracting),
+            suggestion: self.coarsest_that_fits(extents, spacing, segments, extracting, workers),
         })
     }
 
@@ -475,6 +523,7 @@ impl Budget {
         spacing: Spacing,
         segments: u64,
         extracting: bool,
+        workers: u64,
     ) -> Option<Spacing> {
         let limit = self.limit_bytes?;
         // If the toolpath alone busts the budget, no spacing helps, and saying
@@ -484,7 +533,9 @@ impl Budget {
             return None;
         }
         let fits = |k: f64| {
-            Self::predict(extents, spacing.scaled(k), segments, extracting).total_bytes() <= limit
+            Self::predict_with_workers(extents, spacing.scaled(k), segments, extracting, workers)
+                .total_bytes()
+                <= limit
         };
         // Find any coarsening that fits, doubling out to a sane ceiling.
         let mut hi = 1.0f64;
@@ -677,6 +728,13 @@ impl fmt::Display for BudgetError {
                 }
                 if footprint.ir_bytes > 0 {
                     parts.push(format!("toolpath IR {}", human(footprint.ir_bytes)));
+                }
+                if footprint.worker_bytes > 0 {
+                    parts.push(format!(
+                        "worker scratch {} across {} thread(s)",
+                        human(footprint.worker_bytes),
+                        footprint.worker_bytes / BYTES_PER_WORKER as u64
+                    ));
                 }
                 write!(
                     f,

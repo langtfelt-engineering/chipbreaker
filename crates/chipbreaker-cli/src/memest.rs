@@ -48,6 +48,9 @@ pub struct MemEstimateArgs {
     /// Include the extraction sweep's window in the estimate.
     #[arg(long)]
     pub extract: bool,
+    /// Worker threads the job will run on, for the per-worker scratch.
+    #[arg(long, value_name = "N", default_value_t = 1)]
+    pub threads: usize,
     /// Report against this ceiling, e.g. `512M`.
     #[arg(long, value_name = "BYTES", value_parser = crate::dexel::parse_bytes)]
     pub mem_limit: Option<u64>,
@@ -103,8 +106,13 @@ pub fn mem_estimate(args: &MemEstimateArgs) -> Result<(Value, String, bool), Str
         None => 0,
     };
 
+    let workers = if args.threads == 0 {
+        std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get)
+    } else {
+        args.threads
+    } as u64;
     let budget = args.mem_limit.map_or_else(Budget::unlimited, Budget::bytes);
-    let outcome = budget.check(extents, spacing, segments, args.extract);
+    let outcome = budget.check_with_workers(extents, spacing, segments, args.extract, workers);
     let footprint = match &outcome {
         Ok(f) => *f,
         Err(BudgetError::TooLarge { footprint, .. }) => *footprint,
@@ -153,6 +161,12 @@ pub fn mem_estimate(args: &MemEstimateArgs) -> Result<(Value, String, bool), Str
             human(footprint.ir_bytes)
         ));
     }
+    if footprint.worker_bytes > 0 {
+        text.push_str(&format!(
+            "workers   {} of scratch across {workers} thread(s)\n",
+            human(footprint.worker_bytes)
+        ));
+    }
     text.push_str(&format!("total     {}\n", human(footprint.total_bytes())));
     match &outcome {
         Ok(_) => {
@@ -178,11 +192,13 @@ pub fn mem_estimate(args: &MemEstimateArgs) -> Result<(Value, String, bool), Str
             "field_bytes": footprint.field_bytes,
             "ir_bytes": footprint.ir_bytes,
             "spill_headroom_bytes": footprint.spill_headroom_bytes,
+            "worker_bytes": footprint.worker_bytes,
             "total_bytes": footprint.total_bytes(),
         },
         "rays": counts,
         "sample_distance_bound_mm": bound,
         "segments": segments,
+        "threads": workers,
         "spacing_mm": [spacing.x, spacing.y, spacing.z],
     });
     Ok((results, text, fits))

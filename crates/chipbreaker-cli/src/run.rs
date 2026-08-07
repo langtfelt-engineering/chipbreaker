@@ -39,6 +39,7 @@ use chipbreaker_core::golden::CanonicalHash;
 use chipbreaker_core::sweep::arc::ArcMove;
 use chipbreaker_core::sweep::batch::{DEFAULT_BATCH, cut_batch_per_motion, split_runs};
 use chipbreaker_core::sweep::cut::{CutScratch, CutStats, SweepMethod, distribution};
+use chipbreaker_core::sweep::parallel::{Schedule, cut_all_parallel};
 use chipbreaker_core::sweep::{LinearMove, Motion, SweepCase};
 use chipbreaker_core::tool::{Profile, ToolLibrary};
 use chipbreaker_core::toolpath::{MotionKind, Toolpath};
@@ -128,6 +129,13 @@ pub struct RunArgs {
     /// it get" is in the message.
     #[arg(long, value_name = "BYTES", value_parser = crate::dexel::parse_bytes)]
     pub mem_limit: Option<u64>,
+    /// Worker threads. `0` uses one per available core, `1` is sequential.
+    ///
+    /// **The result is identical at every value.** Thread count is recorded in
+    /// the unhashed environment section of a report, never in the hashed
+    /// results, so a report produced on a different machine still compares equal.
+    #[arg(long, value_name = "N", default_value_t = 1)]
+    pub threads: usize,
     /// Emit JSON instead of text.
     #[arg(long)]
     pub json: bool,
@@ -361,14 +369,36 @@ pub fn run(args: &RunArgs) -> Result<(Value, String, bool), String> {
         let (Some(profile), Some(scratch)) = (profiles.get(&tool), scratches.get_mut(&tool)) else {
             return Err(format!("T{tool} did not resolve"));
         };
-        let stats = cut_batch_per_motion(
-            &mut field,
-            profile,
-            &motions[from..to],
-            method,
-            scratch,
-            &mut removed_per_motion[from..to],
-        );
+        let stats = if args.threads == 1 {
+            cut_batch_per_motion(
+                &mut field,
+                profile,
+                &motions[from..to],
+                method,
+                scratch,
+                &mut removed_per_motion[from..to],
+            )
+        } else {
+            // The parallel path owns its own batching and reduction, so it takes
+            // the whole run and reports the removed volume itself; the caller's
+            // per-motion slots stay zero for it and the totals below add the
+            // volume once.
+            let s = cut_all_parallel(
+                &mut field,
+                profile,
+                &motions[from..to],
+                method,
+                args.batch_size.max(1),
+                Schedule {
+                    threads: args.threads,
+                    ..Schedule::default()
+                },
+            );
+            for slot in 0..3 {
+                totals.removed_mm3[slot] += s.removed_mm3[slot];
+            }
+            s
+        };
         totals.merge_without_volume(&stats);
 
         // The ceiling, checked as spill grows rather than only at the start.
