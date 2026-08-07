@@ -367,3 +367,56 @@ fn an_empty_motion_list_is_a_no_op() {
     assert_eq!(digest(&field), before);
     assert_eq!(stats, CutStats::default());
 }
+
+#[test]
+fn the_deviation_harness_is_bit_identical_across_thread_counts() {
+    // Unit 12 makes the deviation harness a product surface, so it comes under
+    // the same rule as cutting. The maxima would reassociate freely; the RMS is
+    // a sum of squares and would not, which is easy to miss because it presents
+    // as "just an average" rather than as an accumulator.
+    use chipbreaker_core::dexel::deviation::{measure, measure_parallel, sample_mesh};
+
+    let mesh = shapes::box_solid(Vec3::new(0.0, 0.0, 0.0), Vec3::new(40.0, 30.0, 12.0));
+    let field = stock();
+    let samples = sample_mesh(&mesh, 0.4);
+    assert!(samples.len() > 500, "too few samples to be a real test");
+
+    let want = measure(&field, &samples);
+    for threads in [1usize, 2, 3, 5, 8, 16, 24] {
+        let got = measure_parallel(&field, &samples, threads);
+        assert_eq!(
+            got.best_rms.to_bits(),
+            want.best_rms.to_bits(),
+            "{threads} threads: the RMS differs by {}. A sum of squares reordered \
+             is a different sum -- the reduction is not running in sample order.",
+            got.best_rms - want.best_rms
+        );
+        assert_eq!(
+            got.best_max.to_bits(),
+            want.best_max.to_bits(),
+            "{threads}: max"
+        );
+        assert_eq!(
+            got.worst_cosine.to_bits(),
+            want.worst_cosine.to_bits(),
+            "{threads}: worst cosine"
+        );
+        assert_eq!(
+            got.worst_normal, want.worst_normal,
+            "{threads}: worst normal"
+        );
+        for slot in 0..3 {
+            assert_eq!(
+                got.per_axis_rms[slot].map(f64::to_bits),
+                want.per_axis_rms[slot].map(f64::to_bits),
+                "{threads}: per-axis RMS {slot}"
+            );
+            assert_eq!(
+                got.per_axis_max[slot].map(f64::to_bits),
+                want.per_axis_max[slot].map(f64::to_bits),
+                "{threads}: per-axis max {slot}"
+            );
+        }
+        assert_eq!(got.samples, want.samples, "{threads}: sample count");
+    }
+}

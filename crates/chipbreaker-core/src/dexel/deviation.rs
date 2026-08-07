@@ -288,7 +288,14 @@ pub fn nearest_endpoint(field: &DexelField, p: Vec3) -> f64 {
     for radius in 0..=max_radius {
         // Nothing in this ring or beyond can beat `best`: the closest a cell at
         // Chebyshev radius r can be, transversely, is `(r - 1)` times the
-        // SMALLER cell size. The smaller, because the ring is square in index
+        // SMALLER cell size.
+        //
+        // **This prune is per sample, and it must stay that way.** `best` is a
+        // local, so two samples measured on two threads prune independently and
+        // reach the same answer as they would alone. Sharing a bound across
+        // samples -- an obvious-looking optimisation, since a tight bound found
+        // early would prune later samples faster -- would make the result depend
+        // on which sample ran first, and the whole determinism claim with it. The smaller, because the ring is square in index
         // space and rectangular in millimetres -- using the larger would stop
         // the search while a nearer endpoint still lay along the fine axis.
         let floor = (radius as f64 - 1.0).max(0.0) * hu.min(hv);
@@ -339,19 +346,67 @@ pub fn nearest_endpoint(field: &DexelField, p: Vec3) -> f64 {
     best
 }
 
-/// Measures deviation and coverage of a tri-dexel field against a surface.
+/// One sample's deviation, before anything is combined.
 ///
-/// `samples` should come from [`sample_mesh`] on the **source mesh** to isolate
-/// sampling error, or from an analytic sampler to include tessellation error.
-/// The caller chooses, and the two are reported as separate columns.
-#[must_use]
-pub fn measure(field: &TriDexelField, samples: &[SurfacePoint]) -> DeviationReport {
-    let axes = field.axes();
-    let spacing = field
-        .bundles()
-        .next()
-        .map_or(0.0, |(_, b)| b.lattice().spacing_max());
+/// Separated out so the *computation* can be spread across threads while the
+/// *combination* stays in sample order. See [`reduce`].
+#[derive(Debug, Clone, Copy)]
+pub struct SampleDeviation {
+    /// Distance to the nearest endpoint of each bundle. `None` where the bundle
+    /// was not built.
+    pub per_axis: [Option<f64>; 3],
+    /// The best of the three, or infinite if none answered.
+    pub best: f64,
+    /// Cosine of the angle between this sample's normal and its best axis.
+    pub cosine: f64,
+    /// The sample's normal, carried so the reduction can report the worst one.
+    pub normal: [f64; 3],
+}
 
+/// Measures one sample against the field.
+///
+/// Pure: reads the field and nothing else, so it runs identically on any thread
+/// and in any order.
+#[must_use]
+pub fn measure_one(field: &TriDexelField, point: &SurfacePoint) -> SampleDeviation {
+    let axes = field.axes();
+    let mut per_axis: [Option<f64>; 3] = [None, None, None];
+    let mut best = f64::INFINITY;
+    for axis in AXES {
+        let Some(bundle) = field.bundle(axis) else {
+            continue;
+        };
+        let d = nearest_endpoint(bundle, point.position);
+        per_axis[axis.index()] = Some(d);
+        if d < best {
+            best = d;
+        }
+    }
+    SampleDeviation {
+        per_axis,
+        best,
+        cosine: best_cosine(point.normal, axes),
+        normal: point.normal.to_array(),
+    }
+}
+
+/// Combines per-sample deviations **in sample order**.
+///
+/// # Why this is separate, and why the order is not negotiable
+///
+/// The maxima and the worst-cosine search reassociate freely: `max` is
+/// associative and commutative, so a parallel reduction of those would be exact.
+///
+/// **The RMS is not.** It is a sum of squares, and a sum of floats reordered is a
+/// different sum. This is the same trap that redesigned Unit 8's batching and
+/// Unit 11's `removed_mm3`, and it is easier to miss here because it presents as
+/// "just an average" rather than as an accumulator. Per-chunk partial sums added
+/// in chunk order would regroup it and move the last bits of every reported RMS.
+///
+/// So the parallel path computes [`measure_one`] into a slot indexed by sample
+/// and calls this afterwards, exactly as the sequential path does.
+#[must_use]
+pub fn reduce(spacing: f64, per_sample: &[SampleDeviation]) -> DeviationReport {
     let mut per_axis_max: [Option<f64>; 3] = [None, None, None];
     let mut per_axis_sq: [f64; 3] = [0.0; 3];
     let mut best_max = 0.0f64;
@@ -359,37 +414,29 @@ pub fn measure(field: &TriDexelField, samples: &[SurfacePoint]) -> DeviationRepo
     let mut worst_cosine = f64::INFINITY;
     let mut worst_normal = [0.0, 0.0, 1.0];
 
-    for point in samples {
-        let mut best = f64::INFINITY;
-        for axis in AXES {
-            let Some(bundle) = field.bundle(axis) else {
-                continue;
-            };
-            let d = nearest_endpoint(bundle, point.position);
-            let slot = axis.index();
-            per_axis_max[slot] = Some(per_axis_max[slot].unwrap_or(0.0).max(d));
-            per_axis_sq[slot] += d * d;
-            if d < best {
-                best = d;
+    for sample in per_sample {
+        for slot in 0..3 {
+            if let Some(d) = sample.per_axis[slot] {
+                per_axis_max[slot] = Some(per_axis_max[slot].unwrap_or(0.0).max(d));
+                per_axis_sq[slot] += d * d;
             }
         }
-        if best.is_finite() {
-            best_max = best_max.max(best);
-            best_sq += best * best;
+        if sample.best.is_finite() {
+            best_max = best_max.max(sample.best);
+            best_sq += sample.best * sample.best;
         }
-
-        let cosine = best_cosine(point.normal, axes);
-        if cosine < worst_cosine {
-            worst_cosine = cosine;
-            worst_normal = point.normal.to_array();
+        if sample.cosine < worst_cosine {
+            worst_cosine = sample.cosine;
+            worst_normal = sample.normal;
         }
     }
 
-    let n = samples.len().max(1) as f64;
+    #[allow(clippy::cast_precision_loss, reason = "a sample count")]
+    let n = per_sample.len().max(1) as f64;
     let rms = |sum: f64| (sum / n).sqrt();
     DeviationReport {
         spacing,
-        samples: samples.len() as u64,
+        samples: per_sample.len() as u64,
         per_axis_max,
         per_axis_rms: [
             per_axis_max[0].map(|_| rms(per_axis_sq[0])),
@@ -405,6 +452,70 @@ pub fn measure(field: &TriDexelField, samples: &[SurfacePoint]) -> DeviationRepo
         },
         worst_normal,
     }
+}
+
+/// The field's spacing, as the report quotes it.
+fn report_spacing(field: &TriDexelField) -> f64 {
+    field
+        .bundles()
+        .next()
+        .map_or(0.0, |(_, b)| b.lattice().spacing_max())
+}
+
+/// Measures every sample against the field, sequentially.
+///
+/// The reference. [`measure_parallel`] must agree with it bit for bit.
+#[must_use]
+pub fn measure(field: &TriDexelField, samples: &[SurfacePoint]) -> DeviationReport {
+    let per_sample: Vec<SampleDeviation> = samples.iter().map(|p| measure_one(field, p)).collect();
+    reduce(report_spacing(field), &per_sample)
+}
+
+/// Measures every sample across `threads` workers.
+///
+/// **Bit-identical to [`measure`] at every thread count.** Samples are computed
+/// into pre-assigned slots and reduced afterwards in sample order; nothing is
+/// combined in completion order. Same rule as Unit 11's cutting path, for the
+/// same reason.
+///
+/// # Panics
+/// Panics if a worker panics, which can only happen through a bug in the shared
+/// sequential code.
+#[must_use]
+pub fn measure_parallel(
+    field: &TriDexelField,
+    samples: &[SurfacePoint],
+    threads: usize,
+) -> DeviationReport {
+    let workers = if threads == 0 {
+        std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get)
+    } else {
+        threads
+    };
+    if workers <= 1 || samples.len() < 2 {
+        return measure(field, samples);
+    }
+
+    // One slot per sample, filled by whichever worker takes that chunk. Chunks
+    // are disjoint and pre-assigned, so no two workers touch the same slot and
+    // the vector is written in full before anything reads it.
+    let chunk = samples.len().div_ceil(workers).max(1);
+    let mut per_sample: Vec<SampleDeviation> = Vec::new();
+    std::thread::scope(|scope| {
+        let mut handles = Vec::new();
+        for part in samples.chunks(chunk) {
+            handles.push(scope.spawn(move || {
+                part.iter()
+                    .map(|p| measure_one(field, p))
+                    .collect::<Vec<_>>()
+            }));
+        }
+        for handle in handles {
+            per_sample.extend(handle.join().expect("no worker panicked"));
+        }
+    });
+
+    reduce(report_spacing(field), &per_sample)
 }
 
 /// Worst sampling cosine over a mesh's surface, and where it occurred.
