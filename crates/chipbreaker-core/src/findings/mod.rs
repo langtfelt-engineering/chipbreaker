@@ -50,6 +50,7 @@
 pub mod attribute;
 pub mod cluster;
 pub mod collide;
+pub mod detect;
 pub mod diff;
 pub mod report;
 pub mod verdict;
