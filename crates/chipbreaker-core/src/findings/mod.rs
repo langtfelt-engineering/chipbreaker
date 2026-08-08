@@ -52,7 +52,7 @@ pub mod cluster;
 pub mod diff;
 pub mod report;
 
-pub use attribute::{Attribution, attribute_point, motion_reaches};
+pub use attribute::{Attribution, attribute_finding, attribute_point, motion_reaches};
 pub use cluster::{Classification, Cluster, ClusterParams, cluster, unsampled};
 pub use diff::{Change, Diff};
 pub use report::{Manifest, NumericalSemantics, Report};
@@ -79,8 +79,14 @@ pub struct Finding {
     /// **Exact.** How many samples the finding was built from. Zero for classes
     /// derived from the nominal rather than from the deviation field.
     pub sample_count: usize,
-    /// Centroid of the finding.
+    /// Centroid of the finding: where it is.
     pub at: Vec3,
+    /// Where its deepest sample sits: an exact span endpoint rather than an
+    /// average of several, and the point a user asks about first.
+    pub worst_at: Vec3,
+    /// A deterministic spread of positions across the finding, which attribution
+    /// probes and unions. See [`Cluster::probes`].
+    pub probes: Vec<Vec3>,
     /// Axis-aligned bounds.
     pub bounds: Aabb3,
     /// Which segments could have caused it.
@@ -157,6 +163,8 @@ pub fn identify(clusters: Vec<Cluster>, grid_mm: f64) -> Vec<Finding> {
             volume_mm3: c.volume_mm3,
             sample_count: c.samples.len(),
             at: c.at,
+            worst_at: c.worst_at,
+            probes: c.probes,
             bounds: c.bounds,
             attribution: Attribution::none(),
         });

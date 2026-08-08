@@ -32,6 +32,10 @@ use crate::findings::Finding;
 use crate::findings::report::Report;
 
 /// How a finding changed between two reports.
+///
+/// `Changed` carries two findings against the others' one, which makes the
+/// variants different sizes. Boxed rather than padded: a diff of a large report
+/// holds one of these per change, and most changes are appearances.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Change {
     /// Present in the new report, absent from the old.
@@ -41,9 +45,9 @@ pub enum Change {
     /// Present in both, with a different depth or extent.
     Changed {
         /// As it was.
-        before: Finding,
+        before: Box<Finding>,
         /// As it is.
-        after: Finding,
+        after: Box<Finding>,
     },
 }
 
@@ -173,8 +177,8 @@ pub fn diff(old: &Report, new: &Report) -> Diff {
                     || before.attribution.segments != after.attribution.segments;
                 if moved {
                     changes.push(Change::Changed {
-                        before: before.clone(),
-                        after: after.clone(),
+                        before: Box::new(before.clone()),
+                        after: Box::new(after.clone()),
                     });
                 }
             }

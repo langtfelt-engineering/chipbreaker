@@ -305,6 +305,7 @@ impl Report {
             h.f64(f.volume_mm3);
             h.u64(f.sample_count as u64);
             h.f64_slice(&f.at.to_array());
+            h.f64_slice(&f.worst_at.to_array());
             for s in &f.attribution.segments {
                 h.u64(u64::from(*s));
             }
@@ -352,6 +353,7 @@ fn finding_json(f: &Finding) -> Value {
         },
         "sample_count": f.sample_count,
         "at": [f.at.x, f.at.y, f.at.z],
+        "worst_at": [f.worst_at.x, f.worst_at.y, f.worst_at.z],
         "bounds": {
             "min": [f.bounds.min.x, f.bounds.min.y, f.bounds.min.z],
             "max": [f.bounds.max.x, f.bounds.max.y, f.bounds.max.z],

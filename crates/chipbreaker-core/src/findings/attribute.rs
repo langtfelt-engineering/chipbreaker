@@ -122,6 +122,48 @@ pub fn motion_reaches(
         .any(|s| t >= s.t0 - ON_SURFACE_MM && t <= s.t1 + ON_SURFACE_MM)
 }
 
+/// Attributes a whole finding, by probing several of its points and unioning.
+///
+/// A finding covers a region and different parts of that region can lie on
+/// different segments' surfaces, so one point is not enough — see
+/// [`crate::findings::Cluster::probes`] for the case that showed it.
+#[must_use]
+pub fn attribute_finding(
+    profile: &Profile,
+    motions: &[Motion],
+    bounds: &[crate::math::Aabb3],
+    provenance: &[Provenance],
+    method: SweepMethod,
+    scratch: &mut CutScratch,
+    probes: &[Vec3],
+) -> Attribution {
+    let mut segments: Vec<u32> = Vec::new();
+    for p in probes {
+        let a = attribute_point(profile, motions, bounds, provenance, method, scratch, *p);
+        for s in a.segments {
+            if !segments.contains(&s) {
+                segments.push(s);
+            }
+        }
+    }
+    // Ascending, so the set is a property of the finding rather than of the
+    // order the probes happened to be visited in.
+    segments.sort_unstable();
+    let prov = segments
+        .iter()
+        .map(|&i| {
+            provenance
+                .get(i as usize)
+                .copied()
+                .unwrap_or_else(|| Provenance::new(0, 0, 0))
+        })
+        .collect();
+    Attribution {
+        segments,
+        provenance: prov,
+    }
+}
+
 /// Attributes one point to the segments whose swept volumes reach it.
 ///
 /// `bounds` is the swept bounding box of each motion, precomputed by the caller

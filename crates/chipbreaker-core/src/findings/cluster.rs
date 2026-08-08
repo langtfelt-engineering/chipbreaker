@@ -155,7 +155,34 @@ pub struct Cluster {
     /// Estimated volume of material involved: the area, weighted by depth.
     pub volume_mm3: f64,
     /// Centroid of the cluster's sample positions.
+    ///
+    /// Good for saying *where* a finding is, and **useless for asking what
+    /// caused it**: a centroid is an average, and the average of points on a
+    /// curved or multi-faced surface lies off that surface entirely. Attribution
+    /// uses [`Self::worst_at`].
     pub at: Vec3,
+    /// Position of the deepest sample in the cluster.
+    ///
+    /// An actual span endpoint, so it lies exactly on a swept surface by
+    /// construction — which is what makes it answerable when a motion is asked
+    /// whether it reached this point. It is also the point a user cares about:
+    /// "which line cut the deepest part of this gouge" is the question, and the
+    /// centroid cannot answer it.
+    pub worst_at: Vec3,
+    /// A spread of sample positions across the finding, for attribution.
+    ///
+    /// **One point is not enough to attribute a finding.** A finding covers a
+    /// region, and different parts of that region can lie on different segments'
+    /// swept surfaces — a channel cut too shallow leaves excess whose deepest
+    /// sample may sit where the *plunge* reached rather than where the pass did.
+    /// Attributing the deepest point alone then names a real segment that is not
+    /// the one a user needs to edit.
+    ///
+    /// So attribution probes several points and unions the answers. These are
+    /// chosen deterministically — the deepest, then evenly spaced through the
+    /// members in ascending index order — so the set is a property of the
+    /// finding rather than of the traversal.
+    pub probes: Vec<Vec3>,
     /// Axis-aligned bounds of the cluster.
     pub bounds: Aabb3,
 }
@@ -355,13 +382,17 @@ pub fn cluster(samples: &[Deviation], params: &ClusterParams, cell_mm: f64) -> V
         let members: Vec<u32> = slots.iter().map(|&s| kept[s as usize]).collect();
 
         let mut worst = 0.0f64;
+        let mut worst_at = samples[members[0] as usize].at;
         let mut sum = 0.0f64;
         let mut centroid = Vec3::new(0.0, 0.0, 0.0);
         let mut bounds = Aabb3::EMPTY;
         for &i in &members {
             let d = &samples[i as usize];
             let depth = d.signed_mm.abs();
-            worst = worst.max(depth);
+            if depth > worst {
+                worst = depth;
+                worst_at = d.at;
+            }
             sum += depth;
             centroid = Vec3::new(
                 centroid.x + d.at.x,
@@ -373,6 +404,7 @@ pub fn cluster(samples: &[Deviation], params: &ClusterParams, cell_mm: f64) -> V
         #[allow(clippy::cast_precision_loss, reason = "a sample count")]
         let n = members.len() as f64;
         let (area_mm2, volume_mm3) = area_and_volume(&members, samples, cell_mm);
+        let probes = probe_points(&members, samples, worst_at);
         out.push(Cluster {
             class,
             samples: members,
@@ -381,11 +413,36 @@ pub fn cluster(samples: &[Deviation], params: &ClusterParams, cell_mm: f64) -> V
             area_mm2,
             volume_mm3,
             at: Vec3::new(centroid.x / n, centroid.y / n, centroid.z / n),
+            worst_at,
+            probes,
             bounds,
         });
     }
 
     sort_canonically(&mut out);
+    out
+}
+
+/// How many points of a finding attribution asks about.
+///
+/// Eight is enough to reach both ends of a long channel and each face of a
+/// corner, and small enough that attribution stays a rounding error beside the
+/// comparison that produced the finding.
+const PROBES: usize = 8;
+
+/// A deterministic spread of positions across a cluster.
+fn probe_points(members: &[u32], samples: &[Deviation], worst_at: Vec3) -> Vec<Vec3> {
+    let mut out = vec![worst_at];
+    if members.len() > 1 {
+        let step = members.len().div_ceil(PROBES.saturating_sub(1)).max(1);
+        for &i in members.iter().step_by(step) {
+            let p = samples[i as usize].at;
+            if !out.iter().any(|q| q.distance_squared(p) == 0.0) {
+                out.push(p);
+            }
+        }
+    }
+    out.truncate(PROBES);
     out
 }
 
@@ -562,6 +619,10 @@ pub fn unsampled(
             area_mm2: area,
             volume_mm3: 0.0,
             at: Vec3::new(centroid.x / n, centroid.y / n, centroid.z / n),
+            // No samples, so no deepest one. The centroid stands in, and nothing
+            // attributes these anyway: no segment caused an undercut.
+            worst_at: Vec3::new(centroid.x / n, centroid.y / n, centroid.z / n),
+            probes: Vec::new(),
             bounds,
         });
     }

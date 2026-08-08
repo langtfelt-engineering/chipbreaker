@@ -35,7 +35,7 @@ use chipbreaker_core::findings::cluster::{ClusterParams, cluster, unsampled};
 use chipbreaker_core::findings::report::{
     InputHash, Manifest, Report, SCHEMA, digest_bytes, environment, semantics_from,
 };
-use chipbreaker_core::findings::{Attribution, attribute_point, identify};
+use chipbreaker_core::findings::{Attribution, attribute_finding, identify};
 use chipbreaker_core::mesh::TriMesh;
 use chipbreaker_core::sweep::Motion;
 use chipbreaker_core::sweep::cut::{CutScratch, SweepMethod};
@@ -224,14 +224,18 @@ pub fn verify(args: &VerifyArgs) -> Result<(Value, String, bool), String> {
             ) {
                 continue;
             }
-            let a = attribute_point(
+            // Several points across the finding, unioned. A centroid is an
+            // average and need not lie on any swept surface at all; a single
+            // deepest point lies on one, but not always the segment a user needs
+            // to edit.
+            let a = attribute_finding(
                 &profile,
                 &motions,
                 &bounds,
                 &provenance,
                 method,
                 &mut scratch,
-                f.at,
+                &f.probes,
             );
             if !a.is_empty() {
                 attributed += 1;
@@ -482,6 +486,9 @@ pub fn load_report(path: &std::path::Path) -> Result<Report, String> {
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
+        let worst_at = f["worst_at"]
+            .as_array()
+            .map_or(at, |a| Vec3::new(num(&a[0]), num(&a[1]), num(&a[2])));
         findings.push(Finding {
             id: f["id"].as_str().unwrap_or_default().to_owned(),
             class,
@@ -491,6 +498,12 @@ pub fn load_report(path: &std::path::Path) -> Result<Report, String> {
             volume_mm3: num(&f["severity"]["volume_mm3"]),
             sample_count: usize::try_from(f["sample_count"].as_u64().unwrap_or(0)).unwrap_or(0),
             at,
+            worst_at,
+            // A report does not carry probe positions: they exist to attribute a
+            // finding, and a finding read back from JSON has already been
+            // attributed. Reconstructing them would invite somebody to re-run
+            // attribution against a report rather than against a field.
+            probes: Vec::new(),
             bounds: Aabb3::EMPTY,
             attribution: Attribution {
                 segments: seg.iter().map(|(s, _)| *s).collect(),
