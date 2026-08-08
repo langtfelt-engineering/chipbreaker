@@ -205,6 +205,34 @@ units. A bare `1e-9` at a call site will be rejected in review: it carries no
 units, no justification, and no way to audit what happens when the workspace scale
 changes.
 
+## A subsystem joins the self-test in the commit that introduces it
+
+`chipbreaker selftest` produces one digest, and every verification report carries
+it as `engine_selftest` to identify **the behaviour of the build that produced
+the report**. A consumer relies on that: same manifest digest, same findings.
+
+**A build identity is only as strong as the suites behind it.** A subsystem with
+no suite is invisible to the digest, so two builds that disagree about it carry
+the same identity — and the promise the manifest makes is then false for exactly
+the code nobody was checking.
+
+This is not hypothetical. Collision detection shipped without a suite, and a diff
+of two reports from different builds showed the collisions changing under an
+*identical* manifest. It was found by running the diff, not by reasoning about
+it, and it was a hole in the assurance claim rather than in a feature — which
+makes it worse than an ordinary bug, because everything else in the project is
+built on that claim being true.
+
+So: **a new subsystem gets a self-test suite in the same commit that introduces
+it.** Not the next one. `selftest_coverage.rs` fails if a `chipbreaker-core`
+module with public behaviour has no suite and is not on the exemption list, and
+the exemption list requires a written reason — pure data types and re-export
+modules qualify; anything that computes does not.
+
+Accepting the new golden digests is part of the same commit, and the commit
+message says what changed and why, exactly as [Golden files](#golden-files)
+requires.
+
 ## Architecture decision records
 
 Decisions that outlive the code that implements them live in [`docs/adr/`](docs/adr/),
