@@ -95,6 +95,7 @@ const COVERED_BY: &[(&str, &str)] = &[
     ("sweep", "sweep"),
     ("contour", "contour"),
     ("deviation", "deviation"),
+    ("refixture", "refixture"),
     ("findings::collide", "collision"),
     ("findings::detect", "collision"),
     ("findings::cluster", "deviation"),

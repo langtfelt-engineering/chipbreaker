@@ -81,7 +81,7 @@ platforms, and the WASM build.**
 It is enforced from the first commit rather than bolted on later, and CI checks
 it by running the self-test natively on Windows, Linux and macOS and under
 `wasmtime`, then comparing the resulting hashes byte for byte. All four currently
-agree on a single hash over 15 suites and 27,039 cases, at every thread count.
+agree on a single hash over 17 suites and 27,054 cases, at every thread count.
 
 **All four targets run and gate on every push.** A commit that has only been
 checked on one platform has not been checked.
@@ -90,6 +90,33 @@ The rules that make it hold — `f64` only, no FMA, no unordered iteration reach
 a float, no parallelism without a deterministic partition, exact predicates
 instead of float sign tests, canonical *binary* hashing — are written down in
 [CONTRIBUTING.md](CONTRIBUTING.md) and enforced in review and in CI.
+
+### Where the guarantee weakens, and by how much
+
+**Exact within a setup. Bounded across a setup change.**
+
+Operations chained within one setup are exact: cutting is interval subtraction,
+subtraction is associative, and nothing accumulates between operations. Three
+operations run in sequence produce a field bit-identical to the same program run
+in one go, and moving the operation boundary does not change the answer.
+
+Re-fixturing is the one place a transform can lose anything, and it usually
+loses nothing:
+
+| setup change | cost |
+|---|---|
+| quarter turn, half turn, flip, translation | **exactly zero** — rays map onto rays, so it is a relabelling rather than an interpolation |
+| an arbitrary rotation | a **stated bound** from the sampling theorem, printed per boundary and accumulated across the job |
+
+The exact case is not "small enough to ignore": a moved field is bit-identical
+to one built directly in the target orientation, and that is a test rather than
+a claim. The general case pays a sampling bound, never an accumulation one,
+because it is a fresh sampling of a known solid rather than a value carried
+forward and refined.
+
+A report that crossed a boundary says so in its manifest, per boundary and in
+total. One that never re-fixtured carries no such section at all, so the common
+case reads exactly as it always has.
 
 The guarantee is load-bearing in ordinary use, not just a marketing line. Cutting
 a program in one pass, in two halves split at a segment boundary, or in batches

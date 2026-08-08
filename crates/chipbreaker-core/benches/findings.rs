@@ -196,6 +196,7 @@ fn diffing(c: &mut Criterion) {
                 cluster_radius_mm: params.radius_mm,
                 engine_version: "bench".to_owned(),
                 engine_selftest: "bench".to_owned(),
+                boundaries: Vec::new(),
             },
             semantics: semantics_from(
                 &chipbreaker_core::deviation::DeviationField::default(),

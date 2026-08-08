@@ -122,6 +122,39 @@ pub struct Manifest {
     /// targets and therefore identifies the *build's behaviour* rather than the
     /// build.
     pub engine_selftest: String,
+    /// One entry per setup boundary crossed, in order.
+    ///
+    /// **Empty for a single-setup job**, which is what keeps the common case's
+    /// report the same shape it has always been: a reader who never re-fixtures
+    /// sees nothing new, and the section costs them nothing.
+    ///
+    /// Each boundary states how it was crossed and what that cost, because a
+    /// job with two sampling regimes under one manifest is only honest if the
+    /// manifest says so. Everything else in this engine is exact by
+    /// construction; this is the one place a transform can lose anything, and
+    /// folding it into a single figure would hide which setup paid it.
+    pub boundaries: Vec<Boundary>,
+}
+
+/// One setup boundary, and what crossing it cost.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Boundary {
+    /// Which setup this boundary leads into, counting from zero.
+    pub into_setup: u32,
+    /// `exact` or `resampled`.
+    pub regime: String,
+    /// The bound this crossing contributes, in millimetres. Zero when exact.
+    pub bound_mm: f64,
+}
+
+impl Hashable for Boundary {
+    fn hash_canonical(&self, h: &mut CanonicalHash) {
+        h.begin("Boundary");
+        h.u64(u64::from(self.into_setup));
+        h.str(&self.regime);
+        h.f64(self.bound_mm);
+        h.end();
+    }
 }
 
 impl Hashable for Manifest {
@@ -140,6 +173,13 @@ impl Hashable for Manifest {
         h.f64(self.cluster_radius_mm);
         h.str(&self.engine_version);
         h.str(&self.engine_selftest);
+        // Part of the identity: two jobs that reached the same geometry by
+        // different re-fixturing did not do the same thing, and a digest that
+        // could not tell them apart would be claiming they had.
+        h.usize(self.boundaries.len());
+        for b in &self.boundaries {
+            h.add(b);
+        }
         h.end();
     }
 }
@@ -340,6 +380,19 @@ impl Report {
                 "cluster_radius_mm": self.manifest.cluster_radius_mm,
                 "engine_version": self.manifest.engine_version,
                 "engine_selftest": self.manifest.engine_selftest,
+                // Absent, not empty, for a single-setup job: a reader who never
+                // re-fixtures should see the report they have always seen.
+                "boundaries": if self.manifest.boundaries.is_empty() {
+                    Value::Null
+                } else {
+                    Value::Array(self.manifest.boundaries.iter().map(|b| json!({
+                        "into_setup": b.into_setup,
+                        "regime": b.regime,
+                        "bound_mm": b.bound_mm,
+                    })).collect())
+                },
+                "accumulated_transform_bound_mm": self.manifest.boundaries
+                    .iter().map(|b| b.bound_mm).sum::<f64>(),
             },
             "numerical_semantics": {
                 "spacing_mm": self.semantics.spacing_mm,

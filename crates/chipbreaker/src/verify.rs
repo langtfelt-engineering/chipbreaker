@@ -319,6 +319,9 @@ pub fn verify(args: &VerifyArgs) -> Result<(Value, String, bool), String> {
         cluster_radius_mm: params.radius_mm,
         engine_version: env!("CARGO_PKG_VERSION").to_owned(),
         engine_selftest: selftest,
+        // `verify` judges one setup, so it crosses no boundary and carries no
+        // transform bound. A job that re-fixtures fills this in per crossing.
+        boundaries: Vec::new(),
     };
     let sweep = match &args.run_report {
         Some(p) => Some(read_sweep_split(p)?),
@@ -857,6 +860,19 @@ pub fn load_report(path: &std::path::Path) -> Result<Report, String> {
             cluster_radius_mm: num(&m["cluster_radius_mm"]),
             engine_version: m["engine_version"].as_str().unwrap_or_default().to_owned(),
             engine_selftest: m["engine_selftest"].as_str().unwrap_or_default().to_owned(),
+            boundaries: m["boundaries"]
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .map(|b| chipbreaker_core::findings::report::Boundary {
+                            into_setup: u32::try_from(b["into_setup"].as_u64().unwrap_or(0))
+                                .unwrap_or(0),
+                            regime: b["regime"].as_str().unwrap_or_default().to_owned(),
+                            bound_mm: num(&b["bound_mm"]),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
         },
         semantics,
         verdict,

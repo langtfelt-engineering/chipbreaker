@@ -207,6 +207,7 @@ pub fn run_with(extra: Vec<SuiteResult>) -> SelfTestReport {
         sweep_arc_suite(),
         contour_suite(),
         deviation_suite(),
+        refixture_suite(),
         collision_suite(),
         canonical_hash_suite(),
     ];
@@ -1755,6 +1756,123 @@ fn deviation_suite() -> SuiteResult {
 ///
 /// That was found by running the diff, not by reasoning about it. The promise is
 /// only as wide as the self-test behind it.
+/// Moving a field between setups.
+///
+/// Added in the same commit as the module it covers, per the rule in
+/// `CONTRIBUTING.md` — and the coverage test caught its absence before this was
+/// written, which is the rule working rather than a formality.
+///
+/// Two things are pinned. The **classification** of a transform, because a
+/// rotation that started being read as axis-aligned when it is not would claim a
+/// zero bound for a resample. And the **moved field itself**, because that is
+/// the claim a report rests on when it prints a zero.
+fn refixture_suite() -> SuiteResult {
+    use crate::dexel::tri::{TriBuildOptions, TriDexelField};
+    use crate::mesh::shapes;
+    use crate::refixture::{classify, refixture_exact};
+
+    let mut failures = Vec::new();
+    let mut count = 0usize;
+    let mut h = CanonicalHash::new();
+    h.begin("refixture");
+
+    // Written out exactly rather than through a cosine: these are the transforms
+    // a second operation actually uses, and their entries are 0 or +/-1.
+    let quarter_z = Mat4::from_rows_array([
+        [0.0, -1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]);
+    let flip_x = Mat4::from_rows_array([
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, -1.0, 0.0, 0.0],
+        [0.0, 0.0, -1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]);
+    let (c, s) = (
+        crate::transcendental::cos(0.4),
+        crate::transcendental::sin(0.4),
+    );
+    let oblique = Mat4::from_rows_array([
+        [c, -s, 0.0, 0.0],
+        [s, c, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]);
+
+    h.begin("classify");
+    for (name, m) in [
+        ("identity", Mat4::IDENTITY),
+        ("quarter-z", quarter_z),
+        ("flip-x", flip_x),
+        ("oblique", oblique),
+    ] {
+        match classify(&m, 0.5) {
+            Some(r) => {
+                h.str(name).str(r.as_str()).f64(r.bound_mm());
+                count += 1;
+            }
+            None => failures.push(Failure {
+                case: format!("refixture/classify/{name}"),
+                detail: "a rigid motion was refused".to_owned(),
+            }),
+        }
+    }
+    h.end();
+
+    // A lopsided block, so a wrong axis mapping cannot pass by symmetry.
+    h.begin("move");
+    let mesh = shapes::box_solid(Vec3::ZERO, Vec3::new(12.0, 8.0, 5.0));
+    match TriDexelField::build(
+        &mesh,
+        &TriBuildOptions {
+            spacing: 0.5,
+            ..TriBuildOptions::default()
+        },
+    ) {
+        Ok((field, _)) => {
+            for (name, m) in [("quarter-z", quarter_z), ("flip-x", flip_x)] {
+                match refixture_exact(&field, &m) {
+                    Some(moved) => {
+                        h.begin(name);
+                        h.f64(moved.volume());
+                        h.usize(moved.total_spans());
+                        for (axis, b) in moved.bundles() {
+                            h.str(axis.as_str());
+                            let l = b.lattice();
+                            h.f64_slice(&l.origin().to_array());
+                            h.f64_slice(&l.spacing_uv());
+                            h.u64(u64::from(l.counts()[0]));
+                            h.u64(u64::from(l.counts()[1]));
+                        }
+                        h.end();
+                        count += 1;
+                    }
+                    None => failures.push(Failure {
+                        case: format!("refixture/move/{name}"),
+                        detail: "an axis-aligned transform was refused".to_owned(),
+                    }),
+                }
+            }
+        }
+        Err(e) => failures.push(Failure {
+            case: "refixture/move".to_owned(),
+            detail: format!("the fixture field would not build: {e}"),
+        }),
+    }
+    h.end();
+
+    h.end();
+    SuiteResult {
+        name: "refixture",
+        description: "classifying a setup transform, and moving a field across one exactly",
+        cases: count,
+        failures,
+        digest: h.finish(),
+    }
+}
+
 fn collision_suite() -> SuiteResult {
     use crate::dexel::tri::{TriBuildOptions, TriDexelField};
     use crate::findings::detect::{CollideParams, collide_with_stock, non_cutting_only};

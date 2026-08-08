@@ -216,3 +216,86 @@ fn a_moved_field_has_the_same_volume() {
         "turning the part over changed its volume from {v0} to {v1}"
     );
 }
+
+#[test]
+fn a_single_setup_report_carries_no_boundary_section() {
+    // **The common case must not pay for the general one.** A reader who never
+    // re-fixtures should see the report they have always seen, so an empty
+    // boundary list is rendered as absent rather than as `[]`.
+    use chipbreaker_core::findings::report::{Manifest, Report};
+    use chipbreaker_core::findings::verdict::{self, GateOutcome, Verdict};
+
+    let manifest = Manifest {
+        inputs: Vec::new(),
+        spacing_mm: [SPACING; 3],
+        tolerance_mm: 0.1,
+        cluster_radius_mm: 1.0,
+        engine_version: "test".to_owned(),
+        engine_selftest: "test".to_owned(),
+        boundaries: Vec::new(),
+    };
+    let report = Report {
+        manifest,
+        semantics: chipbreaker_core::findings::report::semantics_from(
+            &chipbreaker_core::deviation::DeviationField::default(),
+            [SPACING; 3],
+            0.1,
+            None,
+        ),
+        findings: Vec::new(),
+        collisions: Vec::new(),
+        verdict: Verdict::new().with(verdict::GATE_GOUGE, GateOutcome::pass()),
+        rapid_path: None,
+    };
+    let json = report.to_json();
+    assert!(
+        json["manifest"]["boundaries"].is_null(),
+        "a single-setup job rendered a boundary section: {}",
+        json["manifest"]["boundaries"]
+    );
+    assert_eq!(
+        json["manifest"]["accumulated_transform_bound_mm"], 0.0,
+        "a job that crossed no boundary must accumulate no bound"
+    );
+}
+
+#[test]
+fn boundaries_reach_the_manifest_digest() {
+    // Two jobs that arrived at the same geometry by different re-fixturing did
+    // not do the same thing, and a digest that could not tell them apart would
+    // be claiming they had.
+    use chipbreaker_core::findings::report::{Boundary, Manifest};
+
+    let base = Manifest {
+        inputs: Vec::new(),
+        spacing_mm: [SPACING; 3],
+        tolerance_mm: 0.1,
+        cluster_radius_mm: 1.0,
+        engine_version: "test".to_owned(),
+        engine_selftest: "test".to_owned(),
+        boundaries: Vec::new(),
+    };
+    let mut crossed = base.clone();
+    crossed.boundaries.push(Boundary {
+        into_setup: 1,
+        regime: "resampled".to_owned(),
+        bound_mm: 0.306,
+    });
+    assert_ne!(
+        base.digest(),
+        crossed.digest(),
+        "crossing a setup boundary left the manifest digest unchanged, so two \
+         jobs that did different things would share an identity"
+    );
+
+    // And an exact crossing is still a crossing: it must not hash the same as
+    // never having moved at all.
+    let mut exact = base.clone();
+    exact.boundaries.push(Boundary {
+        into_setup: 1,
+        regime: "exact".to_owned(),
+        bound_mm: 0.0,
+    });
+    assert_ne!(base.digest(), exact.digest());
+    assert_ne!(exact.digest(), crossed.digest());
+}

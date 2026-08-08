@@ -125,6 +125,8 @@ hour apart must agree, or the identity is measuring the clock.
 | `cluster_radius_mm` | f64 | what grouped samples into findings |
 | `engine_version` | string | the crate version |
 | `engine_selftest` | string | the engine's self-test digest |
+| `boundaries` | array or null | one entry per setup boundary crossed |
+| `accumulated_transform_bound_mm` | f64 | the sum of those bounds |
 
 `path` is for a human and is **not** part of the digest: two runs of the same
 bytes from different directories are the same run.
