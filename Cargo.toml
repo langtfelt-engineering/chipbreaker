@@ -12,8 +12,8 @@ edition = "2024"
 rust-version = "1.96.0"
 license = "GPL-3.0-or-later"
 authors = ["Langtfelt"]
-repository = "https://github.com/spanwerk/chipbreaker"
-homepage = "https://github.com/spanwerk/chipbreaker"
+repository = "https://github.com/langtfelt-engineering/chipbreaker"
+homepage = "https://github.com/langtfelt-engineering/chipbreaker"
 
 [workspace.dependencies]
 chipbreaker-core = { path = "crates/chipbreaker-core", version = "0.1.0" }

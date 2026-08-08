@@ -24,7 +24,7 @@
 //! [`PathEvent`], so a consumer that wants a workpiece frame applies one
 //! transform.
 //!
-//! [adr]: https://github.com/spanwerk/chipbreaker/blob/main/docs/adr/0003-toolpath-ir-coordinate-frame.md
+//! [adr]: https://github.com/langtfelt-engineering/chipbreaker/blob/main/docs/adr/0003-toolpath-ir-coordinate-frame.md
 //!
 //! # What is deliberately reserved
 //!

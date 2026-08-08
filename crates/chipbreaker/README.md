@@ -1,8 +1,8 @@
 # chipbreaker
 
 The command-line front end for
-[Chipbreaker](https://github.com/spanwerk/chipbreaker), a material-removal
-simulation and machining verification engine.
+[Chipbreaker](https://github.com/langtfelt-engineering/chipbreaker),
+a material-removal simulation and machining verification engine.
 
 ```sh
 cargo install chipbreaker
@@ -45,8 +45,8 @@ on every push.
 
 5-axis or any tilted tool, turning and mill-turn, cutter radius compensation,
 Siemens or Heidenhain dialects, macro programming, and flutes. The
-[repository README](https://github.com/spanwerk/chipbreaker#scope) sets out each
-and why.
+[repository README](https://github.com/langtfelt-engineering/chipbreaker#scope)
+sets out each and why.
 
 Chipbreaker verifies a **program** against an **ideal geometric cutting model**.
 It does not model tool wear, deflection, thermal growth, runout, backlash or
@@ -56,4 +56,4 @@ controller interpolation, and it is not a safety interlock.
 
 Copyright (C) 2026 Langtfelt. Dual-licensed: GPL-3.0-or-later, or a commercial
 licence for use in a proprietary product. See the
-[repository](https://github.com/spanwerk/chipbreaker) for details.
+[repository](https://github.com/langtfelt-engineering/chipbreaker) for details.

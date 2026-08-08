@@ -24,7 +24,7 @@ mattered; those are the ones taken.
 Branch protection was asked for early. The GitHub API refuses:
 
 ```
-GET /repos/spanwerk/chipbreaker/branches/main/protection
+GET /repos/langtfelt-engineering/chipbreaker/branches/main/protection
 403: Upgrade to GitHub Pro or make this repository public to enable this feature.
 ```
 

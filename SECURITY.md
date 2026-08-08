@@ -4,11 +4,13 @@
 
 **Please do not open a public issue for a security problem.**
 
-Use GitHub's [private vulnerability
-reporting](https://github.com/spanwerk/chipbreaker/security/advisories/new) on
-this repository. It is the only channel for security reports: it is private by
-construction, it keeps the whole exchange attached to the repository, and it
-turns into a published advisory when the fix ships.
+Use GitHub's [private vulnerability reporting][report] on this repository.
+
+[report]: https://github.com/langtfelt-engineering/chipbreaker/security/advisories/new
+
+It is the only channel for security reports: it is private by construction, it
+keeps the whole exchange attached to the repository, and it turns into a
+published advisory when the fix ships.
 
 What helps, in rough order of usefulness:
 

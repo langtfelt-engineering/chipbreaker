@@ -1,8 +1,8 @@
 # chipbreaker-gcode
 
 The RS-274 parser for
-[Chipbreaker](https://github.com/spanwerk/chipbreaker), a material-removal
-simulation and machining verification engine.
+[Chipbreaker](https://github.com/langtfelt-engineering/chipbreaker),
+a material-removal simulation and machining verification engine.
 
 **This is the only place in Chipbreaker that reads G-code text.** Everything
 downstream works from the canonical toolpath IR this crate produces, which is
@@ -45,4 +45,4 @@ outside this package. Clone the repository to run them.
 
 Copyright (C) 2026 Langtfelt. Dual-licensed: GPL-3.0-or-later, or a commercial
 licence for use in a proprietary product. See the
-[repository](https://github.com/spanwerk/chipbreaker) for details.
+[repository](https://github.com/langtfelt-engineering/chipbreaker) for details.
