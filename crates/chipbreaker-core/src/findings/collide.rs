@@ -25,10 +25,10 @@
 //!
 //! A collision reports how far in; a near miss reports how far off. They are not
 //! two signs of one number, and [`Contact`] keeps them apart for the same reason
-//! U13 refuses to blend depth with area: one number cannot say which of two
-//! different situations this is, and a reader cannot recover what was lost.
+//! a finding refuses to blend depth with area: one number cannot say which of
+//! two different situations this is, and a reader cannot recover what was lost.
 //!
-//! # What still transfers from U13
+//! # What still transfers from a finding
 //!
 //! Identity is content-derived and quantised, so a collision that deepens keeps
 //! its name and a diff can say "worse" rather than "different". Attribution
@@ -150,7 +150,7 @@ pub struct Collision {
     /// traverse rate into a clamp is what breaks spindles — and a consumer will
     /// want to sort by it.
     pub motion: MotionKind,
-    /// Which NC lines could have caused it. Reuses U13's machinery; expect
+    /// Which NC lines could have caused it. Reuses a finding's machinery; expect
     /// `ambiguous` to be false, because a collision has one position on one
     /// segment.
     pub attribution: Attribution,
@@ -213,7 +213,7 @@ pub fn collision_id(
 /// Collisions before near misses, rapids before feeds, deeper before shallower,
 /// then position and identity. Every tie is broken by something derived from the
 /// collision itself, never by the order they were found in — the same guarantee
-/// U13's clusters carry, and for the same reason.
+/// a finding's clusters carry, and for the same reason.
 pub fn sort_canonically(out: &mut [Collision]) {
     out.sort_by(|a, b| {
         b.contact

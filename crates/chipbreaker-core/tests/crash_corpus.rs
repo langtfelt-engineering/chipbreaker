@@ -309,10 +309,10 @@ fn the_whole_crash_corpus() {
 
 #[test]
 fn collisions_do_not_depend_on_the_order_the_field_was_walked() {
-    // The determinism guarantee U13's clusters carry, for collisions: the answer
-    // is a property of the geometry, so two runs of the same case must produce
-    // the same list, in the same order, with the same identities. A diff between
-    // two reports depends on exactly this.
+    // The determinism guarantee a finding's clusters carry, applied to
+    // collisions. The answer is a property of the geometry, so two runs of the
+    // same case must produce the same list, in the same order, with the same
+    // identities. A diff between two reports depends on exactly this.
     let cases = corpus();
     let mut checked = 0usize;
     for case in cases.iter().step_by(11) {
