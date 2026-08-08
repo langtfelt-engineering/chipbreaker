@@ -347,7 +347,7 @@ fn the_identity_check_would_notice_a_counter() {
     let d = compare(&field, &nominal, Some(&stock_mesh()));
     let p = params();
     let cs = cluster(&d.samples, &p, SPACING);
-    assert!(cs.len() >= 1, "need at least one finding");
+    assert!(!cs.is_empty(), "need at least one finding");
 
     // A counter over the canonical order, which is sorted worst-first: a new
     // deeper finding anywhere takes index 0 and renumbers everything after it.
