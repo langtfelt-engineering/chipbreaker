@@ -425,9 +425,13 @@ pub fn job(args: &JobArgs) -> Result<(Value, String, bool), String> {
         }
 
         let mut scratch = CutScratch::new(&replay.profile);
-        let mut working = field.clone();
+        // Cut in place. An earlier version cloned the field per setup, which
+        // doubled a job's peak memory for no purpose: the clone was assigned
+        // straight back afterwards. A three-setup job on a large field is
+        // exactly where that would have been felt, and the memory ceiling would
+        // have been wrong by a factor of two.
         let outcome = collide_with_stock(
-            &mut working,
+            &mut field,
             &replay.profile,
             &replay.motions,
             &replay.kinds,
@@ -454,8 +458,7 @@ pub fn job(args: &JobArgs) -> Result<(Value, String, bool), String> {
             c.attribution.setup = setup.index;
         }
         // The replay consumed the field as the program consumed it, which is
-        // exactly the state the next setup starts from.
-        field = working;
+        // exactly the state the next setup starts from -- no copy back needed.
         outcomes.push(SetupOutcome {
             index: setup.index,
             name: setup.name.clone(),
