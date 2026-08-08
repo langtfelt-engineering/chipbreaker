@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Surface deviation and sampling coverage: the project's real accuracy metric.
 //!
 //! ADR 0005 is the rule this module exists to serve — **volume is a
 //! construction-time diagnostic, deviation is the assertion metric** — and the
-//! reasons are cancellation and oscillation, both measured at Unit 5.
+//! reasons are cancellation and oscillation, both measured.
 //!
 //! # What "deviation" means here, and how it differs from the plan's wording
 //!
 //! The unit plan asked for "the nearest point on the surface **reconstructed**
-//! from each bundle". Reconstructing a surface is Unit 9, and the same plan
+//! from each bundle". Reconstructing a surface is extraction's job, and the same note
 //! forbids doing it here. So this measures something that needs no
 //! reconstruction and is arguably the better question anyway:
 //!
@@ -21,14 +21,14 @@
 //! the true surface to machine precision, carrying no error of their own. So the
 //! one-sided Hausdorff distance from densely sampled surface points to that
 //! endpoint set is a clean measure of **sampling adequacy**, which is exactly
-//! what §2's `1/sqrt(3)` theorem bounds.
+//! what the `1/sqrt(3)` theorem bounds.
 //!
 //! Two consequences worth being explicit about, because they are the cost of the
 //! substitution:
 //!
 //! - This is a **coverage** deviation, not a reconstruction deviation. It says
 //!   where the field knows the surface, not how well an extracted mesh would
-//!   interpolate between those places. U9 must re-measure against its own
+//!   interpolate between those places. Extraction re-measures against its own
 //!   output; this number does not bound that one.
 //! - It cannot go below zero even for a perfect reconstruction, because a finite
 //!   sample set never contains every surface point. What it does do is fall like
@@ -398,8 +398,8 @@ pub fn measure_one(field: &TriDexelField, point: &SurfacePoint) -> SampleDeviati
 /// associative and commutative, so a parallel reduction of those would be exact.
 ///
 /// **The RMS is not.** It is a sum of squares, and a sum of floats reordered is a
-/// different sum. This is the same trap that redesigned Unit 8's batching and
-/// Unit 11's `removed_mm3`, and it is easier to miss here because it presents as
+/// different sum. This is the same trap that redesigned motion batching and
+/// the parallel `removed_mm3`, and it is easier to miss here because it presents as
 /// "just an average" rather than as an accumulator. Per-chunk partial sums added
 /// in chunk order would regroup it and move the last bits of every reported RMS.
 ///
@@ -475,7 +475,7 @@ pub fn measure(field: &TriDexelField, samples: &[SurfacePoint]) -> DeviationRepo
 ///
 /// **Bit-identical to [`measure`] at every thread count.** Samples are computed
 /// into pre-assigned slots and reduced afterwards in sample order; nothing is
-/// combined in completion order. Same rule as Unit 11's cutting path, for the
+/// combined in completion order. Same rule as the parallel cutting path, for the
 /// same reason.
 ///
 /// # Panics
@@ -520,7 +520,7 @@ pub fn measure_parallel(
 
 /// Worst sampling cosine over a mesh's surface, and where it occurred.
 ///
-/// The direct check on §2: over any closed surface this must never fall below
+/// The direct check on the theorem: over any closed surface this must never fall below
 /// [`WORST_CASE_COSINE`], and a mesh containing a face normal to `(1,1,1)`
 /// should come close to attaining it.
 #[must_use]

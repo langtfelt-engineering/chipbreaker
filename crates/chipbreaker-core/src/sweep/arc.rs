@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Case A′: horizontal arcs, `dz = 0`.
 //!
@@ -42,7 +42,7 @@
 //! - **Along the arc axis** (the Z bundle): `p_xy` is fixed, so `d` and `phi`
 //!   are constant along the ray. The condition becomes `rho(w) >= |d - R|` with
 //!   `w` varying — which is a *vertical ray cast at radius `|d - R|`* against
-//!   the tool's own profile. Unit 3, unchanged.
+//!   the tool's own profile. The stationary raycaster, unchanged.
 //! - **Across it** (the X and Y bundles): `z` is fixed, so `rho(w)` is a
 //!   constant and the condition is an annulus `R - rho <= d(t) <= R + rho`. A
 //!   line meets an annulus in the difference of two disc chords: closed form.
@@ -393,7 +393,7 @@ pub fn swept_spans_into(
     let mut piece = Spans::new();
     let mut merged = Spans::new();
 
-    // The two endpoint tools, verbatim from Unit 3.
+    // The two endpoint tools, verbatim from the stationary raycaster.
     for s in [0.0, 1.0] {
         spans_in_tool_at(profile, arc.at(s), ray, scratch, &mut piece, stats);
         if !piece.is_empty() {

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! The versioned NC corpus: every entry parses to its golden IR, or is rejected
 //! with the specific error it is there to provoke.
@@ -71,7 +71,7 @@ fn the_corpus_is_large_enough_to_be_worth_having() {
 
 #[test]
 fn every_entry_has_a_why() {
-    // The Unit 2 convention: a corpus entry whose purpose is not written down
+    // The corpus convention: an entry whose purpose is not written down
     // becomes a file nobody dares delete and nobody can explain.
     for (name, entry) in expectations() {
         let why = entry["_why"].as_str().unwrap_or_default();
@@ -142,7 +142,7 @@ fn every_entry_parses_or_is_rejected_exactly_as_expected() {
 
 #[test]
 fn every_parsing_entry_hashes_the_same_way_twice() {
-    // The corpus's real job at U5 onward: a hash that moves means the IR moved.
+    // The corpus's real job: a hash that moves means the IR moved.
     for (name, entry) in expectations() {
         if entry["expect"] != "parse" {
             continue;

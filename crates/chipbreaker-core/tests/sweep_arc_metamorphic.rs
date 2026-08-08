@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Relations an arc cut must satisfy regardless of what the right answer is.
 //!

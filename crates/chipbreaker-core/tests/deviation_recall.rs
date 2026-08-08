@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Does the deviation field find the defects that were put there?
 //!
@@ -73,7 +73,7 @@ fn cut(motions: &[Motion], profile: &Profile) -> TriDexelField {
 /// modelling the intended shape independently. That is deliberate: it removes
 /// the engine's own sampling error from both sides of the comparison, so what
 /// remains is the injected defect and nothing else. A separately modelled
-/// nominal would fold Unit 9's reconstruction error into every case and make the
+/// nominal would fold the reconstruction error into every case and make the
 /// detection floor a measurement of the contourer instead.
 fn nominal_for(case: &DefectCase, profile: &Profile) -> TriMesh {
     use chipbreaker_core::contour::{ContourOptions, extract};

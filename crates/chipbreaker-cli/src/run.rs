@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! `chipbreaker run` and `chipbreaker cut-stat`: simulating material removal.
 //!
@@ -21,7 +21,8 @@
 //! # T numbers resolve against the library
 //!
 //! A program says `T5`, so the library's primary key is the number and the name
-//! is metadata. Unit 7 could not run a multi-tool program because Unit 3's
+//! is metadata. Cutting could not run a multi-tool program because the tool
+//! library's
 //! library had drifted to keying by name; the number is restored, and a job that
 //! changes tools now simply works.
 //!
@@ -124,7 +125,7 @@ pub struct RunArgs {
     ///
     /// Checked **as the job runs**, not only at the start. Cutting splits spans,
     /// so a field that fitted when built can exceed its budget once pockets are
-    /// cut -- Unit 7 measured a rib that spilled every ray of one bundle. The
+    /// cut -- a rib was measured that spilled every ray of one bundle. The
     /// refusal names the operation and the segment so the answer to "how far did
     /// it get" is in the message.
     #[arg(long, value_name = "BYTES", value_parser = crate::dexel::parse_bytes)]

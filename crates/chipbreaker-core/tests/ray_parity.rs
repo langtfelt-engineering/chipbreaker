@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! The leak-free ray casting contract.
 //!
-//! This is the test Unit 5 depends on, and the one worth the most of anybody's
-//! attention in Unit 2.
+//! This is the test field building depends on, and the one worth the most of
+//! anybody's attention in the mesh pipeline.
 //!
 //! # What it proves
 //!
@@ -23,7 +23,7 @@
 //! A single closed shell alternates enter, exit, enter, exit. A scene with a
 //! *nested* shell does not: a ray through a sphere inside a sphere enters twice
 //! before it leaves anything. The invariant that holds in both cases is that the
-//! depth counter never goes negative and ends at zero. Unit 5 must track depth
+//! depth counter never goes negative and ends at zero. Field building tracks depth
 //! rather than a boolean for exactly this reason.
 //!
 //! # The lattices
@@ -269,7 +269,7 @@ fn the_lattice_aligned_adversarial_mesh_never_leaks() {
 #[test]
 fn nested_shells_keep_depth_non_negative() {
     // Two concentric spheres. The crossing sequence is enter, enter, exit, exit
-    // rather than alternating, which is why U5 must count depth.
+    // rather than alternating, which is why field building counts depth.
     let outer = shapes::icosphere(10.0, 2);
     let inner = shapes::icosphere(4.0, 2);
     let mut vertices = outer.vertices().to_vec();
@@ -310,8 +310,8 @@ fn a_ray_along_an_edge_of_the_lattice_block_is_handled() {
 
 #[test]
 fn the_exact_fallback_rate_is_reported_for_generic_and_adversarial_meshes() {
-    // Not an assertion about performance so much as a measurement U5 and U9 need:
-    // Unit 1 measured orient3d at roughly 17x the filtered path, so how often the
+    // Not an assertion about performance so much as a measurement the field and
+    // the extractor need: orient3d is roughly 17x the filtered path, so how often the
     // exact path fires sets the budget.
     let generic = shapes::icosphere(5.0, 3);
     let (_, generic_stats) = assert_no_leaks(&generic, "icosphere/3");
@@ -330,7 +330,7 @@ fn the_exact_fallback_rate_is_reported_for_generic_and_adversarial_meshes() {
         adversarial_stats.exact_fraction(),
         generic_stats.exact_fraction()
     );
-    // The generic case must stay cheap, or U5's budget is wrong.
+    // The generic case must stay cheap, or the field's budget is wrong.
     assert!(
         generic_stats.exact_fraction() < 0.05,
         "generic meshes should almost always take the fast path, got {:.4}%",

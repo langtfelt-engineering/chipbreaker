@@ -2,8 +2,8 @@
 
 - **Status:** Accepted. Deferred, blocked on the repository's GitHub plan.
 - **Date:** 2026-08-03
-- **Unit:** raised in U3 §2c, to be acted on whenever the plan or the visibility
-  changes
+- **Governs:** repository settings; to be acted on whenever the GitHub plan or
+  the repository's visibility changes
 
 ## Decision
 
@@ -17,7 +17,7 @@ branch deletion, and it will **not** require pull requests. Direct pushes to
 
 ## Why it is deferred: it is not available to buy with effort
 
-Unit 3 §2c asked for branch protection. The GitHub API refuses:
+Branch protection was asked for early. The GitHub API refuses:
 
 ```
 GET /repos/spanwerk/chipbreaker/branches/main/protection
@@ -30,8 +30,8 @@ feature. There is no configuration, no workflow, and no third-party action that
 substitutes for it: the enforcement lives in GitHub's own push path, which is
 exactly why it is worth having and exactly why it cannot be emulated.
 
-This is recorded rather than silently skipped because a reader who finds §2c in
-the Unit 3 specification and no protection on the branch should be able to learn
+This is recorded rather than silently skipped because a reader who finds
+the requirement and no protection on the branch should be able to learn
 that the gap is known, deliberate, and priced, rather than assume it was
 forgotten.
 
@@ -57,7 +57,7 @@ and the fix is another commit.
 
 ## Why the force-push row is the one that matters
 
-This is not hypothetical. During Unit 2 the entire history was rewritten twice
+This is not hypothetical. Early in the project the entire history was rewritten twice
 with `git filter-branch`: once to correct the author identity on twenty-two
 commits that GitHub could not attribute to an account, and once to strip a
 trailer. The second rewrite also rewrote the local `origin/main` tracking ref,

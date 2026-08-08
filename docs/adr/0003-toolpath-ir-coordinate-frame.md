@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-03
-- **Unit:** decided in U4, binding on U5, U7, U12–U16
+- **Governs:** the toolpath IR, and everything downstream that consumes it
 
 ## Decision
 
@@ -14,7 +14,7 @@ Every work offset in force anywhere in the program is recorded in
 a consumer that wants to know *which* workpiece frame was active at a given
 segment reads the events.
 
-This **overrides** the Unit 4 specification, which asked for workpiece
+This **overrides** the original specification, which asked for workpiece
 coordinates. The specification also required exact contiguity, and required a
 corpus case exercising a mid-program work-offset change. Those three cannot all
 be true at once.
@@ -56,27 +56,28 @@ In the machine frame it needs no handling at all; in a workpiece frame it is a
 per-block exception to the resolution pipeline.
 
 **Contiguity becomes unconditional.** Not "contiguous except across offset
-changes", with every downstream consumer obliged to know the exception. U5 can
+changes", with every downstream consumer obliged to know the exception. Field
+building can
 assert `start == previous.end` with no tolerance and no cases, and any violation
 is a bug rather than a possibility to be handled.
 
 ## What it costs
 
-U5 must apply one transform to place stock relative to the workpiece rather than
+Field building applies one transform to place stock relative to the workpiece rather than
 consuming coordinates directly. That is a single matrix per setup, applied once,
-against a downstream simplification that every unit from U5 to U16 benefits from.
+against a downstream simplification that everything after it benefits from.
 
 Reports must render coordinates in a workpiece frame to be intelligible — an
 operator thinks in G54, not in machine coordinates. That is a presentation
 concern, and the header carries what is needed to do it.
 
-## Consequences for U5 onward
+## Consequences downstream
 
 - `start == previous.end` holds **exactly**, everywhere, with no tolerance and no
   exceptions. Assert it.
 - A `WorkOffsetChanged` event is a *label*, not a discontinuity. The geometry is
   continuous across it.
 - To place stock: read `header.offsets[active]` and invert.
-- U16 adding orientation does not disturb this. A rotary axis moves the *part*
+- Adding orientation later does not disturb this. A rotary axis moves the *part*
   relative to the machine, so the machine frame remains the one frame in which
   everything is expressible.

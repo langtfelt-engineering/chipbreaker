@@ -2,8 +2,8 @@
 
 - **Status:** accepted
 - **Date:** 2026-08-03
-- **Unit:** 6 (tri-dexel field), amended at Unit 9
-- **Binds:** U9 (surface extraction), U12, U13 (customer-facing accuracy claims)
+- **Governs:** every accuracy figure the engine reports, and every customer-facing
+  accuracy claim made from one
 - **Related:** [ADR 0001](0001-spans-arena.md), [ADR 0004](0004-dexel-binary-format.md)
 
 ## The rule
@@ -20,7 +20,7 @@ make it unfit, every one of them measured rather than argued.
 
 ### 1. It does not fall monotonically
 
-Unit 5 measured a cylinder whose axis runs along the bundle:
+Measured on a cylinder whose axis runs along the bundle:
 
 | h/R | rays | relative volume error |
 |---:|---:|---:|
@@ -46,7 +46,7 @@ a better volume.
 
 ### 2. It floors out against tessellation
 
-Also Unit 5, on a sphere:
+And on a sphere:
 
 | h/R | vs mesh | vs analytic | tessellation floor |
 |---:|---:|---:|---:|
@@ -62,11 +62,11 @@ geometry.
 
 ### 3. It carries a quantisation bias that jumps discontinuously
 
-Found at Unit 6, and the simplest of the three to state.
+Found when the third bundle was added, and the simplest of the three to state.
 
 Every cell claims a full `h^2` of cross-section. When the spacing does not
 divide the transverse extent, `ceil` produces cells that stick out past the
-stock — and because the lattice is centred (see the U6 amendment in
+stock — and because the lattice is centred (see the amendment in
 `dexel::lattice`), their ray centres are still *inside* the stock, so each
 reports a full chord. The volume is over-counted by exactly
 `covered area / true area`.
@@ -81,14 +81,14 @@ A 30x20x10 mm box at 1.6 mm cells:
 
 **A 16.5% volume error on a plain box, from arithmetic rather than sampling**,
 and it jumps discontinuously every time `ceil` steps. It vanishes exactly when
-the spacing divides the extents, which is why Unit 5 never saw it: every test
+the spacing divides the extents, which is why a single bundle never saw it: every test
 there used a spacing that happened to divide.
 
 Deviation is untouched by this. The rays are in the right places and their
 endpoints are exact; only the *area attributed to each ray* is quantised, and
 deviation never attributes area to anything.
 
-### Does averaging three bundles rescue it? Measured at U6: no.
+### Does averaging three bundles rescue it? Measured: no.
 
 Three independent oscillating terms might have cancelled. The upright cylinder,
 relative error against truth:
@@ -111,7 +111,7 @@ cannot be offset by a region that is badly sampled the other way. It has no
 oscillating lattice-counting term, because it never counts cells — it measures
 distances.
 
-And it is bounded, by the theorem Unit 6 delivers. For a plane with normal `n`
+And it is bounded, by the sampling theorem. For a plane with normal `n`
 sampled by a bundle along `d` with cells of size `h`, the perpendicular
 deviation is about `(h/2) * sin(theta)` where `theta` is the angle between `n`
 and `d`. Over three orthogonal axes,
@@ -129,7 +129,7 @@ best-of-three deviation  <=  (h/2) * sqrt(2/3)  ~=  0.408 * h
 
 Linear in `h`, with a constant, and monotone. That is a statement a customer can
 act on: **a finer simulation is a safer one.** Volume cannot support that
-sentence, and Unit 5's cylinder is the counterexample.
+sentence, and the cylinder above is the counterexample.
 
 ## What volume is still for
 
@@ -149,38 +149,39 @@ by autocomplete rather than by this document still gets told.
 
 - **Asserting that the three bundles agree on volume.** They will disagree at
   `O(h^2)` with independent signs. Demanding tight agreement is demanding that
-  three independent errors coincide, which is a test of luck. The U6 plan
+  three independent errors coincide, which is a test of luck. The plan
   originally contained this and it was removed.
-- **Reporting a single "accuracy" figure derived from volume** in U12 or U13.
+- **Reporting a single "accuracy" figure derived from volume** anywhere.
 - **Tightening a volume tolerance to make a test pass.** If a volume check is
   failing, the question is what changed geometrically, and the deviation harness
   is what answers it.
 
 ## Consequences
 
-- U6's assertions are on best-of-three deviation: monotone in `h`, bounded by
+- Convergence assertions are on best-of-three deviation: monotone in `h`, bounded by
   `C * h`.
-- U9's extracted surface is judged the same way, against the same harness.
-- U12 and U13 quote deviation, with the cell size and the mesh's own
+- The extracted surface is judged the same way, against the same harness.
+- Customer-facing reports quote deviation, with the cell size and the mesh's own
   tessellation error alongside — an accuracy number without the ratio it was
   measured at is not a claim about anything.
-- The tessellation floor is a first-class part of any accuracy statement. Unit 6
+- The tessellation floor is a first-class part of any accuracy statement. The
+  harness
   records the estimate in `.tdx` provenance so a field carries the evidence with
   it, and `dexel build` warns when the requested cell size is finer than the
   input mesh supports.
 
 
-## Amendment, Unit 9: every accuracy metric floors against its input
+## Amendment: every accuracy metric floors against its input
 
 Volume was rejected above partly because it **floors out against tessellation**.
-Unit 9 found the same floor in deviation, which is the metric that replaced it,
+Surface extraction found the same floor in deviation, which is the metric that replaced it,
 and the coincidence is not one — it is a general property that deserves stating
 once rather than being rediscovered per unit.
 
 **Any accuracy metric floors against the fidelity of its input. Past that point
 you are no longer measuring the pipeline; you are measuring the mesher.**
 
-Measured at Unit 9, extracting a subdivision-4 icosphere of radius 8 whose facets
+Measured by extracting a subdivision-4 icosphere of radius 8 whose facets
 are about 0.4 mm across:
 
 | cell size | rms deviation from the ideal sphere |
@@ -197,12 +198,12 @@ all three rungs stay above the floor: 0.015229, 0.003099, 0.000851.
 
 ### What this binds
 
-- **Unit 9 onward**, any convergence assertion must keep the grid coarser than
+- Any convergence assertion must keep the grid coarser than
   the input geometry, or it is asserting something about the input.
-- **Unit 12**, whose deviation fields compare an extracted mesh against a nominal
+- **Deviation fields**, which compare an extracted mesh against a nominal
   part, inherits this twice over: once for the stock mesh and once for the
   nominal.
-- **Unit 13's error budget** must say it in customer-facing terms. A customer
+- **The error budget** must say it in customer-facing terms. A customer
   supplying a coarse STL and asking for findings at 0.01 mm is making exactly
   this mistake in a different costume, and the honest answer is that the tolerance
   they can be given is bounded below by the tolerance their input carries.

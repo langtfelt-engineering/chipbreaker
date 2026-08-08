@@ -3,16 +3,17 @@
 A material-removal simulation and machining verification engine, in Rust.
 
 Given a block of stock, a set of cutting tools and a CNC toolpath, Chipbreaker
-answers: **what shape is left at the end, and does it match the part we
-intended?** It finds gouges, leftover stock and tool-holder collisions before a
-real machine drives into a real workpiece.
+answers: **what shape is left at the end, and does it match the part you
+intended?** It finds gouges and leftover stock before a real machine drives into
+a real workpiece. Tool-holder collision detection is next; see
+[Roadmap](#roadmap).
 
-> **Status: Unit 12 of 20 complete.** Chipbreaker simulates a whole 3-axis NC
-> program end to end — build a tri-dexel field from a stock mesh, cut it with
-> linear moves, arcs and helices across a multi-tool program, contour the result
-> back to a watertight mesh — and then **compares it against the part you meant**,
-> reporting gouges and leftover stock as two separate numbers. On as many threads
-> as you have, with the answer unchanged at every thread count.
+> **Status: the verification layer has just landed.** Chipbreaker simulates a
+> whole 3-axis NC program end to end — build a tri-dexel field from a stock mesh,
+> cut it with linear moves, arcs and helices across a multi-tool program, contour
+> the result back to a watertight mesh — and then **compares it against the part
+> you meant**, reporting gouges and leftover stock as two separate numbers. On as
+> many threads as you have, with the answer unchanged at every thread count.
 >
 > 500,000 segments over a 100 × 60 × 20 mm field at 0.5 mm takes **43 seconds**
 > when every move is level and **103 seconds** when every move ramps. Extraction
@@ -34,7 +35,7 @@ real machine drives into a real workpiece.
 >
 > **Not there yet:** turning a field of deviations into a short list of
 > *findings* a machinist can act on, tool-holder collision detection, and
-> multi-setup work. That is Units 13 to 15. See [Roadmap](#roadmap).
+> multi-setup work. See [Roadmap](#roadmap).
 
 ## The guarantee
 
@@ -104,7 +105,7 @@ cuts both ways:
 A deviation or volume figure is a statement about Chipbreaker only while the cell
 size is coarser than the geometry it was given. Below that the grid reproduces
 the source mesh's own facets faithfully, and the number reported is the mesher's
-error rather than the engine's — measured, at Unit 9, as an rms deviation that
+error rather than the engine's — measured, when surface extraction was built, as an rms deviation that
 *fell* from 0.0122 mm to 0.0035 mm and then *rose* to 0.0053 mm once the grid
 passed the source's 0.4 mm facets.
 
@@ -354,25 +355,25 @@ because that is usually the more useful half.
 
 ## Roadmap
 
-| Units | Content | Status |
-|---|---|---|
-| U1 | Workspace, determinism harness, numeric core | **done** |
-| U2 | Triangle mesh, I/O, validation, BVH | **done** |
-| U3 | Tool and holder geometry, root solver, ray versus solid of revolution | **done** |
-| U4 | G-code parser and toolpath IR | **done** |
-| U5 | Dexel field, `.dexel` format, convergence measurement | **done** |
-| U6 | Tri-dexel field, the sampling theorem, deviation harness | **done** |
-| U7 | 3-axis material removal: linear moves | **done** |
-| U8 | Arcs, helices, motion batching | **done** |
-| U9 | Dual contouring to a watertight mesh | **done** |
-| U10 | Memory ceiling, anisotropic resolution | **done** |
-| U11 | Deterministic parallelism | **done** |
-| U12 | Deviation fields: `compare`, the injected-defect corpus, the ladder | **done** |
-| U13–U15 | Gouge classification, collision detection, multi-setup | next |
-| U16 | WASM target and demo | |
-| U17 | Commercial packaging: C ABI, bindings, evaluation kit | |
-| U18 | Assurance package: SBOM, signed reproducible builds, error-budget specification | |
-| U19–U20 | 5-axis kinematics and tilted swept volumes — **conditional**, see below | |
+| Capability | Status |
+|---|---|
+| Determinism harness, exact predicates, canonical hashing | **done** |
+| Triangle mesh, I/O, validation, BVH | **done** |
+| Tool and holder geometry, root solver, ray versus solid of revolution | **done** |
+| G-code parser and toolpath IR | **done** |
+| Dexel field, `.dexel` format, convergence measurement | **done** |
+| Tri-dexel field, the sampling theorem, deviation harness | **done** |
+| 3-axis material removal: linear moves | **done** |
+| Arcs, helices, motion batching | **done** |
+| Dual contouring to a watertight mesh | **done** |
+| Memory ceiling, anisotropic resolution | **done** |
+| Deterministic parallelism | **done** |
+| Deviation fields: `compare`, the injected-defect corpus | **done** |
+| Gouge classification, collision detection, multi-setup | next |
+| WASM target and browser demo | planned |
+| Commercial packaging: C ABI, bindings, evaluation kit | planned |
+| Assurance package: SBOM, signed reproducible builds, error-budget specification | planned |
+| 5-axis kinematics and tilted swept volumes | **conditional**, see below |
 
 5-axis is last and conditional. It is necessary for top-tier CAM and aerospace
 work, but those channels are closed to a new entrant for structural reasons that
@@ -394,8 +395,8 @@ Chipbreaker is not aimed there.
 The target is **assurance-grade verification**: not only an answer, but an answer
 you can put in front of someone who has to sign for it. Reproducible execution,
 tolerances stated rather than implied, machine-readable evidence, traceable
-versions, and approximation that is bounded and says so. Eleven units of exact
-predicates, canonical hashing and cross-target parity exist to make that claim
+versions, and approximation that is bounded and says so. The exact predicates,
+the canonical hashing and the cross-target parity all exist to make that claim
 supportable rather than aspirational.
 
 ### What a deviation bound does and does not cover
@@ -415,11 +416,14 @@ it never modelled is worse than one that admits its scope.
 
 ## Licence
 
-Dual-licensed:
+Copyright (C) 2026 Langtfelt. Dual-licensed:
 
-- **GPL-3.0-or-later** — see [LICENSE](LICENSE).
-- **Commercial** — for use in proprietary products. `TODO(legal)`: contact
-  details once the legal entity is registered.
+- **GPL-3.0-or-later** — see [LICENSE](LICENSE). Use it, study it, modify it,
+  redistribute it, on the terms of the GPL.
+- **Commercial** — for use in a proprietary product, where the GPL's terms do
+  not suit. Write to
+  [licensing@langtfelt.com](mailto:licensing@langtfelt.com).
 
-Contributions require a Contributor Licence Agreement; see
-[CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
+**Code contributions are not open at present**, for licensing reasons set out in
+[CONTRIBUTING.md](CONTRIBUTING.md). Issues, bug reports and questions are
+welcome — a reproducer for a wrong answer is worth more here than a patch.

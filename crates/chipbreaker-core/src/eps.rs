@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Named tolerance constants.
 //!
@@ -80,13 +80,13 @@ pub const EPS_DETERMINANT: f64 = 1e-300;
 /// intersections that differ in the last few ULP, leaving a sub-nanometre void
 /// where the solid is in fact continuous. Left alone, those voids accumulate
 /// across thousands of cuts and eventually surface as spurious "excess stock"
-/// slivers in the U12 deviation field.
+/// slivers in the deviation field.
 ///
 /// 1e-9 mm sits far above that rounding noise (~550 ULP at a 10 m coordinate,
 /// see the module docs) and far below any feature a machinist can produce or
 /// measure — the finest achievable surface finish is on the order of 1e-4 mm.
 ///
-/// # Interaction with dexel resolution (U5)
+/// # Interaction with dexel resolution
 ///
 /// This constant is a *rounding-noise* threshold and is intentionally decoupled
 /// from dexel spacing, which is a *sampling* parameter typically in the 1e-2 to

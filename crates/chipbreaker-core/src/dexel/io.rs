@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! The `.dexel` file format: raw IEEE-754 bit patterns, little-endian.
 //!
-//! ADR 0004 has the argument in full. The short version is that Unit 3 caught
+//! ADR 0004 has the argument in full. The short version is that the tool
+//! library caught
 //! `serde_json` reading a float one ULP low — `2.0481555856608242` came back as
 //! `2.048155585660824` — and a dexel field is millions of computed span
 //! endpoints, essentially none of them round. A text format would make the
@@ -66,7 +67,7 @@ pub const MAGIC: [u8; 8] = *b"CBDEXEL\0";
 /// Format version. Bumped whenever the layout changes; a reader refuses any
 /// version it does not know rather than misinterpreting the bytes.
 ///
-/// **2** added the two transverse workspace extents. Unit 6 found that anchoring
+/// **2** added the two transverse workspace extents. Anchoring
 /// cells at the workspace minimum could put a cell centre exactly on the stock's
 /// own face, so the lattice is now centred; recovering the centring offset on
 /// read needs the true extent, because `counts * spacing` has already rounded
@@ -445,7 +446,7 @@ pub const TDX_MAGIC: [u8; 8] = *b"CBTDX\0\0\0";
 /// `.tdx` format version, **independent of [`FORMAT_VERSION`]**.
 ///
 /// Versioned separately because the two formats will not change together: a
-/// single-bundle field is still a useful thing to write at U10 and beyond, and
+/// single-bundle field is still a useful thing to write, and
 /// tying its version to this one would force pointless bumps.
 pub const TDX_FORMAT_VERSION: u32 = 1;
 
@@ -454,7 +455,7 @@ pub const TDX_FORMAT_VERSION: u32 = 1;
 /// Layout: magic, version, then provenance, then a present-flag and (if
 /// present) a full bundle record per axis in `AXES` order. Each bundle carries
 /// **its own** axis, origin, spacing and counts, because the lattices are
-/// deliberately not co-registered and U9 must be able to reason about their
+/// deliberately not co-registered and the extractor must be able to reason about their
 /// relationship rather than assume one.
 ///
 /// # Errors

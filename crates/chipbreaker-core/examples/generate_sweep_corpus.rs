@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Regenerates `tests/corpus/sweep/expectations.json`.
 //!
-//! Goldens are **digests, not files**, as at Units 5 and 6: a cut `.tdx` field
+//! Goldens are **digests, not files**, as everywhere else: a cut `.tdx` field
 //! is a binary blob that cannot be diffed.
 //!
 //! Recorded alongside each digest, so a change can be attributed rather than
@@ -14,7 +14,7 @@
 //! - **Sub-steps and the deviation bound**, so a case that silently stopped
 //!   taking its closed form shows up as a step count appearing from nowhere.
 //! - **The span distribution and spill**, because cutting is what makes rays
-//!   split and the arena's spill path was rebuilt at Unit 7 on that evidence.
+//!   split and the arena's spill path was rebuilt on that evidence.
 //!
 //! A digest that moves while the volumes hold still is a serialization change;
 //! one where the volumes move too is a geometry change; one where the sub-step
@@ -168,7 +168,7 @@ fn cases() -> Vec<Case> {
         Case {
             id: "mixed-pocket-rib",
             note: "two slots leaving a rib, which is the geometry that made the Y bundle \
-                   spill every ray and rebuilt the arena at Unit 7",
+                   spill every ray and caused the arena to be rebuilt",
             tool: flat,
             moves: vec![horizontal(10.0, -1.0), horizontal(20.0, -1.0)],
         },

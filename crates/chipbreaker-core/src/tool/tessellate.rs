@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Turning a tool into a triangle mesh, with a stated error bound.
 //!
@@ -248,7 +248,7 @@ impl Profile {
         //
         // # Winding
         //
-        // Every triangle must face outward, or U2's validator reports the mesh
+        // Every triangle must face outward, or the validator reports the mesh
         // as inconsistently oriented and its signed volume comes out wrong. The
         // side bands and the two degenerate cases do *not* share a winding, and
         // the difference is easy to get backwards, so each is derived here.

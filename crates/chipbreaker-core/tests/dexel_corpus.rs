@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! The dexel corpus: ten fields pinned by digest.
 //!
@@ -237,7 +237,7 @@ fn the_corpus_covers_the_cases_that_matter() {
         // The pair that corrected "holes give two spans".
         "torus-hole-along-the-bundle",
         "torus-hole-across-the-bundle",
-        // The pair that is the argument for Unit 6.
+        // The pair that is the argument for three bundles.
         "cylinder-axis-along-bundle",
         "cylinder-axis-across-bundle",
         // Axis::cyclic under contract on a non-default axis.

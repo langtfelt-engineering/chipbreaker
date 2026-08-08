@@ -164,7 +164,7 @@ add(
     "offset-g53-machine-coordinates",
     "G53 is non-modal and bypasses the work offset and the G92 shift for one "
     "block. It keeps tool length compensation, because the IR stores a tip "
-    "position and a segment where 'tip' meant something else would trap U5.",
+    "position and a segment where 'tip' meant something else would trap a field.",
     "G10 L2 P1 X-250. Y-100. Z0.\nG54 G0 X0. Y0.\nG53 G0 X-10. Y-10.\nG0 X0. Y0.\n",
 )
 add(

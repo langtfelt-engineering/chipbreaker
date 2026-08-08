@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Byte mutations of valid programs must parse or error cleanly.
 //!
@@ -8,7 +8,7 @@
 //! produced — including files truncated by a full disk and files that went
 //! through a text editor that helpfully re-encoded them.
 //!
-//! `#[ignore]`d and run nightly, like Unit 2's fuzz: too slow for every commit,
+//! `#[ignore]`d and run nightly, like the mesh fuzz: too slow for every commit,
 //! too valuable to drop. Run with:
 //!
 //! ```text

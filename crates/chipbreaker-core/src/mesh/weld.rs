@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Vertex welding by lattice quantisation.
 //!
 //! STL is a triangle soup: every facet carries its own three vertices, and
 //! nothing says that the corner of one triangle is the same point as the corner
 //! of its neighbour. Topology — manifoldness, orientation consistency, genus,
-//! and the closed-surface parity that U5 depends on — is meaningless until
+//! and the closed-surface parity that field building depends on — is meaningless until
 //! coincident vertices have been identified. Welding is what does that.
 //!
 //! It is also the single most determinism-hostile operation in this unit, so the

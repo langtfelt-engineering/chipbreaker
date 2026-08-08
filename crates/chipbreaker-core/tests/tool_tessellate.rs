@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
-//! Tessellation, checked against the closed forms and against Unit 2's mesh
+//! Tessellation, checked against the closed forms and against the mesh
 //! ray caster.
 //!
 //! # The differential test is the point
 //!
 //! Sections 6 and 8 are two independent descriptions of the same solid: a
 //! closed-form volume, and a ray caster that works from the profile directly.
-//! Unit 2 is a third, entirely separate one: a BVH over triangles, using exact
+//! The mesh pipeline is a third, entirely separate one: a BVH over triangles, using exact
 //! predicates and Simulation of Simplicity. Tessellating the tool and casting
 //! the same rays through both is the strongest check available on either, and it
 //! is a check neither could perform alone — the two implementations share no
@@ -159,7 +159,7 @@ fn tessellation_is_bit_identical_between_runs() {
 fn the_analytic_ray_caster_agrees_with_unit_twos_mesh_ray_caster() {
     // Two independent implementations of "where is this solid along this ray":
     // the profile-based intersection from section 8, and the BVH over triangles
-    // from Unit 2, which shares none of its code.
+    // from the mesh pipeline, which shares none of its code.
     const TOLERANCE: f64 = 0.01;
 
     let mut compared = 0usize;

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Indexed triangle meshes: the geometry input layer.
 //!
@@ -13,7 +13,7 @@
 //!
 //! # Why it matters more than it looks
 //!
-//! U5 builds the dexel field by casting millions of parallel rays through a
+//! A dexel field is built by casting millions of parallel rays through a
 //! closed mesh and recording where each ray is inside material. That rests
 //! entirely on a parity argument: a ray crossing a closed surface must produce an
 //! **even** number of crossings, alternating enter/exit. If a ray passes exactly
@@ -227,7 +227,7 @@ impl core::error::Error for MeshError {}
 /// # Why indices are `u32`
 ///
 /// Not `usize`. This is the same class of bug that broke native/WASM parity in
-/// Unit 1: `usize` is 64 bits natively and 32 bits on `wasm32`, so any index that
+/// `usize` is 64 bits natively and 32 bits on `wasm32`, so any index that
 /// reaches a hash differs between targets. `u32` is the same everywhere, caps out
 /// at four billion triangles — a ceiling no machining part will approach — and
 /// halves the memory besides.

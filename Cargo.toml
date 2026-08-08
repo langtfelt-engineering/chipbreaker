@@ -11,11 +11,9 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.96.0"
 license = "GPL-3.0-or-later"
-authors = ["Chipbreaker Contributors"]
-repository = "https://github.com/chipbreaker/chipbreaker"
-# TODO(legal): replace with the commercial licensing contact once the legal
-# entity is registered. See CONTRIBUTING.md.
-homepage = "https://github.com/chipbreaker/chipbreaker"
+authors = ["Langtfelt"]
+repository = "https://github.com/spanwerk/chipbreaker"
+homepage = "https://github.com/spanwerk/chipbreaker"
 
 [workspace.dependencies]
 chipbreaker-core = { path = "crates/chipbreaker-core", version = "0.1.0" }

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! End-to-end tests that run the real `chipbreaker` binary.
 //!
@@ -61,7 +61,7 @@ fn selftest_json_is_well_formed_and_complete() {
     let suites = results["suites"].as_array().expect("an array");
     assert!(
         suites.len() >= 5,
-        "expected every Unit 1 suite, got {}",
+        "expected every core suite, got {}",
         suites.len()
     );
     for suite in suites {

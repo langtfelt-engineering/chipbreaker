@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! `f64` linear algebra for Chipbreaker.
 //!
@@ -29,7 +29,7 @@
 //! # Layout
 //!
 //! Every type is `#[repr(C)]` and `Copy`, so it can cross the C ABI boundary
-//! unchanged when U20 adds one.
+//! unchanged if 5-axis work ever adds one.
 
 mod aabb3;
 mod mat3;

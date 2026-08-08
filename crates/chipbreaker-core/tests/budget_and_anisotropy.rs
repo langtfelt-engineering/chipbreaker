@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! The memory ceiling, and what anisotropic spacing does to the guarantee.
 //!
@@ -14,7 +14,7 @@
 //!
 //! # Anisotropy must not weaken the guarantee silently
 //!
-//! `sample_distance_bound` generalises Unit 6's `h * sqrt(3/2)` to
+//! `sample_distance_bound` generalises `h * sqrt(3/2)` to
 //! `sqrt((hx^2 + hy^2 + hz^2) / 2)`. That is a quadratic mean, so it is driven
 //! by the **largest** spacing: coarsening one axis degrades the worst case for
 //! every surface, not only for those facing it. `auto_spacing` therefore holds
@@ -173,7 +173,7 @@ fn the_anisotropic_bound_reduces_to_unit_6_when_isotropic() {
         let expected = h * SAMPLE_DISTANCE_CONSTANT;
         assert!(
             (got - expected).abs() <= 1.0e-15 * expected,
-            "h={h}: {got} against Unit 6's {expected}"
+            "h={h}: {got} against the isotropic {expected}"
         );
     }
 }
@@ -242,7 +242,7 @@ fn a_cube_gets_no_benefit_and_that_is_correct() {
 
 #[test]
 fn registration_holds_under_every_spacing_combination() {
-    // The invariant Unit 9 made load-bearing. Anisotropy is registration-safe by
+    // The invariant extraction made load-bearing. Anisotropy is registration-safe by
     // construction -- each axis still draws from one shared ordinate set -- but
     // "by construction" is what this project checks rather than asserts.
     let combinations = [

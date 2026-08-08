@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 Chipbreaker Contributors
+# Copyright (C) 2026 Langtfelt
 
 name: CI
 
@@ -187,7 +187,7 @@ jobs:
           check '\bHash(Map|Set)\b' \
             'HashMap/HashSet found. Use BTreeMap/BTreeSet where iteration order can reach a float; CONTRIBUTING.md rule 3.'
           check '\brayon\b|thread::spawn' \
-            'Parallelism found. It arrives at U11 behind a deterministic partition; CONTRIBUTING.md rule 4.'
+            'Parallelism found. It belongs behind a deterministic partition; CONTRIBUTING.md rule 4.'
           exit $fail
 
       - name: serde_json is only ever taken from the workspace

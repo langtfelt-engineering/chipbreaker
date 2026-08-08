@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Validation of the fast root solver against an exact Sturm-sequence oracle.
 //!
-//! Same pattern as Unit 1's predicate validation: a slow, unimpeachable
+//! Same pattern as the predicate validation: a slow, unimpeachable
 //! reference, and a fast implementation that must agree with it.
 //!
 //! # Why this one needs rationals, when the predicate oracle did not
 //!
-//! Unit 1's oracle avoided rational arithmetic entirely, because every predicate
+//! The predicate oracle avoided rational arithmetic entirely, because every predicate
 //! there was a *homogeneous polynomial* in its inputs and could be rescaled into
 //! exact integers. That note also warned this would not generalise, and a Sturm
 //! chain is exactly the case it warned about: building it requires polynomial

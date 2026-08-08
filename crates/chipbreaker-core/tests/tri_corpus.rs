@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! The tri-dexel corpus: seven fields pinned by digest, deviation and coverage.
 //!
-//! Goldens are digests, as at Unit 5, because a `.tdx` blob cannot be diffed.
+//! Goldens are digests, as everywhere else, because a `.tdx` blob cannot be diffed.
 //! Deviation and worst-cosine are pinned alongside because they are the unit's
 //! assertion metric (ADR 0005) — a digest that moves while they hold still is a
 //! serialization change; one where they move too is a change in where the rays
@@ -236,7 +236,7 @@ fn the_corpus_covers_the_cases_that_matter() {
         .map(|c| c["id"].as_str().expect("id"))
         .collect();
     for required in [
-        // The U5 lattice bug this unit found.
+        // The single-bundle lattice bug this corpus found.
         "box-non-dividing-spacing",
         // The worst case a closed solid can present: the bound is attained.
         "octahedron-body-diagonal-faces",

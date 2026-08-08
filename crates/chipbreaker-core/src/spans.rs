@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Sorted, disjoint, normalized sets of half-open intervals on a line.
 //!
 //! This is the primitive the whole engine rests on. A dexel ray stores the
 //! material along it as a [`Spans`]; a cut is [`Spans::subtract`]; a stock
 //! intersection is [`Spans::intersect`]; a multi-setup union is
-//! [`Spans::union`]. From U5 onward, essentially every operation Chipbreaker
+//! [`Spans::union`]. Essentially every operation Chipbreaker
 //! performs bottoms out in this file, so it is worth reading carefully.
 //!
 //! # Half-open intervals
@@ -493,7 +493,7 @@ impl Spans {
     /// Summed in **ascending `t0` order**, which is storage order. The order is
     /// part of the contract: floating-point addition is not associative, so a
     /// different traversal gives a different last bit, and this value feeds the
-    /// removed-material totals that U12 hashes.
+    /// removed-material totals that the deviation field hashes.
     #[must_use]
     pub fn measure(&self) -> f64 {
         let mut total = 0.0;
@@ -673,7 +673,7 @@ impl Spans {
     /// The complement is taken *within* an explicit window because the
     /// complement of a bounded set on the whole real line is unbounded, and an
     /// unbounded span has no useful measure. `bounds` is the stock envelope in
-    /// U5 and the dexel extent thereafter.
+    /// the dexel extent.
     #[must_use]
     pub fn complement_within(&self, bounds: Span) -> Self {
         let mut out = Self::new();
@@ -812,7 +812,7 @@ mod tests {
     fn an_untouched_span_keeps_its_normals_exactly() {
         // Not merely close: a cut elsewhere on the ray must not perturb a face
         // it never reached, or a thousand cuts would drift the normals the way
-        // Unit 7 proved the positions do not.
+        // Cutting proved the positions do not.
         let a = sn(
             0.0,
             2.0,
@@ -860,7 +860,7 @@ mod tests {
 
     #[test]
     fn normals_do_not_affect_the_geometry_of_any_operation() {
-        // The guarantee that keeps the Unit 1 property tests meaningful: the
+        // The guarantee that keeps the property tests meaningful: the
         // algebra must be blind to the attribute it carries.
         let bare = |x: &Spans| -> Vec<(f64, f64)> { pairs(x) };
         let a_plain = s(&[(0.0, 4.0), (6.0, 10.0)]);
@@ -1310,7 +1310,7 @@ mod tests {
         assert_eq!(e.hull(), None);
 
         // Infinite bounds are legitimate: a complement within an unbounded
-        // window is how U5 asks "where is there no material at all".
+        // window is how a field asks "where is there no material at all".
         let a = s(&[(0.0, 1.0)]);
         let all = Span::new(f64::NEG_INFINITY, f64::INFINITY);
         let comp = a.complement_within(all);

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! The span-count distribution after cutting, which is the number that decides
 //! `INLINE_CAPACITY`.
 //!
-//! Unit 5 sized it at 2 on **stock at rest**, where the distribution is nearly
+//! The arena was sized at 2 on **stock at rest**, where the distribution is nearly
 //! degenerate: one span on every filled ray, and only a genuine internal cavity
 //! reaches two. Cutting splits spans, so that measurement was of the wrong
 //! population and this one replaces it.
@@ -87,7 +87,10 @@ fn main() {
     println!();
 
     let field = stock(spacing);
-    report("stock at rest (the Unit 5 population)", &field);
+    report(
+        "stock at rest (the population the arena was sized on)",
+        &field,
+    );
 
     // One pocket: a slot through the middle. Two spans on transverse rays.
     let profile = mill(8.0);

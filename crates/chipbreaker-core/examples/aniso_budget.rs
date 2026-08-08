@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Per-cubic-centimetre memory, isotropic against auto-selected, at equal
 //! accuracy.
 //!
-//! Unit 6 published a per-cm³ table and observed it varying about 5× between a
+//! The dexel budget publishes a per-cm³ table, and it varies about 5× between a
 //! plate and a bar: a plate pays full resolution in the direction where it has
-//! almost no extent. Unit 10's question is how much of that is recoverable
+//! almost no extent. The question here is how much of that is recoverable
 //! **without weakening the sampling guarantee**, which is the constraint
 //! `auto_spacing` works under.
 //!
@@ -18,7 +18,7 @@
 
 use chipbreaker_core::budget::{Budget, Spacing, auto_spacing};
 
-/// The four shapes Unit 6 tabulated.
+/// The four shapes the budget table covers.
 const PARTS: [(&str, [f64; 3]); 4] = [
     ("cube 40x40x40", [40.0, 40.0, 40.0]),
     ("block 100x60x20", [100.0, 60.0, 20.0]),
@@ -72,7 +72,7 @@ fn main() {
     println!("Bound held identical in every row (asserted, not merely reported).");
     println!("Saving ranges {worst:.2}x to {best:.2}x.");
 
-    // The Unit 6 observation, restated with the constraint applied.
+    // The same observation, restated with the constraint applied.
     let spread_iso = {
         let values: Vec<f64> = PARTS
             .iter()

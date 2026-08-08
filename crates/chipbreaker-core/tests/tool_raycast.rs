@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Ray-versus-tool intersection, checked against closed forms and against the
 //! tool's own analytic volume.
@@ -8,7 +8,7 @@
 //!
 //! **No ray leaks.** Every span is bounded, lies inside the tool's bounding
 //! cylinder, and has both endpoints on the surface. A leak is the failure that
-//! matters: in U5 an unbounded span is a column of stock removed from the middle
+//! matters: in a field an unbounded span is a column of stock removed from the middle
 //! of a part, and it is silent.
 //!
 //! **A bundle of rays recovers the volume.** Summing span length times cell area

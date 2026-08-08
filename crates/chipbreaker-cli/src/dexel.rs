@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! The `chipbreaker dexel` subcommands.
 //!
@@ -870,8 +870,9 @@ fn run_deviation(
         "\nThis is a COVERAGE deviation: the distance from a point on the true\n\
          surface to the nearest place the field sampled it. Span endpoints are\n\
          exact ray-surface intersections, so this carries no error of its own.\n\
-         It is not a reconstruction deviation -- extracting a surface is U9, and\n\
-         U9 must re-measure against its own output.\n",
+         It is not a reconstruction deviation -- extracting a surface is a
+\n         separate step, which re-measures against its own output.
+",
     );
 
     let results = json!({

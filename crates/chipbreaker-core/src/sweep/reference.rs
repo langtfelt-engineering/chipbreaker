@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! The dense sub-stepping reference: slow, obvious, and the ground truth.
 //!
@@ -112,7 +112,7 @@ pub fn swept_spans_into(
         }
         // Accumulate through `union_into` rather than pushing: the pieces
         // overlap heavily by construction, and `Spans::union` is the operation
-        // that has been property-tested since Unit 1 for exactly this.
+        // that has been property-tested from the start for exactly this.
         out.union_into(&piece, &mut merged);
         core::mem::swap(out, &mut merged);
     }

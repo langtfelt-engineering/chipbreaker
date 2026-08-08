@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Where the rays are.
 //!
@@ -12,16 +12,16 @@
 //! lattice. Nearly 16x, on the innermost loop of the entire product.
 //!
 //! **Correctness.** A ray whose origin shares a coordinate with a mesh vertex is
-//! coplanar with every edge at that vertex, which drives Unit 2's caster onto
+//! coplanar with every edge at that vertex, which drives the caster onto
 //! the Simulation-of-Simplicity cascade — and, where a whole *face* aligns with
 //! the ray, into a coplanar rejection that construction treats as a hard error.
 //! The half-cell offset makes that unreachable for axis-aligned stock, which is
 //! most stock.
 //!
-//! # Amended at U6: the lattice is CENTRED on the workspace
+//! # Amended once a second bundle existed: the lattice is CENTRED on the workspace
 //!
-//! The half-cell offset alone is not enough, and Unit 6 found the counterexample
-//! by casting along X and Y where Unit 5 had only cast along Z.
+//! The half-cell offset alone is not enough, and the counterexample turned up
+//! on casting along X and Y where only Z had been cast before.
 //!
 //! Anchoring cells at `min` puts centre `i` at `min + (i + 0.5) * h`. For a
 //! 20 mm box at 1.6 mm cells that is 13 cells, and the last centre lands at
@@ -48,12 +48,12 @@
 //! because the second is obviously tidier and the reason the first exists is two
 //! documents away. The test is what stops them.
 //!
-//! # Anisotropy, and why Unit 6 exists
+//! # Anisotropy, and why there are three bundles
 //!
 //! A single-axis field is anisotropic **by construction**, and this is worth
-//! stating here rather than discovering at U6.
+//! stating here rather than discovering later.
 //!
-//! *Along* the ray, intersections come from Unit 2's exact-predicate caster and
+//! *Along* the ray, intersections come from the exact-predicate caster and
 //! are analytic: a Z-bundle captures a horizontal surface to machine precision,
 //! however coarse the spacing. *Transverse* to the ray the shape is sampled on
 //! this lattice, so a vertical wall is captured only to within a cell.
@@ -64,7 +64,7 @@
 //! and at R = 20 mm — identical to five significant figures.
 //!
 //! And the fix for a poorly captured vertical wall is **not finer spacing**. It
-//! is another bundle along another axis, which is the whole of Unit 6.
+//! is another bundle along another axis, which is the whole of the tri-dexel idea.
 
 use crate::golden::{CanonicalHash, Hashable};
 use crate::math::{Aabb3, Axis, Vec3};
@@ -123,7 +123,7 @@ pub struct Lattice {
     origin: Vec3,
     /// Cell size along the two lattice axes, in `axis.cyclic()` order.
     ///
-    /// Two values rather than one, because Unit 10 allows an independent cell
+    /// Two values rather than one, because a field may take an independent cell
     /// size per world axis. Isotropic is the common case and simply has the two
     /// equal; nothing here special-cases it, so there is one code path rather
     /// than two.
@@ -407,10 +407,10 @@ impl Hashable for Lattice {
         h.f64_slice(&self.origin.to_array());
         // One value when the two agree, the pair otherwise.
         //
-        // The conditional is deliberate and load-bearing. Unit 10 gave a lattice
+        // The conditional is deliberate and load-bearing. A lattice gained
         // two transverse spacings where it had one, and hashing the pair
         // unconditionally would have moved the digest of every isotropic field
-        // ever built -- invalidating every golden from Units 1 to 9 for a change
+        // ever built -- invalidating every golden in the project for a change
         // that alters nothing about those fields. An isotropic lattice hashes
         // exactly as it did, so "anisotropic equals isotropic when the three
         // agree" holds at the level that decides identity.

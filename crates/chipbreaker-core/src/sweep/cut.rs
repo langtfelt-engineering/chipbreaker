@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Applying a swept volume to a field.
 //!
@@ -15,7 +15,7 @@
 //! Rays are visited in ascending index within a bundle, and bundles in
 //! `AXES` order. Nothing here depends on the order — each ray's subtraction is
 //! independent — but the **statistics** accumulate in it, and a float that
-//! accumulates in a different order is a different float. Unit 11 will have to
+//! accumulates in a different order is a different float. Parallel cutting has to
 //! respect that when it parallelises.
 
 use crate::dexel::tri::{AXES, TriDexelField};
@@ -41,7 +41,7 @@ pub enum SweepMethod {
     ///
     /// The shipping method. Horizontal moves take the three-piece
     /// decomposition and stationary ones the static tool, both exact; a general
-    /// ramp falls back to sub-stepping with a computed bound. Unit 7 measured
+    /// ramp falls back to sub-stepping with a computed bound. Measured
     /// ramps at 0.75% of linear segments, so the fallback is rare and the cases
     /// that are not rare are exact.
     Analytic {
@@ -108,7 +108,7 @@ pub struct CutStats {
     /// Material removed, in cubic millimetres, per bundle in `AXES` order.
     ///
     /// Per bundle and never averaged: the three disagree at `O(h)` and
-    /// reconciling them is Unit 9's job.
+    /// reconciling them is the extractor's job.
     pub removed_mm3: [f64; 3],
     /// Sub-steps used, summed over motions and bundles.
     pub substeps: u64,
@@ -201,7 +201,7 @@ impl CutScratch {
 
 /// Subtracts a swept tool from every bundle of a field.
 ///
-/// Each bundle is cut independently and never compared, per the Unit 7 contract.
+/// Each bundle is cut independently and never compared, per the tri-dexel contract.
 pub fn cut_tri(
     field: &mut TriDexelField,
     profile: &Profile,
@@ -214,7 +214,7 @@ pub fn cut_tri(
 
 /// Subtracts a swept tool from every bundle, for a motion of any kind.
 ///
-/// The form Unit 8 added so that an arc is not a special case bolted on: a
+/// The form that keeps an arc from being a special case bolted on: a
 /// program is a sequence of `Motion`s and every one of them cuts the same way.
 pub fn cut_tri_motion(
     field: &mut TriDexelField,
@@ -505,7 +505,7 @@ pub(crate) fn transverse_overlaps(
 
 /// Span-count histogram across every bundle, for the arena measurement.
 ///
-/// Unit 5 sized `INLINE_CAPACITY` on stock at rest, where the distribution is
+/// `INLINE_CAPACITY` was sized on stock at rest, where the distribution is
 /// nearly degenerate. Cutting splits spans, so the number that matters is this
 /// one taken **after** a cut.
 #[must_use]

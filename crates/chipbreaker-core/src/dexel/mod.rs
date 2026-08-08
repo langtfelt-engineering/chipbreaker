@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! The dexel field: one bundle of parallel rays, each carrying the intervals of
 //! material along it.
 //!
-//! This is where the four foundation units compose. Unit 1's interval algebra
-//! stores what is on a ray, Unit 2's leak-free caster finds where the boundary
-//! is, Unit 3's tool solids will subtract from it at U7, and Unit 4's motion
+//! This is where the four foundations compose. The interval algebra
+//! stores what is on a ray, the leak-free caster finds where the boundary
+//! is, the tool solids subtract from it during a sweep, and the motion
 //! stream says where the tool goes.
 //!
-//! **Unit 5 builds and stores a field. It does not cut.** Material removal is
-//! U7, and a second and third bundle are U6.
+//! **This module builds and stores a field. It does not cut.** Material removal
+//! lives in `sweep`, and the second and third bundles in `dexel::tri`.
 //!
 //! # Anisotropy
 //!

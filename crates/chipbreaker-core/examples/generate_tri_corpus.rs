@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Regenerates `tests/corpus/tridexel/expectations.json`.
 //!
@@ -59,7 +59,7 @@ fn cases() -> Vec<Case> {
         Case {
             id: "box-non-dividing-spacing",
             note: "1.6 mm divides none of 30, 20, 10: the case that used to abort before \
-                   the lattice was centred at U6",
+                   the lattice was centred",
             mesh: || shapes::box_solid(Vec3::new(0.0, 0.0, 0.0), Vec3::new(30.0, 20.0, 10.0)),
             spacing: 1.6,
             axes: "xyz",

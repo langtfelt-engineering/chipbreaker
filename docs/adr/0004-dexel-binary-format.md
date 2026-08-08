@@ -2,15 +2,15 @@
 
 - **Status:** accepted
 - **Date:** 2026-08-03
-- **Unit:** 5 (single-axis dexel field)
+- **Governs:** the `.dexel` and `.tdx` field formats
 - **Supersedes:** nothing
 - **Related:** [ADR 0001](0001-spans-arena.md) (span storage), `CONTRIBUTING.md` § fixture precision
 
 ## Context
 
-Unit 5 introduces the first Chipbreaker file format that carries computed
+The dexel field is the first Chipbreaker file format that carries computed
 floating-point geometry: `.dexel`, a serialized dexel field. Later units will
-write it (U6 for three bundles, U9 for checkpoints, U14 for verification
+write it (three bundles, extraction checkpoints, verification
 evidence) and read it back expecting the reloaded field to be **the same field**
 — not a field that agrees to fifteen digits.
 
@@ -19,7 +19,7 @@ corpus is G-code, the goldens are hex digests in text files. Continuing that way
 for `.dexel` would be the path of least resistance and would be a mistake, and
 this ADR exists because that mistake has already been made once in this project.
 
-At Unit 3 we found that `serde_json` reads floats one ULP low: the tool-library
+The tool library found that `serde_json` reads floats one ULP low: its
 fixture value `2.0481555856608242` came back as `2.048155585660824`. The parser
 was not doing anything unreasonable — it was doing correctly-rounded shortest
 decimal parsing without the `float_roundtrip` feature. The fix was a feature
@@ -116,7 +116,7 @@ destroy the evidence.
 ## Alternatives rejected
 
 **Text with 17 significant digits.** Round-trips correctly *if* every writer and
-reader is correct. Unit 3 demonstrated that a widely used, well-maintained JSON
+reader is correct. The tool library demonstrated that a widely used, well-maintained JSON
 library is not correct by default. We would be betting the determinism contract
 on a property we cannot enforce at the boundary.
 

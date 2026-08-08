@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Three bundles: the theorem, the offset invariant, and the format.
 
@@ -88,7 +88,7 @@ fn the_bound_is_tight_at_the_body_diagonal() {
 fn both_deviation_constants_follow_from_the_bound() {
     // Two DIFFERENT quantities from the same cosine bound, differing by
     // 3/sqrt(2). Pinned together so they cannot drift apart and, more
-    // importantly, so nobody substitutes one for the other: Unit 12 reports
+    // importantly, so nobody substitutes one for the other: the engine reports
     // gouge depth, which is perpendicular, and the sample-distance figure would
     // overstate it without limit on well-sampled surfaces.
     //
@@ -138,7 +138,7 @@ fn two_bundles_carry_no_such_guarantee() {
 
 #[test]
 fn every_bundle_offsets_in_its_own_transverse_plane() {
-    // Unit 5 proved the offset is load-bearing on one axis; this extends it to
+    // The offset is load-bearing on one axis; this extends it to
     // all three. The invariant is PER BUNDLE, not global: each applies the half
     // cell in the two axes its own lattice spans.
     let mesh = shapes::lattice_block(9);
@@ -514,7 +514,7 @@ fn best_of_three_deviation_falls_monotonically_and_is_bounded_by_c_times_h() {
 
 #[test]
 fn the_worst_sampling_angle_never_falls_below_the_bound() {
-    // The direct check on §2, over real surfaces rather than synthetic normals.
+    // The direct check on the theorem, over real surfaces rather than synthetic normals.
     use chipbreaker_core::dexel::deviation::coverage;
     for (name, mesh) in [
         ("sphere", shapes::icosphere(10.0, 4)),

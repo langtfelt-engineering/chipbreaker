@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! How fast does the field's volume converge as cells get smaller?
 //!
@@ -105,7 +105,7 @@
 //! implementation; it is what lattice-point counting does, and no amount of
 //! refinement removes it.
 //!
-//! This is the strongest argument in the project for Unit 6. A single-axis field
+//! This is the strongest argument in the project for three bundles. A single-axis field
 //! does not merely capture a vertical wall *badly* — it captures it
 //! **unpredictably**, and a verification tool cannot tell a customer that a
 //! finer simulation is a safer one. The fix is not a finer lattice. It is a
@@ -135,7 +135,7 @@ pub enum ErrorModel {
     ///
     /// The Gauss circle problem. Erratic, non-monotone, and only an envelope is
     /// a defensible claim. This is the vertical-wall case, which is to say it is
-    /// the anisotropy Unit 6 exists to remove.
+    /// the anisotropy a third bundle exists to remove.
     LatticeCount,
 }
 
@@ -319,7 +319,7 @@ const LIE_DOWN: Mat4 = Mat4 {
 ///
 /// Deliberately includes the **same cylinder twice**, upright and lying down.
 /// That pair is the clearest demonstration in the project that a single-axis
-/// field is anisotropic, and therefore of why Unit 6 exists — not because the
+/// field is anisotropic, and therefore of why three bundles exist — not because the
 /// upright one is less accurate, but because its error obeys a different and
 /// unpredictable law. See the module header.
 #[must_use]

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Things that happen between moves.
 //!
@@ -20,7 +20,7 @@
 //! Worth stating because it is the thing most likely to be misread. Segments are
 //! in machine coordinates, so a `G54` to `G55` change moves nothing and breaks
 //! nothing: the geometry is continuous across it. The event records *which*
-//! workpiece frame was in force, for reports and for U5's stock placement. See
+//! workpiece frame was in force, for reports and for stock placement. See
 //! ADR 0003.
 
 use crate::golden::{CanonicalHash, Hashable};

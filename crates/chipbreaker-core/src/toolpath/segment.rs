@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
-//! One move: the unit U5 subtracts and U7 sweeps.
+//! One move: the unit a field subtracts and a sweep moves along.
 
 use crate::golden::{CanonicalHash, Hashable};
 use crate::math::{Aabb3, Vec3};
@@ -21,7 +21,7 @@ pub enum MotionKind {
     Arc,
     /// `G2`/`G3` with motion normal to the plane as well.
     ///
-    /// A separate kind rather than an arc with a `z` difference, because U7 will
+    /// A separate kind rather than an arc with a `z` difference, because the sweep
     /// sweep the two differently and a consumer that has to check for a rise to
     /// find out which it has is a consumer that will forget.
     Helix,
@@ -41,7 +41,7 @@ impl MotionKind {
 
     /// True if the tool is expected to be cutting.
     ///
-    /// A rapid through material is a crash, not a cut, and U13 reports it
+    /// A rapid through material is a crash, not a cut, and it is reported
     /// differently.
     #[must_use]
     pub const fn is_cutting(self) -> bool {
@@ -55,12 +55,12 @@ impl Hashable for MotionKind {
     }
 }
 
-/// Tool orientation. **Reserved for U16 and always `None` in Unit 4.**
+/// Tool orientation. **Reserved for 5-axis work and always `None` today.**
 ///
 /// Present now so that adding 5-axis is a change to one crate rather than a
 /// schema migration through every unit that consumes a toolpath. The cost is an
-/// `Option` that is always empty; the alternative cost is rewriting U5, U7, U12,
-/// U13 and U14 to thread a new field.
+/// `Option` that is always empty; the alternative cost is rewriting every
+/// downstream consumer to thread a new field.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Orient {
     /// Unit vector along the tool axis, from tip toward spindle.
@@ -77,7 +77,7 @@ impl Hashable for Orient {
 
 /// Where a segment came from in the source program.
 ///
-/// **Not optional.** When U13 reports a gouge, it must be able to name the line
+/// **Not optional.** When a gouge is reported, it must be possible to name the line
 /// of NC that caused it. A finding the user cannot trace back to their own
 /// program is very nearly worthless — they cannot fix it, and they cannot judge
 /// whether it is real.
@@ -158,7 +158,7 @@ pub struct MotionSegment {
     /// Centre, plane and sweep, for [`MotionKind::Arc`] and
     /// [`MotionKind::Helix`]. `None` otherwise.
     pub arc: Option<ArcData>,
-    /// **Always `None` in Unit 4.** See [`Orient`].
+    /// **Always `None` today.** See [`Orient`].
     pub orientation: Option<Orient>,
     /// Tool number in force, as programmed with `T`.
     pub tool: u32,
@@ -181,7 +181,7 @@ impl MotionSegment {
     ///
     /// For a helix this is the true three-dimensional length: the hypotenuse of
     /// the planar arc length and the rise. Getting that wrong understates a
-    /// helical ramp's cutting time by up to the rise, which matters at U13.
+    /// helical ramp's cutting time by up to the rise, which matters to a report.
     #[must_use]
     pub fn length(&self) -> f64 {
         match (&self.arc, self.kind) {

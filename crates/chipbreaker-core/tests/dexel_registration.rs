@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! The three bundles share one corner lattice, and endpoints carry normals.
 //!
 //! # Why registration is now an invariant
 //!
-//! Unit 6 recorded that the three bundles need not be co-registered. That was
-//! wrong, and Unit 9 is where the debt comes due. Dual contouring needs one grid
+//! It was once recorded that the three bundles need not be co-registered. That
+//! was wrong, and extraction is where the debt came due. Dual contouring needs one grid
 //! whose **corners** are ray positions, because the three bundles *are* that
 //! grid's three edge directions: an X-directed edge from `(x_i, y_j, z_k)` to
 //! `(x_{i+1}, y_j, z_k)` must be a sub-segment of the X-bundle ray at transverse
@@ -14,16 +14,16 @@
 //! is, that edge would belong to no ray and the cell would have an uncovered
 //! edge.
 //!
-//! It already holds, and to the bit, because the Unit 6 centring computes `pad`
+//! It already holds, and to the bit, because the centring computes `pad`
 //! from the axis extent and the spacing alone — both shared across bundles — so
 //! two bundles reach a shared ordinate by identical arithmetic on identical
 //! inputs. These tests turn that from a happy consequence into a checked
-//! property, ahead of Unit 10's adaptive subdivision, which is the change most
+//! property, ahead of any adaptive subdivision, which is the change most
 //! likely to break it.
 //!
 //! **The half-cell offset is not violated.** The DC grid sits half a cell from
 //! the dexel cell grid: dexel cell *centres* are DC grid *corners*. The rays are
-//! exactly where Unit 5 put them; only the grid we name has moved.
+//! exactly where they always were; only the grid we name has moved.
 
 use chipbreaker_core::dexel::tri::{AXES, TriBuildOptions, TriDexelField};
 use chipbreaker_core::math::{Axis, Vec3};
@@ -125,8 +125,8 @@ fn the_shared_corner_ordinates_agree_bit_for_bit() {
 
 #[test]
 fn corner_coordinates_are_strictly_inside_the_workspace_and_ascending() {
-    // The property Unit 5's centring exists to guarantee, restated for the grid
-    // Unit 9 builds on it: no corner lands on a stock face, where a ray would be
+    // The property the centring exists to guarantee, restated for the grid
+    // extraction builds on: no corner lands on a stock face, where a ray would be
     // tangent to the surface and the crossing count ambiguous.
     for (name, size, spacing) in CASES {
         let field = build(Vec3::new(size[0], size[1], size[2]), spacing);
@@ -153,7 +153,7 @@ fn corner_coordinates_are_strictly_inside_the_workspace_and_ascending() {
 #[test]
 fn the_dc_grid_is_offset_half_a_cell_from_the_dexel_grid() {
     // Documents the relabelling rather than asserting a new fact, so that
-    // someone who remembers Unit 5's "origins are never on the integer lattice"
+    // someone who remembers the "origins are never on the integer lattice"
     // does not read the offset as a violation of it.
     let field = build(Vec3::new(40.0, 30.0, 10.0), 0.5);
     let coords = field.corner_coordinates(Axis::X).expect("x corners");

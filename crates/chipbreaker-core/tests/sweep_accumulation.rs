@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
-//! The first test of Unit 7: cutting does not accumulate error.
+//! The first test of cutting: it does not accumulate error.
 //!
 //! `dexel::tri` claims that a cut is exact along each ray — interval arithmetic
 //! on exact intersection parameters, not a resampling — so after a thousand cuts
@@ -10,7 +10,7 @@
 //!
 //! This is the test that would catch the claim being false, and it is first
 //! because if it fails the subtraction is resampling and the whole unit is the
-//! wrong shape. Unit 15's chained-equals-monolithic test rests on the same
+//! wrong shape. The chained-equals-monolithic test rests on the same
 //! property, so a failure here surfaces eight units early.
 
 use chipbreaker_core::dexel::tri::{AXES, TriBuildOptions, TriDexelField};
@@ -180,7 +180,7 @@ fn error_against_an_independent_reference_is_flat_in_the_number_of_operations() 
 
 #[test]
 fn a_through_pocket_puts_two_spans_on_transverse_rays() {
-    // Unit 5 sized INLINE_CAPACITY = 2 on stock at rest, where the distribution
+    // INLINE_CAPACITY = 2 was sized on stock at rest, where the distribution
     // is nearly degenerate: one span on every ray. Cutting splits spans, so the
     // number that matters is this one, taken AFTER a cut.
     //

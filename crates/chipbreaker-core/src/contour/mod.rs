@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Manifold dual contouring: a tri-dexel field back to a triangle mesh.
 //!
@@ -17,7 +17,7 @@
 //! That requires the bundles to be co-registered, which `TriDexelField` now
 //! asserts. It also puts this grid half a cell from the dexel cell grid — dexel
 //! cell centres are these corners — which is a relabelling and not a violation
-//! of Unit 5's rule that ray origins avoid the stock's faces.
+//! of the rule that ray origins avoid the stock's faces.
 //!
 //! # Each edge uses its own bundle, and nothing else
 //!
@@ -141,7 +141,7 @@ pub struct ContourStats {
     ///
     /// The direct measurement of how far the three fields differ. Not an error:
     /// it is the `O(h)` disagreement that has been pinned per-bundle in the
-    /// corpus since Unit 6, arriving where it finally has to be resolved.
+    /// corpus for a long time, arriving where it finally has to be resolved.
     pub corner_disagreements: u64,
     /// Corners where only one or two bundles could answer.
     ///

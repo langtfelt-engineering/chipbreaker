@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! The `chipbreaker path` subcommands.
 //!
@@ -7,7 +7,7 @@
 //! is canonically hashed, and an `environment` section carrying timings that is
 //! not.
 //!
-//! `path bounds` exists as a verb of its own because U5 sizes its dexel field
+//! `path bounds` exists as a verb of its own because a dexel field is sized
 //! from the toolpath's extents, and wants that number before it has written any
 //! of itself.
 
@@ -123,7 +123,7 @@ pub enum PathCommand {
         #[arg(long)]
         cycles_only: bool,
     },
-    /// Report the workspace extents, which is what U5 sizes stock from.
+    /// Report the workspace extents, which is what stock is sized from.
     Bounds {
         #[command(flatten)]
         input: Input,
@@ -398,7 +398,8 @@ pub fn run(command: &PathCommand) -> Result<(Value, String, bool), String> {
             let (path, _, _) = run_parse(input, false)?;
             let tip = path.tip_bounds();
             let tools = load_tools(input)?;
-            // The tip bounds are not the swept bounds: the tool has a body. U5
+            // The tip bounds are not the swept bounds: the tool has a body. A
+            // field
             // must expand by the largest radius in play or it will size a dexel
             // field that the tool reaches outside of.
             let radius = tools.as_ref().map_or(0.0, |library| {

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Arc resolution: the richest source of bugs in this unit.
 //!
@@ -91,7 +91,7 @@ fn a_quarter_arc_in_g17_sweeps_the_right_way() {
 /// is that with margin.
 ///
 /// The first version of this constant was 8, taken from a single quarter-circle
-/// observation of 0.5 ULP. That is the same error made twice in Unit 3 --
+/// observation of 0.5 ULP. That is the same error made twice in the tool library --
 /// picking a threshold from one sample instead of from a distribution -- and it
 /// is why the example exists rather than a comment claiming a number.
 const FORM_AGREEMENT_ULPS: f64 = 32.0;
@@ -313,7 +313,7 @@ fn a_radius_too_small_to_reach_is_refused() {
 #[test]
 fn a_radius_mismatch_inside_tolerance_recentres_and_records_the_residual() {
     // CAM rounds coordinates, so this is the ordinary case rather than an error.
-    // U13 needs the residual to tell a deviation caused by geometry from one
+    // A report needs the residual to tell a deviation caused by geometry from one
     // caused by rounding.
     let mut r = request(
         Vec3::new(10.0, 0.0, 0.0),

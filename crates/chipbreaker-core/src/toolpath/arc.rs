@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Arc geometry in the IR, resolved to one unambiguous form.
 //!
@@ -16,7 +16,7 @@
 //!
 //! A sweep of `-PI/2` says everything a `Clockwise` flag plus a magnitude would,
 //! and it composes: helices carry turns in the same number, and reversing an arc
-//! is a negation rather than a match. U7 will integrate along it.
+//! is a negation rather than a match. The sweep integrates along it.
 
 use crate::golden::{CanonicalHash, Hashable};
 use crate::math::Vec3;
@@ -159,7 +159,7 @@ pub struct ArcData {
     /// end, in millimetres, before recentring.
     ///
     /// CAM rounds coordinates, so this is rarely zero and is not an error below
-    /// the tolerance. It is recorded because U13 attributing a surface deviation
+    /// the tolerance. It is recorded because attributing a surface deviation
     /// needs to know whether the arc it came from was exact.
     pub radius_residual: f64,
 }

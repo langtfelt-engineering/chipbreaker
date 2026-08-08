@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Case A′ against a dense reference.
 //!
 //! The reference sub-steps the arc: the tool at many positions along the sweep,
 //! unioned. It is a **subset** of the true swept volume and converges upward, so
 //! the analytic answer must contain it and the gap must close as the step count
-//! grows. Same discipline as Unit 7's linear cases, and it is what will catch a
+//! grows. Same discipline as the linear cases, and it is what will catch a
 //! wedge that clips too much or a seam that leaves a sliver.
 
 use chipbreaker_core::math::{Ray, Vec3};
@@ -195,7 +195,7 @@ fn the_reference_converges_upward_to_the_analytic_answer() {
 
 #[test]
 fn a_full_circle_is_not_deleted_by_its_zero_chord() {
-    // Unit 4 found that a full circle has start equal to end, so its chord is
+    // A full circle has start equal to end, so its chord is
     // zero. A handler that dispatches on the chord treats it as no motion and
     // removes nothing at all.
     let profile = flat(6.0);

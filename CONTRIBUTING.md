@@ -1,20 +1,28 @@
 # Contributing to Chipbreaker
 
-## Before you open a pull request
+## Code contributions are not open at present
 
-**External pull requests cannot be merged until a Contributor Licence Agreement
-is in place.** Chipbreaker is dual-licensed — GPL-3.0-or-later plus a commercial
-licence — and the commercial licence requires clean copyright title to the whole
-work. Without a signed CLA we cannot relicense your contribution, and a single
-un-CLA'd commit taints the commercial offering permanently.
+**Chipbreaker is not accepting code contributions from outside Langtfelt.**
 
-We are sorry about the friction. It is unavoidable and it is much cheaper to
-handle before you write the patch than after.
+The reason is licensing rather than a judgement about anyone's patch.
+Chipbreaker is dual-licensed — GPL-3.0-or-later plus a commercial licence — and
+the commercial licence requires clean copyright title to the whole work. Holding
+that title means every contribution must arrive under a signed Contributor
+Licence Agreement, and a single commit without one taints the commercial
+offering permanently. The CLA process is not in place yet, so the honest answer
+is to say no rather than to accept patches we could not use.
 
-> `TODO(legal)`: publish the CLA text and the signing process, and name the legal
-> entity that holds copyright. Until then, every `.rs` file carries
-> `Copyright (C) 2026 Chipbreaker Contributors` as a placeholder. Issues,
-> discussion and bug reports are welcome now; code contributions are on hold.
+**Issues, bug reports, questions and discussion are very welcome.** A reproducer
+for a wrong answer is worth more to this project than a patch, and there is no
+paperwork attached to filing one.
+
+If you want to use Chipbreaker in a proprietary product, or to discuss
+contributing under a CLA once one exists, write to
+[licensing@langtfelt.com](mailto:licensing@langtfelt.com).
+
+The rest of this document is the standard the code is held to. It is public
+because it explains *why* the code looks the way it does, and because anyone
+evaluating the engine should be able to check that the rules are real.
 
 ---
 
@@ -84,12 +92,16 @@ accumulates `x`, then `y`, then `z`; `Mat3::determinant` expands along row 0.
 Floating-point addition is not associative, so "the obvious order" must be *the
 written-down order*.
 
-### 4. No parallelism (yet)
+### 4. Parallelism only behind a deterministic partition
 
-No `rayon`, no threads, no `std::thread::spawn`. Parallelism arrives in U11 behind
-a deterministic partitioning scheme where each partition's result is combined in
-a fixed order regardless of completion order. Adding it before then destroys the
-invariant and hides the damage until much later.
+No bare `rayon`, no ad-hoc `std::thread::spawn`. Where cutting runs on many
+threads it does so behind a partitioning scheme in which each partition's result
+is combined in a **fixed order regardless of completion order**. Work assignment
+may be dynamic; value combination may not.
+
+Adding parallelism any other way destroys the invariant and hides the damage
+until much later, when the only symptom is that two runs of the same job
+disagree in the last few bits.
 
 ### 5. Exact predicates, never raw float sign tests
 
@@ -112,7 +124,8 @@ for humans and never feeds a hash.
 
 `usize` is widened to `u64` before hashing. WASM is a 32-bit target; without the
 widening, any hash containing a length or an index differs between the native and
-WASM builds, and nobody notices until U19.
+WASM builds, and the cross-target parity job is the only thing that would ever
+tell you.
 
 `NaN` collapses to one canonical payload and `-0.0` to `+0.0`, because two runs
 that are numerically identical must hash identically.
@@ -136,9 +149,9 @@ correctly rounded by no standard, and the native platform libm and the Rust
 `libm` used for WASM differ by an ULP on some inputs. The `math` module
 deliberately exposes no trigonometric constructors for this reason.
 
-This becomes a real problem at U16, where 5-axis kinematics needs rotations. The
-fix is a vendored, bit-reproducible implementation — decided and landed *before*
-the first rotation matrix is built, not after.
+This becomes a real problem the moment 5-axis kinematics needs rotations. The
+fix is a vendored, bit-reproducible implementation — to be decided and landed
+*before* the first rotation matrix is built, not after.
 
 ---
 
@@ -190,7 +203,7 @@ which is precisely when a comment in the code is not enough.
 
 | ADR | Decision |
 |---|---|
-| [0001](docs/adr/0001-spans-arena.md) | Dexel span storage, and the ray lattice offset that U5 must not "simplify" away |
+| [0001](docs/adr/0001-spans-arena.md) | Dexel span storage, and the ray lattice offset that must not be "simplified" away |
 | [0002](docs/adr/0002-branch-protection.md) | Branch protection on `main`: deferred, why, and what guards the branch meanwhile |
 | [0003](docs/adr/0003-toolpath-ir-coordinate-frame.md) | The toolpath IR stores machine coordinates, so contiguity is unconditional |
 
@@ -204,7 +217,7 @@ value requiring all 17 significant digits.**
 
 This is not a style preference. `serde_json`'s default float parser reads
 `2.0481555856608242` as `2.048155585660824` — one ULP low — and the tool library
-fixture failed to notice for an entire unit because every tool in it was a flat,
+fixture failed to notice for months because every tool in it was a flat,
 a ball or a bull nose, whose coordinates are `3.0` and `20.0` and survive any
 parser ever written. There was no bit to lose, so no test could lose it.
 
@@ -230,7 +243,7 @@ that `serde_json` itself has not regressed.
   locally on the first try.
 - Long-running fuzz tests are `#[ignore]`d and run nightly, not on every commit.
 - New geometry code comes with cases in `tests/corpus/`, which is versioned and
-  grows every unit.
+  grows with the engine.
 
 ### A test that asserts an invariant must carry evidence it can fail
 
@@ -239,7 +252,7 @@ request description — in the repository, as something that runs.
 
 A passing test that cannot fail is worse than a missing one, because a missing
 test looks like a gap and a vacuous one looks like coverage. Two got through in a
-single unit:
+single release:
 
 - Counting placeholder normals to prove normals were set. `PLACEHOLDER` **is**
   `+Z` — the four-byte encoding has no reserved pattern, deliberately — so every
@@ -248,7 +261,7 @@ single unit:
   the *outer stock* faces carried correct normals from construction, and only the
   cut faces were wrong.
 
-Both passed for five units while every cut face in the engine carried
+Both passed for a long time while every cut face in the engine carried
 `(0, 0, -1)`.
 
 Any of these counts as evidence, in rough order of preference:

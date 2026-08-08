@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! The outward normal of a tool's surface, analytically.
 //!
-//! # The second half of a sentence written at Unit 9
+//! # The second half of a sentence written when normals were added
 //!
-//! Unit 9 said the surface normal is free at both sites where a span endpoint is
+//! It was written that the surface normal is free at both sites where a span endpoint is
 //! born: the triangle normal during construction, and **the analytic tool
 //! surface normal during a cut**. Only the first was implemented. Every cut face
 //! in the engine carried the placeholder, which decodes to `+Z`, negated by the
@@ -17,9 +17,9 @@
 //!
 //! - Dual contouring averages several crossings per vertex, so one bad plane is
 //!   absorbed rather than seen.
-//! - Unit 9's sharp-feature measurements used **uncut** boxes, where every
+//! - The sharp-feature measurements used **uncut** boxes, where every
 //!   normal comes from construction and is correct.
-//! - Unit 12's deviation field is the first consumer to use a single normal
+//! - The deviation field is the first consumer to use a single normal
 //!   alone, with nothing to average against.
 //!
 //! # One rotation, not four cases

@@ -2,11 +2,11 @@
 
 Every entry is an NC file plus a committed golden IR, or an NC file plus the
 specific error it must be rejected with. Each carries a `_why` explaining what it
-is for, in the manner of the Unit 2 mesh corpus.
+is for, in the manner of the mesh corpus.
 
 ## The arc form amendment — do not "fix" this
 
-Unit 4's definition of done originally required that the `I`/`J`/`K` and `R`
+The definition of done originally required that the `I`/`J`/`K` and `R`
 forms of one arc **produce identical IR**. That is not achievable and the
 requirement was amended.
 

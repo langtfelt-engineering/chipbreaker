@@ -4,7 +4,7 @@
   "cases": [
     {
       "id": "box-non-dividing-spacing",
-      "note": "1.6 mm divides none of 30, 20, 10: the case that used to abort before the lattice was centred at U6",
+      "note": "1.6 mm divides none of 30, 20, 10: the case that used to abort before the lattice was centred",
       "axes": "xyz",
       "spacing_mm": 1.6,
       "rays": 471,

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! 3MF — the 3D Manufacturing Format.
 //!
@@ -22,7 +22,7 @@
 //!
 //! # Scope
 //!
-//! Read only. Write support is deferred to U20, where the packaging work
+//! Read only. Write support is deferred until the packaging work
 //! happens; nothing before then needs to emit 3MF.
 //!
 //! # Component transforms are rejected, not ignored
@@ -38,7 +38,7 @@
 //! a fixture that does not exist. A count in a report is not a defence, because
 //! nobody reads counts.
 //!
-//! U15 loads fixtures — vises, clamps, tombstones — which are precisely the
+//! Multi-setup work loads fixtures — vises, clamps, tombstones — which are precisely the
 //! things exported as multi-component assemblies. This must fail loudly before
 //! then rather than quietly after.
 //!
@@ -544,7 +544,7 @@ mod tests {
         // The failure this prevents is the nastiest kind: ignoring the transform
         // stacks every component at the origin, and the result is still closed,
         // still manifold, and passes every validation check. It looks like a
-        // part. U15 loads fixtures, which are exactly the things exported as
+        // part. Fixtures are exactly the things exported as
         // assemblies, so this has to fail loudly well before then.
         let cube = shapes::cube(10.0);
         let inner = model_of(&cube, "millimeter");

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Case B: pure plunges, `dxy = 0`.
 //!
-//! Drilling, and every canned cycle Unit 4 expanded.
+//! Drilling, and every canned cycle the parser expands.
 //!
 //! # The swept volume is itself a solid of revolution
 //!

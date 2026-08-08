@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 #![allow(
     missing_docs,
@@ -303,7 +303,7 @@ fn helix_move() -> Motion {
 ///
 /// The three bundles do genuinely different work for the same arc, and averaging
 /// them would describe nothing. Along the arc's axis the bearing is constant, so
-/// the middle piece is a vertical cast at radius `|d - R|` -- Unit 3's
+/// the middle piece is a vertical cast at radius `|d - R|` -- the raycaster's
 /// raycaster, unchanged. Across it the height is constant, so the condition is
 /// an annulus, and a line meets one in the difference of two disc chords with no
 /// cast at all. A helix takes neither and sub-steps.
@@ -491,7 +491,7 @@ fn batching(c: &mut Criterion) {
 
 /// The quartic, on the tool that actually reaches the torus branch.
 ///
-/// Unit 8's plan predicted arcs would drive this up, because the middle piece
+/// Arcs were predicted to drive this up, because the middle piece
 /// was expected to need an offset profile. It does not: the bundles split the
 /// problem and no profile is constructed. So a corner-radius mill costs the same
 /// going round a corner as down a slot, and this times both to show it.

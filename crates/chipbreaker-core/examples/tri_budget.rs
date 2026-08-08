@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Memory for three bundles, and whether tri-dexel volume inherits the
 //! single-axis non-monotonicity.
@@ -38,7 +38,7 @@ fn memory() {
     println!();
     println!("NOT 3x a single bundle, except for a cube. The three bundles cover");
     println!("(WD + DH + HW) / h^2 rays between them -- HALF THE BOUNDING-BOX SURFACE");
-    println!("AREA over h^2, not three times one face. The U5 report's `x3 for U6`");
+    println!("AREA over h^2, not three times one face. The single-bundle report's `x3`");
     println!("column was the simplification, and it is wrong for anything but a cube.");
     println!();
 
@@ -146,13 +146,13 @@ fn memory() {
 
 /// Does averaging three bundles cancel the single-axis oscillation?
 ///
-/// The Unit 6 plan asked out of curiosity. The answer matters either way: if
+/// Asked out of curiosity. The answer matters either way: if
 /// three independent oscillating terms cancel, that is worth recording; if they
 /// do not, it strengthens ADR 0005.
 fn volume_monotonicity() {
     println!("=== VOLUME MONOTONICITY: does averaging three bundles cancel? ===");
     println!();
-    println!("Unit 5's upright cylinder is the case: its volume is exactly a count of");
+    println!("The upright cylinder is the case: its volume is exactly a count of");
     println!("lattice points inside a disc, so the error is the Gauss circle problem");
     println!("and it oscillates. Going from h/R = 1/80 to 1/160 quadrupled the rays");
     println!("and MORE THAN DOUBLED the error on a single bundle.");

@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Three orthogonal bundles, and the guarantee that makes them worth having.
 //!
 //! # This is not "three bundles so the volume is more accurate"
 //!
 //! It is **three bundles so that every surface, whatever its orientation, is
-//! well sampled by at least one of them**. Unit 5 established that volume is the
+//! well sampled by at least one of them**. A single bundle established that volume is the
 //! wrong thing to judge this on, twice over: it is non-monotone, because the
 //! Gauss circle term oscillates and boundary errors cancel with signs inside a
 //! global integral; and it floors out against tessellation below about
@@ -41,7 +41,7 @@
 //!
 //! "Deviation" can mean two things here and they differ by up to `3/sqrt(2)`.
 //! Both are derived below; both are exported; the harness asserts on the first
-//! and U9 will need the second.
+//! and extraction needs the second.
 //!
 //! Throughout, `t` is the transverse distance from a surface point to the
 //! nearest ray of a bundle. The transverse cells tile the plane, so
@@ -101,20 +101,21 @@
 //! The ratio of the two bounds is `3/sqrt(2) ~= 2.12`. Pointwise it is
 //! `1/(sin(theta) cos(theta))`, which is **unbounded**: a face exactly normal to
 //! a bundle has zero perpendicular error and a sample distance of up to
-//! `h/sqrt(2)`. Unit 12 reports gouge depth, a perpendicular quantity; quoting
+//! `h/sqrt(2)`. Gouge depth is a perpendicular quantity; quoting
 //! the sample-distance figure there would overstate it without limit on exactly
 //! the surfaces that are best sampled.
 //!
-//! ## Neither bounds Unit 9
+//! ## Neither bounds the extractor
 //!
 //! [`PERPENDICULAR_CONSTANT`] is the bound for *nearest-neighbour*
 //! reconstruction. A rule that interpolates between adjacent ray endpoints
-//! should do better on smooth surfaces and worse across a sharp edge. Unit 9
+//! should do better on smooth surfaces and worse across a sharp edge. The
+//! extractor
 //! must measure its own output; neither constant here is a substitute.
 //!
 //! # Cutting does not accumulate error across operations
 //!
-//! Stated here because Unit 7 depends on it and it is not obvious.
+//! Stated here because cutting depends on it and it is not obvious.
 //!
 //! A cut is **exact along each ray**: subtracting the swept tool from a ray's
 //! spans is interval arithmetic on exact intersection parameters, not a
@@ -126,24 +127,24 @@
 //! Two consequences:
 //!
 //! - The three bundles stay **independently correct** rather than drifting
-//!   apart. Unit 7 should subtract per bundle and never compare them;
-//!   reconciling them is Unit 9's job, and doing it earlier would mean
+//!   apart. Cutting subtracts per bundle and never compares them;
+//!   reconciling them is the extractor's job, and doing it earlier would mean
 //!   reconstructing a surface two units ahead of schedule.
-//! - Unit 15's "a thousand chained cuts equal one monolithic cut" test is
+//! - The "a thousand chained cuts equal one monolithic cut" test is
 //!   achievable rather than aspirational, because there is no accumulation term
 //!   for it to fight.
 //!
 //! # Registration
 //!
 //! The three lattices are **not** co-registered, and deliberately so.
-//! Registration buys nothing here and would constrain Unit 10's adaptive
+//! Registration buys nothing here and would constrain any adaptive
 //! subdivision. Each bundle records its own origin, spacing and counts in the
-//! format, so Unit 9 can reason about their relationship rather than assume one.
+//! format, so the extractor can reason about their relationship rather than assume one.
 //!
 //! # The half-cell offset is per bundle
 //!
 //! Each bundle applies it in **its own** transverse plane. The invariant is not
-//! global, and Unit 5's corner-versus-centre table (247 and 857 coplanar
+//! global, and the corner-versus-centre table (247 and 857 coplanar
 //! rejections against zero) is why it cannot be relaxed on any of the three.
 
 use crate::budget::Spacing;
@@ -185,8 +186,8 @@ pub const AXIS_ALIGNED_SAMPLE_CONSTANT: f64 = core::f64::consts::FRAC_1_SQRT_2;
 ///
 /// For a nearest-neighbour reconstruction -- a flat top per cell. Not a
 /// property of the field, which samples the surface exactly; a property of the
-/// rule that fills the gaps. This is the shape of the number Unit 12's gouge
-/// depth needs, though Unit 9 must re-derive it for its own reconstruction.
+/// rule that fills the gaps. This is the shape of the number a gouge
+/// depth needs, though extraction re-derives it for its own reconstruction.
 ///
 /// Numerically equal to [`WORST_CASE_COSINE`]. Arithmetic, not a duplicated
 /// line: both reduce to `1/sqrt(3)`.
@@ -206,7 +207,7 @@ pub struct Provenance {
     pub requested_spacing_mm: f64,
     /// What the source mesh's own fidelity looks like.
     ///
-    /// Recorded per §1c so that a field built from a coarse mesh carries the
+    /// Recorded so that a field built from a coarse mesh carries the
     /// evidence with it. A number that only ever appeared in a warning on
     /// somebody's terminal is a number nobody has by the time it matters.
     pub tessellation: TessellationEstimate,
@@ -439,27 +440,27 @@ impl TriDexelField {
     ///
     /// # Why this is an invariant and not a coincidence
     ///
-    /// Unit 6 recorded that the three bundles need not be co-registered. That
-    /// was wrong, and Unit 9 is where it comes due: dual contouring needs a
+    /// It was once recorded that the three bundles need not be co-registered.
+    /// That was wrong, and extraction is where it came due: dual contouring needs a
     /// single grid whose **corners** are ray positions, because the three
     /// bundles *are* the three edge directions of that grid. An X-directed edge
     /// from `(x_i, y_j, z_k)` to `(x_{i+1}, y_j, z_k)` has to be a sub-segment
     /// of the X-bundle ray at transverse `(y_j, z_k)`, which requires all three
     /// bundles to draw their transverse coordinates from one common set.
     ///
-    /// The Unit 6 centring already delivers this, and to the bit: `pad` depends
+    /// The centring already delivers this, and to the bit: `pad` depends
     /// only on the axis extent and the spacing, both shared, so the Y ordinates
     /// of the X-bundle's rays and of the Z-bundle's rays are computed from
     /// identical inputs by identical arithmetic. Measured at 0 ULP across five
     /// stock sizes including deliberately awkward spacings.
     ///
     /// It is checked anyway, because it is now load-bearing and was previously
-    /// free to change. Unit 10's adaptive subdivision is the thing most likely
+    /// free to change. Adaptive subdivision is the thing most likely
     /// to break it.
     ///
     /// **Note on the half-cell offset.** This puts the DC cell grid half a cell
     /// away from the dexel cell grid: dexel cell centres are the DC grid's
-    /// corners. That is a relabelling, not a violation of Unit 5's rule that
+    /// corners. That is a relabelling, not a violation of the rule that
     /// ray origins avoid the integer lattice — the rays are exactly where they
     /// always were, and only the name of the grid they define has changed.
     ///
@@ -547,7 +548,7 @@ impl TriDexelField {
 
     /// One bundle mutably, if it was built.
     ///
-    /// The only way Unit 7 reaches a field's contents, and deliberately one
+    /// The only way cutting reaches a field's contents, and deliberately one
     /// bundle at a time: the cut contract is that a bundle is subtracted from
     /// independently and never compared with another.
     pub const fn bundle_mut(&mut self, axis: Axis) -> Option<&mut DexelField> {
@@ -634,7 +635,7 @@ impl TriDexelField {
 
     /// Bytes of span storage across every bundle.
     ///
-    /// The number Unit 10 has to beat. Note it scales with **half the
+    /// The number any adaptive scheme has to beat. Note it scales with **half the
     /// bounding-box surface area**, not with three times one face: the bundles
     /// cover `(WD + DH + HW) / h^2` rays between them. For a cube that is 3x a
     /// single bundle; for a 100x100x10 plate it is 1.2x, and for a 100x100x200

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! What fraction of real toolpath segments are arcs?
 //!
@@ -8,8 +8,8 @@
 //! side-tabling the arc data would recover that on linear-dominated programs and
 //! cost an indirection on arcs.
 //!
-//! U5 holds the IR alongside the dexel field, so the question is worth an actual
-//! number rather than an assumption. Measured now, to be decided at U10.
+//! The IR is held alongside the dexel field, so the question is worth an actual
+//! number rather than an assumption.
 //!
 //! Run with: `cargo run --release -p chipbreaker-gcode --example arc_fraction`
 

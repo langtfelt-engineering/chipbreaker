@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Ray against tool solid, returning the intervals of the ray that lie inside.
 //!
-//! # Why this is in Unit 3 rather than Unit 7
+//! # Why the stationary case lives here, apart from the sweep
 //!
-//! U5 builds the dexel field by casting three orthogonal bundles of rays at the
-//! stock and subtracting what the tool occupies. U7 does the same against a
+//! A dexel field is built by casting three orthogonal bundles of rays at the
+//! stock and subtracting what the tool occupies. Cutting does the same against a
 //! *moving* tool, which is the same problem with the polynomial degree raised.
 //! Getting the stationary case right — including the tangencies, the joints
 //! between elements, and the torus — is the part that can be done now, and doing
-//! it now means U7 inherits a tested intersection routine rather than writing
-//! one under deadline.
+//! it separately means the sweep inherits a tested intersection routine rather
+//! than growing one of its own.
 //!
 //! # The surfaces, and the degree each one costs
 //!
@@ -29,7 +29,7 @@
 //! alternate, which is true of exact arithmetic and not of `f64`: a ray that
 //! grazes a corner produces two crossings that may round to one, and a single
 //! lost crossing turns every interval after it inside out. That failure is
-//! silent, and in U5 it becomes a semi-infinite column of stock removed from the
+//! silent, and in a field it becomes a semi-infinite column of stock removed from the
 //! middle of a part.
 //!
 //! So the crossings are used only as *candidate boundaries*. Each interval
@@ -37,7 +37,7 @@
 //! [`Profile::contains_rz`], which is an independent computation. A missed
 //! crossing then merges two spans — visibly wrong, and bounded — instead of
 //! inverting everything downstream of it. It also means the answer cannot
-//! disagree with the containment predicate, which is the property U5 will lean
+//! disagree with the containment predicate, which is the property a field leans
 //! on when it reconciles three ray bundles that all describe the same solid.
 
 use crate::eps::{EPS_LENGTH, EPS_SPAN_MIN, eps_tangent};
@@ -77,7 +77,7 @@ pub struct RaycastStats {
     pub tangencies: u64,
     /// Times the torus branch was taken, needing a quartic solve.
     ///
-    /// Counted because Unit 8's plan predicted arcs would drive this rate up:
+    /// Counted because arcs were predicted to drive this rate up:
     /// the middle piece of a swept arc was expected to need an *offset* profile,
     /// the tool's chain translated by the arc radius, which would put arcs into
     /// even a flat end mill's silhouette. It does not, because the three bundles

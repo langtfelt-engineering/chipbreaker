@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! The `chipbreaker mesh` subcommands.
 //!
-//! Every command follows the Unit 1 report convention: a `results` section that
+//! Every command follows the same report convention: a `results` section that
 //! is deterministic and canonically hashed, and an `environment` section that
 //! carries timings and host details and is excluded from that hash.
 
@@ -119,7 +119,7 @@ pub enum MeshCommand {
     },
     /// Cast a dense lattice of rays and check for material leaks.
     ///
-    /// This is the Unit 5 contract, runnable from the command line: every ray
+    /// This is the field-building contract, runnable from the command line: every ray
     /// through a closed surface must cross it an even number of times, with a
     /// running depth that never goes negative.
     Parity {

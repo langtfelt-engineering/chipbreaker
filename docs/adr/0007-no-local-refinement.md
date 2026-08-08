@@ -2,14 +2,13 @@
 
 - **Status:** accepted
 - **Date:** 2026-08-07
-- **Unit:** 9 (dual contouring), ruling scope for Unit 10
-- **Binds:** U10 (adaptive resolution), U16–U18 (5-axis), U19 (WASM demo memory budget)
+- **Governs:** field resolution, and any future proposal to refine one locally
 - **Related:** [ADR 0005](0005-deviation-not-volume.md), [ADR 0006](0006-arc-closed-form-scope-and-batch-invisibility.md)
 
 ## The rule
 
 **Refinement of a tri-dexel field is rectilinear and global per axis. There is no
-local, octree-style refinement, and Unit 10 will not attempt one.**
+local, octree-style refinement, and none is attempted.**
 
 Anisotropic per-axis spacing and inserted full coordinate planes are in scope.
 Partial rays — rays that exist over a sub-interval of their axis — are
@@ -42,7 +41,7 @@ local.
 ## What made it visible, and what did not cause it
 
 [ADR 0006](0006-arc-closed-form-scope-and-batch-invisibility.md) was followed at
-Unit 9 by a registration invariant: the three bundles must share one corner
+extraction by a registration invariant: the three bundles must share one corner
 lattice, because they are the three edge directions of the dual contouring grid.
 
 It would be easy to read the registration invariant as the obstacle and to
@@ -63,7 +62,7 @@ Independent `h_x`, `h_y`, `h_z`, chosen from the part's geometry rather than one
 number for all three. Registration is preserved trivially: each axis still has
 one shared ordinate set, it is simply a different one per axis.
 
-This attacks a measured problem. Unit 6's per-cubic-centimetre cost varies about
+This attacks a measured problem. The per-cubic-centimetre cost varies about
 5× between a plate and a bar, and a plate at 1593 KiB/cm³ is paying for
 resolution in a direction where it has almost no extent. Refining one axis by 2×
 costs about 1.67× memory where refining all three costs 4×.
@@ -93,15 +92,15 @@ genuinely local. This is a substantial redesign, not a feature:
   contouring, made harder here because the three bundles would have to agree
   about where the boundary is.
 - Extraction's cell grid would become an octree whose corners are no longer a
-  simple product of three ordinate sets, which is the assumption Unit 9's sweep
+  simple product of three ordinate sets, which is the assumption the extractor's sweep
   rests on.
 
-This is research rather than engineering, and Unit 10 is not on the critical path
+This is research rather than engineering, and resolution control is not on the critical path
 to a sellable product. Deferring it is a scope decision made with the cost known.
 
 ## Consequences
 
-- Unit 10's exit criterion becomes: **measure against Unit 6's per-cm³ baseline
+- The exit criterion becomes: **measure against the per-cm³ baseline
   and publish what was achieved.** It does not promise an accuracy-versus-memory
   table from an octree, because there will not be one.
 - Any future proposal for local refinement must address the globality of a ray
@@ -110,9 +109,9 @@ to a sellable product. Deferring it is a scope decision made with the cost known
 - The memory ceiling should be built regardless of what refinement lands, since
   it is the only mechanism that turns "too big" into a diagnosable refusal.
 
-## Amendment, Unit 10: graded planes declined, with the measurement
+## Amendment: graded planes declined, with the measurement
 
-Unit 10 was told to build rectilinear graded planes **only if** anisotropic
+Rectilinear graded planes were to be built **only if** anisotropic
 spacing left enough on the table to justify the complexity. It does not.
 
 Holding the sample-distance bound fixed — the ruling that `--auto-res` may buy
@@ -126,7 +125,7 @@ is:
 | plate 200×200×6 | 862.6 | 673.8 | **1.28×** |
 | bar 300×20×20 | 504.6 | 481.9 | 1.05× |
 
-Unit 6 observed per-cm³ varying about 5× across shapes like these; measured here
+Per-cm³ was observed varying about 5× across shapes like these; measured here
 at 2.36× isotropic. **That spread is the part's geometry, not waste.** Only the
 portion of it that survives holding the bound fixed is recoverable, and that is
 the 1.28×.

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! **Identical output at every thread count, on every schedule.**
 //!
@@ -18,7 +18,7 @@
 //!
 //! # The sequential path is the reference, always
 //!
-//! `batch::cut_all` is the Unit 7 to 9 code and remains the definition of the
+//! `batch::cut_all` is the sequential code and remains the definition of the
 //! right answer. Any divergence is a bug in the parallel version and never a new
 //! baseline.
 
@@ -131,7 +131,7 @@ fn with_arcs() -> Vec<Motion> {
     ]
 }
 
-/// The sequential reference: the Unit 7 to 9 code, unchanged.
+/// The sequential reference, unchanged.
 fn reference(profile: &Profile, motions: &[Motion]) -> (String, CutStats) {
     let mut field = stock();
     let mut scratch = CutScratch::new(profile);
@@ -291,7 +291,7 @@ fn adversarial_schedules_match_the_sequential_reference() {
 fn batch_size_is_invisible_to_the_parallel_path() {
     // The parallel path raises the batch size for scheduling reasons, which is
     // only safe because batch size cannot reach the answer. Checked directly
-    // rather than inherited from Unit 8, since the reduction here is a different
+    // rather than inherited from motion batching, since the reduction here is a different
     // piece of code doing the same job.
     let (profile, motions) = (mill(), balanced());
     let want = reference(&profile, &motions);
@@ -370,7 +370,7 @@ fn an_empty_motion_list_is_a_no_op() {
 
 #[test]
 fn the_deviation_harness_is_bit_identical_across_thread_counts() {
-    // Unit 12 makes the deviation harness a product surface, so it comes under
+    // The deviation harness is a product surface, so it comes under
     // the same rule as cutting. The maxima would reassociate freely; the RMS is
     // a sum of squares and would not, which is easy to miss because it presents
     // as "just an average" rather than as an accumulator.

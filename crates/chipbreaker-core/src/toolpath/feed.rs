@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Feed rate, and the mode that says what the number means.
 
@@ -24,8 +24,8 @@ pub enum FeedMode {
     /// the block should take, so the same `F` means different speeds on
     /// different-length moves and the value is meaningless without its segment.
     ///
-    /// Parsed in Unit 4 rather than at U16 because it is the norm in 5-axis
-    /// output, and discovering at U16 that every segment's timing needs
+    /// Parsed now rather than when 5-axis arrives, because it is the norm in
+    /// 5-axis output and discovering later that every segment's timing needs
     /// rethinking would be worse than carrying the mode now.
     InverseTime,
 }

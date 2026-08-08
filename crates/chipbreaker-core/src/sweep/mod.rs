@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Material removal: subtracting a swept tool from a dexel field.
 //!
@@ -7,21 +7,21 @@
 //!
 //! For each motion segment, for each bundle, for each ray: compute the intervals
 //! of the ray that lie inside the **swept tool volume**, and subtract them from
-//! the ray's material. `Spans::subtract` has been property-tested since Unit 1,
+//! the ray's material. `Spans::subtract` has been property-tested from the start,
 //! so the entire difficulty of this unit is computing the swept intervals.
 //!
 //! # Two contracts
 //!
 //! **Subtract per bundle, never compare.** A swept volume meets each bundle's
 //! rays independently. The three fields will disagree about where a cut surface
-//! lies by `O(h)`, with different signs, and reconciling them is Unit 9's job.
+//! lies by `O(h)`, with different signs, and reconciling them is the extractor's job.
 //! Nothing here reads one bundle to inform another.
 //!
 //! **Cutting does not accumulate error.** A cut is exact along each ray:
 //! interval arithmetic on exact intersection parameters, not a resampling. After
 //! a thousand cuts, bundle X still holds exactly the true remaining solid
 //! sampled on X's lattice, and the only error is the fixed transverse sampling
-//! set by `h`. This is what makes Unit 15's chained-equals-monolithic test
+//! set by `h`. This is what makes the chained-equals-monolithic test
 //! achievable, and [`reference`] is where it is demonstrated rather than
 //! asserted.
 //!
@@ -119,7 +119,7 @@ impl LinearMove {
 
 /// One motion of the tool, of whichever kind.
 ///
-/// Unit 7 cut linear moves only and `run` skipped arcs with a non-zero exit
+/// Cutting handled linear moves only at first, and `run` skipped arcs with a non-zero exit
 /// code. This is what makes a whole program simulable: every segment the parser
 /// produces maps to one of these.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -203,7 +203,7 @@ pub enum SweepCase {
     Stationary,
     /// `dz = 0`. Contouring, pocketing, facing, every constant-depth pass.
     Horizontal,
-    /// `dxy = 0`. Drilling and every canned cycle Unit 4 expanded.
+    /// `dxy = 0`. Drilling and every canned cycle the parser expands.
     Plunge,
     /// Both non-zero. Helical entries, ramped leads, sloped contouring.
     Ramp,

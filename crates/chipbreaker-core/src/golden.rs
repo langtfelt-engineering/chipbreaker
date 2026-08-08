@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! The bit-exact determinism harness: canonical hashing and golden files.
 //!
@@ -21,7 +21,7 @@
 //!   [`f64::to_le_bytes`].
 //! - **`usize` is widened to `u64`** before hashing. WASM is a 32-bit target;
 //!   without this, a hash containing any length or index would differ between
-//!   the native and WASM builds, and that would not be discovered until U19.
+//!   the native and WASM builds, and only the parity job would ever notice.
 //! - **Every value is preceded by a one-byte type tag**, so that `u64(1)` and
 //!   `f64::from_bits(1)` cannot collide, and so that a future encoding change is
 //!   loud rather than subtle.

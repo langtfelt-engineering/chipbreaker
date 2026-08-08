@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! The scaling curve, on a balanced job and a badly balanced one.
 //!
@@ -187,7 +187,7 @@ fn main() {
     scaling("balanced raster", &profile, &balanced());
     scaling("clustered pocket", &profile, &clustered());
 
-    // Batch size. It is invisible to the answer (Unit 8), but it decides how
+    // Batch size. It is invisible to the answer (ADR 0006), but it decides how
     // many times the thread scope is entered -- once per bundle per batch -- so
     // a job cut into many small batches pays the spawn cost many times.
     println!(

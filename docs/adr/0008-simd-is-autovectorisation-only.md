@@ -2,8 +2,7 @@
 
 - **Status:** accepted
 - **Date:** 2026-08-07
-- **Unit:** 11 (deterministic parallelism)
-- **Binds:** U12–U20, and any future performance work on the hot loops
+- **Governs:** any future performance work on the hot loops
 - **Related:** [ADR 0006](0006-arc-closed-form-scope-and-batch-invisibility.md)
 
 ## The rule
@@ -84,6 +83,6 @@ floating-point addition.
   instruction set, only on every target obeying IEEE-754 — which they do.
 - If a hot loop is genuinely bounded by arithmetic throughput and
   autovectorisation will not take, the answer is a better algorithm or more
-  threads, not intrinsics. Units 7 through 10 have repeatedly found the former
+  threads, not intrinsics. Every profile so far has found the former
   available: the box rejection, batching, the slab sweep and the counting-sort
   reduction were each worth more than any constant factor a vector unit offers.

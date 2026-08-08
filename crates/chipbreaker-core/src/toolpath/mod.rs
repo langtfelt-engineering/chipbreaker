@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! The canonical toolpath IR: a flat, ordered, fully resolved motion stream.
 //!
-//! **After Unit 4, nothing in Chipbreaker reads G-code text.** U5 builds its
-//! dexel field from this type, U7 sweeps the tool along these segments, U12–U16
+//! **Nothing in Chipbreaker reads G-code text after this point.** A dexel field
+//! is built from this type, the sweep moves the tool along these segments, and
+//! everything downstream
 //! consume and extend it. Getting its shape right matters more than getting any
 //! parser exhaustive, because the parser can be improved later and this cannot:
 //! every unit downstream is written against it.
@@ -27,7 +28,7 @@
 //!
 //! # What is deliberately reserved
 //!
-//! [`MotionSegment::orientation`] exists and is always `None` in Unit 4. U16
+//! [`MotionSegment::orientation`] exists and is always `None`. 5-axis work
 //! adds 5-axis, and an unused `Option` today is very much cheaper than a schema
 //! migration across ten units later. Populating it will move golden hashes, and
 //! that will be deliberate.
@@ -49,7 +50,7 @@ use std::collections::BTreeMap;
 
 /// Version of the toolpath IR schema.
 ///
-/// Frozen at the end of Unit 4. A change to the meaning of any field, or the
+/// Frozen. A change to the meaning of any field, or the
 /// addition of a required one, bumps this — and moves every golden hash that
 /// covers a toolpath, which is the point.
 pub const TOOLPATH_SCHEMA_VERSION: u32 = 1;
@@ -200,7 +201,7 @@ pub struct ToolpathHeader {
     /// diagnostic in a list is too easy for a downstream unit to ignore, and a
     /// collision check that reports "no collisions found" against a path missing
     /// motion the machine makes is the failure mode this project keeps declining
-    /// to accept. U14 must refuse to certify a program as collision-clean while
+    /// to accept. Nothing may certify a program as collision-clean while
     /// this is non-zero.
     ///
     /// Supplying `--chip-break-clearance` emits the real motion and leaves this
@@ -389,9 +390,9 @@ impl Toolpath {
 
     /// Bounding box of every point the tool tip reaches.
     ///
-    /// This is what U5 sizes its dexel field from, which is why `path bounds`
+    /// This is what a dexel field is sized from, which is why `path bounds`
     /// exists as a command in its own right. Note that it bounds the *tip*: the
-    /// tool's body extends beyond it, and U5 must expand by the tool radius.
+    /// tool's body extends beyond it, so a field expands by the tool radius.
     #[must_use]
     pub fn tip_bounds(&self) -> Aabb3 {
         let mut bounds = Aabb3::EMPTY;

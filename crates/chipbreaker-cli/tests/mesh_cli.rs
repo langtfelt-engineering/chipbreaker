@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! End-to-end tests for `chipbreaker mesh`, plus the corpus generator.
 //!
@@ -148,7 +148,7 @@ fn the_torus_is_reported_as_genus_one() {
 
 #[test]
 fn parity_finds_no_leaks_on_the_adversarial_lattice() {
-    // The Unit 5 contract, from the command line.
+    // The field-building contract, from the command line.
     for name in ["lattice-3", "lattice-5"] {
         let file = corpus_file(&format!("{name}.stl"));
         let (code, stdout, stderr) = run(&[

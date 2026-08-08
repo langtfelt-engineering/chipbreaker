@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! The `.dexel` format. ADR 0004 is the argument; this is the enforcement.
 
@@ -60,7 +60,7 @@ fn a_field_survives_a_round_trip_bit_identically() {
 fn at_least_one_span_endpoint_needs_all_seventeen_digits() {
     // Guards the guard. If the fixture drifted to a shape whose endpoints were
     // all round, the round-trip test above would still pass under a format with
-    // the exact defect ADR 0004 exists to prevent -- which is how the Unit 3
+    // the exact defect ADR 0004 exists to prevent -- which is how the tool
     // serde_json bug survived a week of green tests.
     let field = a_field();
     let rays = u32::try_from(field.arena().rays()).expect("small");
@@ -72,7 +72,7 @@ fn at_least_one_span_endpoint_needs_all_seventeen_digits() {
                 // 17 suffices proves nothing. The question is whether SIXTEEN
                 // is enough: a value that survives 16 would also survive a
                 // sloppy formatter, and a value that does not is exactly the
-                // shape that caught serde_json at Unit 3.
+                // shape that caught serde_json in the tool library.
                 if format!("{value:.15e}").parse::<f64>() != Ok(value) {
                     needs_seventeen += 1;
                 }
@@ -235,9 +235,9 @@ fn a_corrupted_span_total_is_caught() {
     let mut bytes = io::to_bytes(&field).expect("writes");
     // The span total sits immediately after the ray count. Derived from the
     // layout rather than written as one number: this was `21 * 8` until the
-    // format grew two transverse extents at U6, and a stale literal made the
+    // format grew two transverse extents with the second bundle, and a stale literal made the
     // test corrupt a placement matrix instead of the field it meant to. It
-    // moved again at U10, when a lattice gained a second transverse spacing --
+    // moved again when a lattice gained a second transverse spacing --
     // the same failure, caught the same way, which is why the derivation stays.
     const U32S: usize = 4; // version, axis, two counts
     // origin, TWO spacings, length, extents, placement.

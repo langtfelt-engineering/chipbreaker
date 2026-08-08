@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Field construction: what it builds, and what it refuses to build.
 
@@ -359,7 +359,7 @@ fn nested_shells(outer: f64, inner: f64) -> TriMesh {
 
 #[test]
 fn a_degenerate_triangle_does_not_abort_the_build() {
-    // Unit 2's validator used to claim a degenerate triangle "contributes
+    // The validator used to claim a degenerate triangle "contributes
     // nothing to any ray test". It does not: a zero-area triangle has collapsed
     // to a segment, and every ray coplanar with that segment sees all three of
     // its edge functions vanish, which is the caster's coplanar path, which is a
@@ -406,7 +406,7 @@ fn a_clean_mesh_reports_no_degenerate_triangles() {
 
 #[test]
 fn the_safety_gate_holds_across_every_synthetic_solid() {
-    // The gate Unit 6 depends on: zero coplanar rejections and zero odd crossing
+    // The gate three bundles depend on: zero coplanar rejections and zero odd crossing
     // counts. Construction aborts on either, so a build that succeeds IS the
     // assertion -- but stating it as its own test means a regression names the
     // right thing instead of surfacing as a confusing failure elsewhere.
@@ -440,7 +440,7 @@ fn the_safety_gate_holds_across_every_synthetic_solid() {
                 panic!(
                     "{name} on {axis:?} failed the safety gate. A coplanar rejection or \
                      an odd crossing count means the cell-centre invariant has stopped \
-                     holding, and Unit 6 rests on it: {e}"
+                     holding, and three bundles rest on it: {e}"
                 )
             });
             assert_eq!(stats.predicates.coplanar_rejected, 0, "{name}/{axis:?}");

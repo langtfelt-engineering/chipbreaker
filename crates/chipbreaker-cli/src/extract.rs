@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! `chipbreaker extract`: a cut field back to a triangle mesh.
 //!
@@ -22,7 +22,8 @@
 //! units.** The first measures only *construction* normals — a field built from a
 //! mesh takes each endpoint's normal from the triangle its ray crossed, and that
 //! path was always right. A cut face takes its normal from the tool, and until
-//! Unit 12 the sweep set none at all: every cut face in the engine carried
+//! the deviation field was built the sweep set none at all: every cut face in
+//! the engine carried
 //! `(0, 0, -1)`, whichever way it faced. So the claim that four bytes an endpoint
 //! buy sharp features had been demonstrated only where it was never in doubt.
 //!
@@ -39,7 +40,7 @@
 //! The three bundles were cut independently and can classify a grid corner
 //! differently. Extraction resolves that by majority, and publishes how often it
 //! had to: the rate is a direct reading of how far the three fields differ on
-//! real geometry, which no bound derived at Unit 6 provides.
+//! real geometry, which no bound derived from the sampling theorem provides.
 
 use std::path::PathBuf;
 
@@ -239,7 +240,8 @@ pub fn extract(args: &ExtractArgs) -> Result<(Value, String, bool), String> {
         "written": written.map(|(p, n, f)| json!({ "bytes": n, "format": f, "path": p })),
     });
 
-    // A mesh that fails the exit criterion is a failure, not a warning. Unit 12
+    // A mesh that fails the exit criterion is a failure, not a warning. The
+    // deviation field
     // compares this against the nominal part and a hole becomes a phantom gouge,
     // so it must not be possible to pipe one onward without noticing.
     let sound = report_mesh.is_manifold

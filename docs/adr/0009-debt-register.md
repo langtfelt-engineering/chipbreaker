@@ -2,13 +2,13 @@
 
 - **Status:** accepted
 - **Date:** 2026-08-07
-- **Unit:** 12 (deviation field)
-- **Binds:** nothing new; it disposes of items carried since Units 3, 5 and 11
+- **Governs:** nothing new; it disposes of items carried since the tool raycaster,
+  the dexel field and parallel cutting were built
 - **Related:** [ADR 0007](0007-no-local-refinement.md), [ADR 0008](0008-simd-is-autovectorisation-only.md)
 
 ## Why this exists
 
-Six items have been carried forward across units as "deferred". Deferred twice is
+Six items have been carried forward as "deferred". Deferred twice is
 where an item quietly becomes forgotten: it stops being a decision anyone made
 and becomes a thing nobody looked at. Each gets a disposition here, and ambient
 tracking stops.
@@ -22,14 +22,14 @@ now scheduled.
 
 ## 1. `ArcData` boxing — **carried**
 
-*Raised U5, deferred to U10, never done.*
+*Raised when the field was built, deferred once, never done.*
 
 `MotionSegment` carries `Option<ArcData>` inline. Arcs are 3.26% of segments in
 the corpus, so the payload is dead weight in 97% of them and costs about 24% of
 the toolpath IR's memory.
 
 **Carried, not declined**, because the number that would trigger it is now known
-precisely. Unit 10 measured the IR at 192 bytes per segment; boxing would take it
+precisely. The IR measures 192 bytes per segment; boxing would take it
 to roughly 146. On a three-million-segment program that is 550 MiB against 418 —
 a real difference, and one the memory ceiling would report accurately either way.
 
@@ -39,23 +39,23 @@ touches every consumer of `MotionSegment`.
 
 ## 2. Ferrari fast path for barrel tools — **declined**
 
-*Raised U3, deferred to U11.*
+*Raised with the root solver, deferred once.*
 
-Barrel and toroidal cutters reach the quartic solver, which Unit 8 measured at
+Barrel and toroidal cutters reach the quartic solver, measured at
 one solve per ray cast — about 20× the cost of a quadratic.
 
-**Declined.** Barrel tools matter at Unit 20, and Phase F is conditional on
+**Declined.** Barrel tools matter only for 5-axis work, which is conditional on
 commercial evidence that may never arrive. Building a numerically delicate fast
-path for a case that may never ship is the wrong order of work, and Unit 3
-already established that Ferrari's method "destroys wide-magnitude quartics" —
-the recovery would need its own oracle.
+path for a case that may never ship is the wrong order of work, and the root
+solver already established that Ferrari's method "destroys wide-magnitude
+quartics" — the recovery would need its own oracle.
 
 **Reopen if:** the 5-axis gate opens, or a customer profile shows barrel tools on
 a hot path.
 
 ## 3. Autovectorisation measurement — **declined**
 
-*Raised U11.*
+*Raised with parallel cutting.*
 
 [ADR 0008](0008-simd-is-autovectorisation-only.md) scoped SIMD to
 autovectorisation and required the effect be measured rather than assumed. The
@@ -72,7 +72,7 @@ the measurement is the first step, not the last.
 
 ## 4. Bundle-level parallelism past 16 threads — **carried**
 
-*Raised U11.*
+*Raised with parallel cutting.*
 
 Efficiency falls to about 50% at 16 threads on a 24-core host. The remaining
 serial work is the arena write-back and the per-bundle reduction, both
@@ -88,7 +88,7 @@ has yet asked for it to be 20 seconds.
 
 ## 5. 64 KiB per worker, unmeasured — **carried**
 
-*Raised U11.*
+*Raised with parallel cutting.*
 
 `BYTES_PER_WORKER` is a deliberately generous estimate, not a measurement. It is
 charged to the memory ceiling and so is *conservative in the safe direction*: an
@@ -96,18 +96,19 @@ over-estimate refuses a job that would have fitted, which is annoying, where an
 under-estimate would let one through that then fails.
 
 **Carried.** Measuring it needs a high-span job — a ribbed pocket where rays
-carry many spans — which the corpus does not yet contain and Unit 12's
+carry many spans — which the corpus does not yet contain and the deviation
+field's
 injected-defect work may produce as a side effect.
 
 **Trigger:** a refusal a customer disputes, or the first high-span corpus case.
 
 ## 6. Field streaming at 100M rays — **carried**
 
-*Raised U9, restated U10.*
+*Raised with extraction, restated with the memory ceiling.*
 
 Extraction's working set is now `O(area)` and a 100M-ray field needs about 13 MiB
 of sweep window. **The field itself, at roughly 4.7 GiB, is what bounds that
-size**, and streaming it is a separate problem from anything Units 9 to 11 solved.
+size**, and streaming it is a separate problem from anything solved so far.
 
 **Carried.** The memory ceiling already turns this from a crash into a refusal
 that names a spacing which fits, which is the behaviour that matters
@@ -124,8 +125,8 @@ by anisotropic spacing.
 - Nothing on this list is tracked ambiently any more. Items 1, 4, 5 and 6 have a
   named trigger; items 2 and 3 need a reason to reopen, recorded above.
 - Two of the six are declined on the same principle: **do not build for a phase
-  that is conditional**. Units 19 and 20 may never happen, and work done for them
+  that is conditional**. 5-axis work may never happen, and work done for it
   now is work done for a door that may not open.
 - Three of the four carried items are memory or performance, and all three are
-  bounded by the Unit 10 ceiling — which means the failure mode in every case is
+  bounded by the memory ceiling — which means the failure mode in every case is
   a diagnosable refusal rather than a crash. That is why they can wait.

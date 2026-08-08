@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Golden-file checks: the committed digests that pin what this unit computes.
 //!
@@ -128,7 +128,7 @@ fn span_algebra_digest_is_unchanged() {
     ] {
         h.begin(label);
         set.hash_canonical(&mut h);
-        // The measure is hashed too: it is the value U12's removed-material
+        // The measure is hashed too: it is the value the removed-material
         // totals are built on, and a reassociated sum would change its last bit
         // without changing the span boundaries at all.
         h.f64(set.measure());

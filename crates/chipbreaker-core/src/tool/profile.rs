@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! The generating profile of a tool: a chain of segments and arcs in `(r, z)`.
 
@@ -61,7 +61,7 @@ impl Hashable for ArcDirection {
 /// and every role removes stock if it touches it — a holder that ploughs through
 /// the part removes material exactly as a flute would. The difference is what it
 /// means when it happens: cutting is the point, non-cutting is a rub, and holder
-/// contact is a crash. U8 reports each differently and U12 must never optimise a
+/// contact is a crash. The two are reported differently, and nothing may optimise a
 /// path by letting the shank cut.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ElementRole {
@@ -473,7 +473,7 @@ pub enum ProfileError {
     ///
     /// Reading from the tip upward, cutting geometry must come before
     /// non-cutting geometry, which must come before the holder. A holder below a
-    /// flute is not a tool, and silently accepting it would make U8's contact
+    /// flute is not a tool, and silently accepting it would make the contact
     /// classification meaningless.
     RolesOutOfOrder {
         /// Index of the element whose role is lower than its predecessor's.

@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 #![allow(
     missing_docs,
     reason = "criterion_group! generates an undocumented public fn"
 )]
 
-//! Parser throughput, and the number that sets U5's memory budget.
+//! Parser throughput, and the number that sets a field's memory budget.
 //!
 //! # The measurement that matters most is not a rate
 //!
-//! It is **IR bytes per segment**. U5 holds a whole toolpath in memory beside
+//! It is **IR bytes per segment**. A whole toolpath is held in memory beside
 //! its dexel field, and a million-segment program is an ordinary size for a
 //! finishing pass. If a segment costs 200 bytes that is 200 MB before any stock
-//! exists; if it costs 500, U5's budget has to be rethought rather than
+//! exists; if it costs 500, the budget has to be rethought rather than
 //! discovered.
 //!
 //! # On the large file
@@ -174,7 +174,7 @@ fn bench_stages(c: &mut Criterion) {
 fn bench_arc_forms(c: &mut Criterion) {
     // The I/J/K path is given a centre; the R path derives one through a square
     // root and two divisions. Whether that costs anything is worth knowing
-    // before U7 leans on either.
+    // before cutting leans on either.
     let ijk: String = std::iter::once("G21 G90 G17 G0 X10. Y0.\nF500.\n".to_owned())
         .chain((0..5_000).map(|_| "G3 X0. Y10. I-10. J0.\nG3 X10. Y0. I0. J-10.\n".to_owned()))
         .collect();

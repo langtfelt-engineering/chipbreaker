@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! A ladder, climbed in order, before the deviation field is trusted at all.
 //!
@@ -12,7 +12,7 @@
 //!    ray-surface intersections, so every sample must be exactly zero. No
 //!    extraction is involved, which isolates the comparison arithmetic
 //!    completely: this either passes or hands over the bug.
-//! 2. **Field against `extract(field)`.** Must land inside Unit 9's measured
+//! 2. **Field against `extract(field)`.** Must land inside the measured
 //!    extraction error, which is sub-cell. A failure here is in the field-to-mesh
 //!    interface -- containment, sidedness, placement -- and not in rung 1's
 //!    arithmetic.
@@ -126,7 +126,7 @@ fn rung_2_a_field_against_its_own_extraction_is_sub_cell() {
         );
         assert!(
             worst < SPACING,
-            "{name}: {worst:.4} mm against a {SPACING} mm cell. Unit 9 measured \
+            "{name}: {worst:.4} mm against a {SPACING} mm cell. Extraction measures \
              extraction as exact on flats and inside one cell on edges, so this \
              is the field-to-mesh interface -- containment, sidedness or \
              placement -- not a resolution limit."
@@ -227,7 +227,7 @@ fn rung_2c_cut_faces_all_point_the_same_way_which_cannot_be_geometry() {
     // wrong; a simpler cause predicts they all are.
     //
     // Counting placeholders is the obvious check and it does not work, because
-    // `PLACEHOLDER` IS `+Z` -- the Unit 9 encoding has no reserved pattern on
+    // `PLACEHOLDER` IS `+Z` -- the encoding has no reserved pattern on
     // purpose -- so every up-facing endpoint of an uncut box already counts as
     // one. The direct question is better: a slot has walls facing four different
     // directions, so if every one of its cut endpoints shares a single normal,
@@ -311,7 +311,7 @@ fn rung_2c_cut_faces_all_point_the_same_way_which_cannot_be_geometry() {
     assert_eq!(
         z_facing,
         0,
-        "{z_facing} of {} endpoints on an X-bundle ray point along Z, including          the slot's two end walls, which face opposite directions and share one          normal. That is not geometry -- it is the placeholder normal negated by          the subtraction. Unit 9 said the normal is free at both sites an          endpoint is born, the triangle normal during construction and the          analytic TOOL SURFACE normal during a cut. Only the first was ever          implemented: `sweep` and `tool::raycast` set no normal at all, so every          cut face in the engine carries (0, 0, -1).",
+        "{z_facing} of {} endpoints on an X-bundle ray point along Z, including          the slot's two end walls, which face opposite directions and share one          normal. That is not geometry -- it is the placeholder normal negated by          the subtraction. It was written that the normal is free at both sites an          endpoint is born, the triangle normal during construction and the          analytic TOOL SURFACE normal during a cut. Only the first was ever          implemented: `sweep` and `tool::raycast` set no normal at all, so every          cut face in the engine carries (0, 0, -1).",
         wall_normals.len()
     );
     let _ = AXES;

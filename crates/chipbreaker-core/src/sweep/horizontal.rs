@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Case A: horizontal motion, `dz = 0`.
 //!
@@ -28,7 +28,7 @@
 //! double-counting to reason about — which is the property that makes a
 //! three-piece decomposition worth having over a single clever formula.
 //!
-//! # The middle piece is a problem Unit 3 already solves
+//! # The middle piece is a problem the stationary raycaster already solves
 //!
 //! Set up a frame on the motion: `d` along it, `n` perpendicular, both
 //! horizontal. A point is in the prism iff its projection `a` lies in `[0, L]`
@@ -43,7 +43,8 @@
 //! whole reason to write it this way rather than deriving a swept surface.
 //!
 //! One wrinkle: the mapped direction is not a unit vector, so the returned
-//! parameters are in units of its length and have to be rescaled. Unit 3's
+//! parameters are in units of its length and have to be rescaled. The
+//! raycaster's
 //! tangency tolerance is a length and depends on that normalisation, so the ray
 //! is normalised before casting and the spans divided afterwards, rather than
 //! casting an unnormalised ray and hoping.
@@ -89,7 +90,7 @@ pub fn swept_spans_into(
     let mut piece = Spans::new();
     let mut merged = Spans::new();
 
-    // The two ends, verbatim from Unit 3.
+    // The two ends, verbatim from the stationary raycaster.
     for position in [motion.start, motion.end] {
         spans_in_tool_at(profile, position, ray, scratch, &mut piece, stats);
         if !piece.is_empty() {
@@ -150,7 +151,7 @@ fn prism_spans_into(
         return;
     }
 
-    // The cross-section, cast as a Unit 3 ray in the plane `y = 0`.
+    // The cross-section, cast as an ordinary profile ray in the plane `y = 0`.
     let local = Ray {
         origin: Vec3::new(b0, 0.0, w0),
         direction: Vec3::new(db / speed, 0.0, dw / speed),

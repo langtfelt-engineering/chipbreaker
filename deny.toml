@@ -91,11 +91,11 @@ wildcards = "deny"
 
 # Determinism, not size, is why these are banned.
 deny = [
-    # Parallelism arrives in U11 behind a deterministic partitioning scheme.
+    # Parallelism belongs behind a deterministic partitioning scheme.
     # Until then a work-stealing scheduler in the dependency graph is a
     # non-determinism risk that no test would reliably catch.
-    { name = "rayon", reason = "no parallelism before U11; see CONTRIBUTING.md" },
-    { name = "rayon-core", reason = "no parallelism before U11; see CONTRIBUTING.md" },
+    { name = "rayon", reason = "parallelism only behind a deterministic partition; see CONTRIBUTING.md" },
+    { name = "rayon-core", reason = "parallelism only behind a deterministic partition; see CONTRIBUTING.md" },
     # These make determinism guarantees we do not control, and glam is f32-first
     # with target-dependent SIMD paths. We own our linear algebra.
     { name = "nalgebra", reason = "we own our f64 linear algebra; see math module docs" },

@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! The versioned corpus of near-degenerate predicate configurations.
 //!
 //! # Why a data file rather than a table in Rust
 //!
 //! The corpus grows every unit and will eventually be shared with the WASM build
-//! and (at U20) with the Python bindings. A text file with a stable, documented
+//! and, eventually, with language bindings. A text file with a stable, documented
 //! format can be regenerated, diffed, and extended by someone who is debugging a
 //! customer's model rather than writing Rust.
 //!
@@ -53,7 +53,7 @@ use crate::predicates::{Orientation, Predicates};
 ///
 /// Lives at `corpus/predicates/degenerate.txt` **inside this crate**, not at the
 /// repository root. `include_str!` cannot reach outside the package directory
-/// without breaking `cargo package`, which U20 needs in order to publish the
+/// without breaking `cargo package`, which publishing the crate needs in order to ship the
 /// commercial build.
 pub const DEGENERATE_CORPUS_SOURCE: &str = include_str!("../../corpus/predicates/degenerate.txt");
 

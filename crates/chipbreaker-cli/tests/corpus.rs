@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! The mesh corpus: generator, and the check that the validator classifies every
 //! entry the way it is supposed to.
@@ -18,7 +18,7 @@
 //! built to exhibit, and the test asserts the validator agrees.
 //!
 //! [`every_corpus_entry_is_classified_correctly`] is the exit criterion for
-//! Unit 2's validation work.
+//! the mesh validator's work.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -171,7 +171,7 @@ fn broken_meshes() -> Vec<(&'static str, TriMesh)> {
     );
 
     // A small sphere entirely inside a large one. Both outward-oriented, so the
-    // volumes add rather than subtract — the question U5 will care about.
+    // volumes add rather than subtract — the question a field cares about.
     let nested = combine(&shapes::icosphere(10.0, 2), &shapes::icosphere(3.0, 2));
 
     vec![

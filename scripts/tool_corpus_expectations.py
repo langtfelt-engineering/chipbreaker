@@ -222,7 +222,7 @@ tools["drill-6-118"] = dict(
 # --- barrel-12-r200: one 200 mm arc through the tip to r = 6 ---------------
 #
 # Its centre sits at r = 6 - 200 = -194, past the axis. That is the case which
-# sent every barrel down the sphere branch of the ray caster until Unit 3 tested
+# sent every barrel down the sphere branch of the ray caster until it was tested
 # the magnitude of the major radius rather than its sign.
 R_ARC, R_TOOL = 200.0, 6.0
 CR = R_TOOL - R_ARC

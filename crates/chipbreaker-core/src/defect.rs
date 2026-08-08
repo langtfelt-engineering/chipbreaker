@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Known defects, injected into known-good toolpaths.
 //!
-//! # This is Phase D's dense reference, and it exists first for that reason
+//! # This is the verification layer's dense reference, and it exists first
 //!
 //! Every unit up to eleven had a ground truth: an analytic volume, a dense
 //! sub-stepping reference, an exact Sturm oracle, a longhand equivalent. When
 //! something was wrong, a test could say so.
 //!
-//! Unit 12 and after produce **judgements**. Is this a gouge or excess stock? Is
+//! Verification produces **judgements**. Is this a gouge or excess stock? Is
 //! 0.03 mm severe? Are forty adjacent deviations one finding or forty? There is
 //! no oracle for "useful", and the discipline that carried eleven units does not
 //! reach that question on its own.
@@ -106,7 +106,7 @@ impl DefectKind {
 /// Where on the part a defect was injected.
 ///
 /// The classification that matters is not the coordinate but the **kind of
-/// geometry** it sits on: Unit 9 measured dual contouring reconstructing a flat
+/// geometry** it sits on: dual contouring was measured reconstructing a flat
 /// face exactly and an edge to within a cell, so a deviation of the same depth is
 /// not equally easy to attribute in both places.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -124,7 +124,8 @@ pub enum Locale {
     /// Beside a hole that goes all the way through.
     NearThroughHole,
     /// A surface whose normal is a body diagonal -- the `1/sqrt(3)` worst case
-    /// from Unit 6, where no bundle sees the surface better than 54.74 degrees.
+    /// of the sampling theorem, where no bundle sees the surface better than
+    /// 54.74 degrees.
     BodyDiagonal,
 }
 
@@ -380,10 +381,10 @@ const fn rationale(kind: DefectKind, locale: Locale) -> &'static str {
     match locale {
         Locale::BodyDiagonal => {
             "no bundle sees a body-diagonal surface better than 54.74 degrees, so this is \
-             the 1/sqrt(3) worst case from Unit 6"
+             the 1/sqrt(3) worst case"
         }
         Locale::SharpEdge => {
-            "Unit 9 reconstructs a flat exactly and an edge to within a cell, so attribution \
+            "extraction reconstructs a flat exactly and an edge to within a cell, so attribution \
              is hardest here"
         }
         Locale::Fillet => "a concave blend, where a gouge and the intended radius look alike",

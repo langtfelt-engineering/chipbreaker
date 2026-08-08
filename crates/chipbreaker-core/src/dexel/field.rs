@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Building a field from a closed mesh.
 //!
-//! One bundle of parallel rays, each cast through Unit 2's BVH, the crossings
+//! One bundle of parallel rays, each cast through the BVH, the crossings
 //! paired into spans, the spans stored in the arena. That is the whole of it.
-//! **Nothing here cuts** — subtraction is Unit 7.
+//! **Nothing here cuts** — subtraction happens in `sweep`.
 //!
 //! # Two conditions are hard errors, not statistics
 //!
 //! Construction refuses to produce a field when either of these occurs, and the
 //! choice is deliberate enough to be worth the paragraph.
 //!
-//! **A coplanar rejection.** Unit 2's caster discards a triangle that lies in
+//! **A coplanar rejection.** The caster discards a triangle that lies in
 //! the ray's own plane, because such a triangle has no well-defined crossing:
 //! the ray is *in* the surface rather than passing through it. Counting them and
 //! carrying on would mean building a field with a hole whose size nobody knows.
@@ -24,7 +24,7 @@
 //! **An odd number of crossings.** A ray entering a closed solid must leave it.
 //! An odd count means the mesh is not closed along that ray, or a crossing was
 //! missed. Either way the material extends to infinity as far as this ray knows,
-//! and there is no honest span to record. Unit 2 already validates closedness at
+//! and there is no honest span to record. The validator checks closedness at
 //! load, so reaching this means something disagrees, and a silent repair would
 //! hide the disagreement.
 //!
@@ -35,7 +35,7 @@
 //!
 //! Rays are cast in ascending ray index and the volume sum accumulates in the
 //! same order. Floating-point addition is not associative, so a different
-//! traversal is a different number. This is why Unit 11 cannot simply wrap the
+//! traversal is a different number. This is why parallel cutting cannot simply wrap the
 //! loop in a parallel iterator and why there is no parallelism before it.
 
 use std::borrow::Cow;
@@ -170,7 +170,7 @@ pub struct BuildOptions {
     pub spacing: f64,
     /// Independent cell size per world axis, overriding [`Self::spacing`].
     pub spacing_xyz: Option<Spacing>,
-    /// Which axis the rays run along. Unit 5 only exercises `Z`.
+    /// Which axis the rays run along. A single-bundle field only exercises `Z`.
     pub axis: Axis,
     /// Where the stock sits in machine coordinates.
     ///
@@ -279,7 +279,7 @@ impl DexelField {
         //
         // Removing them is sound rather than convenient: a triangle that bounds
         // no volume cannot change which points are inside, so the parity
-        // argument is untouched. Unit 2's validator used to claim these
+        // argument is untouched. The validator used to claim these
         // "contribute nothing to any ray test"; that was wrong, and it is true
         // now only because this happens.
         let (clean, degenerate) = drop_degenerate(mesh);
@@ -339,7 +339,7 @@ impl DexelField {
             // span, which `push_merge` folds away.
             spans.clear();
             for pair in hits.chunks_exact(2) {
-                // The triangle normal at each crossing, which Unit 9's dual
+                // The triangle normal at each crossing, which the extractor's dual
                 // contouring needs and which is free right here. `face_normal`
                 // is computed from the winding, and the mesh has already been
                 // validated closed and consistently oriented, so it points out
@@ -413,7 +413,7 @@ impl DexelField {
         &self.arena
     }
 
-    /// Mutable access, for Unit 7's subtraction.
+    /// Mutable access, for the sweep's subtraction.
     #[inline]
     pub const fn arena_mut(&mut self) -> &mut Arena {
         &mut self.arena

@@ -1,15 +1,16 @@
 # ADR 0001 — Dexel field construction: storage, and the ray lattice offset
 
-- **Status:** Accepted, implementation deferred to U5
-- **Date:** 2026-08-02 (storage), amended 2026-08-02 after U2 (lattice offset)
-- **Unit:** raised in U1, recorded and amended in U2, to be acted on in U5
+- **Status:** accepted
+- **Date:** 2026-08-02 (storage), amended the same day (lattice offset)
+- **Governs:** dexel field construction, and every ray lattice built since
 
-This ADR carries three decisions. Part 1 is about where a ray's spans live, as
-scoped at U1. Part 2, added after Unit 2's measurements, is about **where the
-rays themselves are placed**, and it is the most urgent of the three because it
-is a correctness invariant as well as a performance one. Part 3, added at U5,
-records the arena as actually built, and how the measurement changed the design
-that Part 1 anticipated.
+This ADR carries four decisions. Part 1 is about where a ray's spans live, as
+first scoped. Part 2, added after the mesh pipeline's ray-casting measurements,
+is about **where the rays themselves are placed**, and it is the most urgent
+because it is a correctness invariant as well as a performance one. Part 3
+records the arena as actually built, and how measurement changed the design Part
+1 anticipated. Part 4 records the spill path being rebuilt once real cutting
+exercised it.
 
 ---
 
@@ -19,7 +20,7 @@ that Part 1 anticipated.
 
 ## Decision
 
-U5 must place dexel ray origins at **cell centres**, offset by half a cell from
+Dexel ray origins sit at **cell centres**, offset by half a cell from
 the integer lattice. Any future change that moves them onto cell corners — for
 symmetry, for simplicity, for "cleaner" indexing — is a correctness regression,
 not a refactor.
@@ -29,7 +30,7 @@ be a **hard error that aborts the build**, not a statistic in a report.
 
 ## Why: one decision buys both correctness and 16x
 
-Unit 2 measured the same choice from two directions.
+The same choice was measured from two directions.
 
 **Performance.** 4,096 rays against a 5,292-triangle lattice block:
 
@@ -41,7 +42,7 @@ Unit 2 measured the same choice from two directions.
 **15.8x**, on the innermost loop of the entire product, available for free by
 choosing an offset.
 
-**Amended at U5 with a second measurement.** A number that decides a required
+**Amended with a second measurement once fields were being built.** A number that decides a required
 invariant should not rest on one measurement in one place, so
 `benches/dexel.rs` repeats it against the same lattice block, cast the way
 construction actually casts: 414 us with cell centres against 2.30 ms on the
@@ -66,7 +67,7 @@ parameter `t` is genuinely undetermined; no amount of symbolic perturbation
 fixes it, because there is nothing to take the sign of.
 
 Those triangles are currently rejected. Rejection is pragmatic, not principled,
-and Unit 2 could measure that parity survives it (16k–40k rejections per lattice
+and parity was measured to survive it (16k–40k rejections per lattice
 sweep, zero leaks) without being able to *prove* it in general.
 
 Do not try to prove it. Make it impossible instead, and make its occurrence
@@ -94,9 +95,9 @@ need a proof that rejection is parity-safe, because we refuse to rely on it.
 
 ## Consequences
 
-- U5's dexel builder takes the offset as a documented constant with this
+- The dexel builder takes the offset as a documented constant with this
   reasoning attached, not as a configurable.
-- `Bvh::intersect_ray_all_into` already returns `RayStats`; U5 checks
+- `Bvh::intersect_ray_all_into` returns `RayStats`; the builder checks
   `coplanar_rejected` per ray and fails the build on the first non-zero.
 - The error must name the ray and the triangle, since the user's next question
   is "where".
@@ -105,7 +106,7 @@ need a proof that rejection is parity-safe, because we refuse to rely on it.
 
 ---
 
-# Part 1 — `Spans` storage: per-ray `Vec` today, flat arena at U5
+# Part 1 — `Spans` storage: per-ray `Vec` first, flat arena later
 
 ## Context
 
@@ -117,10 +118,10 @@ pub struct Spans {
 }
 ```
 
-This is the right shape for Unit 1, where a `Spans` is a standalone value that
-tests construct, combine and compare. It is the wrong shape for Unit 5.
+This is the right shape while a `Spans` is a standalone value that tests
+construct, combine and compare. It is the wrong shape for a whole field.
 
-U5 builds a tri-dexel field: three orthogonal bundles of parallel rays, each ray
+A tri-dexel field is three orthogonal bundles of parallel rays, each ray
 storing the material intervals along it. A 1000 x 1000 field in each of three
 directions is **three million rays**, and under the current design that is:
 
@@ -130,17 +131,18 @@ directions is **three million rays**, and under the current design that is:
 - **72 MB of `Vec` headers alone** — 24 bytes of pointer, length and capacity per
   ray, before a single `Span` is stored. The payload for a typical ray is one or
   two spans, i.e. 16–32 bytes. **The bookkeeping outweighs the data.**
-- **Terrible locality.** U5's access pattern is a coherent sweep: process ray
+- **Terrible locality.** The access pattern is a coherent sweep: process ray
   *i*, then ray *i+1*, then *i+2*. With per-ray allocations those live wherever
   the allocator put them, so a sweep that should stream linearly through memory
   instead chases three million pointers.
 
 None of this is hypothetical arithmetic dressed up as a problem — it is the
-dominant cost of the data structure at the scale U5 operates at.
+dominant cost of the data structure at the scale a field operates at.
 
 ## Decision
 
-**Keep `Vec<Span>` through U4. Replace it with a flat arena at U5.**
+**Keep `Vec<Span>` while spans are a standalone value. Replace it with a flat
+arena once a whole field is stored.**
 
 The intended shape:
 
@@ -159,15 +161,15 @@ pub struct SpansMut<'a> { /* &'a mut [Span] plus growth policy */ }
 
 Because cutting *shrinks or splits* a ray's span set rather than growing it
 without bound, a per-ray capacity plus a spill list handles the rare case where a
-cut increases the span count beyond its slot. That detail is U5's to settle; what
+cut increases the span count beyond its slot. That detail is the field's to settle; what
 matters here is that the arena is the target.
 
 ## Why the current API already converges on this
 
-This is the part worth recording, because it means U5 is a substitution rather
+This is the part worth recording, because it means the change is a substitution rather
 than a rewrite.
 
-Unit 1 deliberately added `_into` variants to every set operation:
+The `_into` variants were deliberately added to every set operation:
 
 ```rust
 pub fn union_into(&self, other: &Self, out: &mut Self);
@@ -189,22 +191,22 @@ allocating. The arena extends that saving from "no allocation per operation" to
 
 ## Why not now
 
-1. **No caller needs it.** U2–U4 handle meshes, tools and toolpaths, none of
+1. **No caller needed it yet.** Meshes, tools and toolpaths hold none of
    which hold millions of `Spans`. Building an arena before there is a consumer
    means guessing its access pattern, and guessing wrong is how you get an
    abstraction that has to be unpicked later.
-2. **The growth policy depends on U5's cut algorithm**, which does not exist yet.
+2. **The growth policy depends on the cut algorithm**, which did not exist yet.
    How often does a cut split a span? What is the realistic maximum count per
    ray? Those answers determine the slot sizing, and they are measurements, not
    opinions.
 3. **`Spans` as a standalone value is genuinely useful** for tests, for the CLI,
-   and for U12's deviation fields. The arena should be an *additional* storage
+   and for deviation fields. The arena should be an *additional* storage
    strategy behind the same operations, not a replacement that removes the simple
    case.
 
 ## Consequences
 
-- U5 must budget for this work rather than discovering it. It is a known,
+- The work was budgeted for rather than discovered. It is a known,
   scoped task, not a surprise.
 - The `_into` variants must be preserved and preferred. A future contributor who
   "simplifies" them away because the allocating form reads better would be
@@ -212,7 +214,7 @@ allocating. The arena extends that saving from "no allocation per operation" to
 - The structural invariant and the merge-scan are storage-independent: they
   operate on `&[Span]` and `&mut Vec<Span>` already. The arena changes where the
   slice comes from, not what the algorithm does.
-- Benchmarks at U5 should compare arena against per-ray `Vec` on the same
+- Benchmarks compare arena against per-ray `Vec` on the same
   workload, so the claim in this document is measured rather than assumed.
 
 ## Alternatives considered
@@ -227,7 +229,7 @@ allocating. The arena extends that saving from "no allocation per operation" to
   a geometric limit out of an implementation detail: a ray crossing a comb-like
   feature would silently lose material. Unacceptable in a verification tool,
   where the entire product claim is that we do not silently lose material.
-- **Keeping `Vec<Span>` and accepting the cost.** Defensible if U5 turned out to
+- **Keeping `Vec<Span>` and accepting the cost.** Defensible if a field turned out to
   be dominated by something else entirely. The numbers above say it will not be.
 
 ---
@@ -297,7 +299,7 @@ for a spread-out distribution would be worse for this one.
 ### Why 2, and not 1 or 4
 
 One would cover every ray of stock at rest, and would spill on the first pocket
-cut into a block. U7 subtracts the tool from these spans millions of times, and
+cut into a block. Sweeping subtracts the tool from these spans millions of times, and
 subtraction **splits**: cutting a slot through a solid ray turns one span into
 two. Growth is the common mutation, not a rare one.
 
@@ -368,7 +370,7 @@ it presented as alternatives are the same design seen from different levels.
 ## The Part 1 benchmark obligation, discharged
 
 Part 1 argued the arena would win from structure rather than measurement, and
-left the benchmark as an obligation on U5. `benches/dexel.rs` runs it. Filling
+left the benchmark as an obligation. `benches/dexel.rs` runs it. Filling
 and then scanning one span per ray, release build:
 
 | rays | arena fill | `Vec<Spans>` fill | arena scan | `Vec<Spans>` scan |
@@ -396,7 +398,7 @@ the design is wrong.
 
 ---
 
-# Part 4 — The spill path, rebuilt at U7
+# Part 4 — The spill path, rebuilt once real cutting exercised it
 
 - **Status:** Accepted, implemented
 - **Date:** 2026-08-03
@@ -411,7 +413,7 @@ a genuine internal cavity reaches two. It also said that if `spilled_rays()`
 stopped being near zero on real work, the number should be revisited against a
 fresh measurement rather than by intuition.
 
-Unit 7 took that measurement, on a 60x40x12 mm block at 0.4 mm cells:
+That measurement was taken on a 60x40x12 mm block at 0.4 mm cells:
 
 | geometry | max spans | spilled rays |
 |---|---:|---:|

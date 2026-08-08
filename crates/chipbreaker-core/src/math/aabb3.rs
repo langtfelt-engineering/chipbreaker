@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Axis-aligned bounding box in three dimensions.
 
@@ -110,7 +110,7 @@ impl crate::golden::Hashable for Axis {
 /// The **empty** box is represented by an inverted interval (`min = +inf`,
 /// `max = -inf`), which makes [`Aabb3::EMPTY`] the identity element for
 /// [`Aabb3::union`] and lets a box be accumulated by folding without a special
-/// first-element case. This gets heavy use in U2's BVH build.
+/// first-element case. This gets heavy use in the BVH build.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Aabb3 {
@@ -303,7 +303,7 @@ impl Aabb3 {
     /// Total surface area, `2 * (xy + yz + zx)`, summed in that order. Zero for
     /// an empty box.
     ///
-    /// This is the cost metric for the surface area heuristic in U2's BVH build.
+    /// This is the cost metric for the surface area heuristic in the BVH build.
     #[inline]
     #[must_use]
     pub fn surface_area(&self) -> f64 {

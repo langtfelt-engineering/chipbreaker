@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Closed-form volume, area, bounds, silhouette, and contact queries.
 //!
@@ -441,7 +441,7 @@ impl Tool {
     /// The nearest surface point to a point in tool coordinates, and what part
     /// of the tool it is.
     ///
-    /// This is the query U8 asks of every contact it detects: the answer decides
+    /// This is the query asked of every contact detected: the answer decides
     /// whether what happened was a cut, a rub, or a crash.
     #[must_use]
     pub fn nearest_surface(&self, p: Vec3) -> Contact {
@@ -681,7 +681,7 @@ mod tests {
         assert_eq!(
             near_holder.role,
             ElementRole::Holder,
-            "contact here is a crash, and the query is what tells U8 so"
+            "contact here is a crash, and the query is what says so"
         );
     }
 

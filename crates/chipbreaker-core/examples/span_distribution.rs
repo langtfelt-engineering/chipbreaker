@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! How many spans does a dexel ray actually carry?
 //!
@@ -133,7 +133,7 @@ fn main() {
     // arena's tail.
     report("torus R=20 r=6", &shapes::torus(20.0, 6.0, 64, 32), 0.5);
 
-    // Nested shells: the sphere-in-a-sphere from Unit 2. Four crossings, two
+    // Nested shells: the sphere-in-a-sphere from the mesh corpus. Four crossings, two
     // spans, on every ray through the middle.
     let mut nested = shapes::icosphere(20.0, 3);
     let inner = shapes::icosphere(10.0, 3);

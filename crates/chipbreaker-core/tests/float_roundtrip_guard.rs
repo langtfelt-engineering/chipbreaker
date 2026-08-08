@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! `serde_json` must parse floats bit-exactly, and this test fails loudly if it
 //! stops doing so.
 //!
 //! # Why this exists separately from the tool library's own tests
 //!
-//! Unit 3 found that `serde_json`'s default float parser is not correctly
+//! The tool library found that `serde_json`'s default float parser is not correctly
 //! rounded: it reads `2.0481555856608242` as `2.048155585660824`, one ULP low,
 //! where Rust's own `str::parse` gets it right. The workspace enables the
 //! `float_roundtrip` feature to fix it.

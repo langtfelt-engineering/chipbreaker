@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Stage four: programmed words into machine coordinates, and motion.
 //!
@@ -13,7 +13,7 @@
 //!   -> G90/G91                (a position, or a delta from where we are)
 //!   -> active work offset     (G54-G59.3)
 //!   -> G92 shift, if active
-//!   -> tool length offset     (G43/G44 H, against the U3 tool library)
+//!   -> tool length offset     (G43/G44 H, against the tool library)
 //!   -> machine coordinates     <- what the IR stores
 //! ```
 //!
@@ -33,7 +33,7 @@
 //! agrees. Whether it also bypasses tool length compensation is *not* consistent
 //! between controls, so it is a choice. It is kept here, because the IR stores a
 //! **tool tip** position: a segment on which "tip" quietly meant "spindle gauge
-//! point" would be a trap for U5, which has no way to know it should treat that
+//! point" would be a trap downstream, where nothing knows it should treat that
 //! one segment differently. A corpus case pins it.
 //!
 //! **`G28` and `G30` are two moves, not one.** They travel to the reference
@@ -303,8 +303,8 @@ impl<'a> Resolver<'a> {
         for (index, slot) in block.axes.iter().enumerate() {
             let Some(word) = slot else { continue };
             // A/B/C are rotary and have no place in a 3-axis IR yet. They are
-            // parsed so that a 5-axis file is not a syntax error at U4, and
-            // ignored so that U16 can add them without changing what U4 meant.
+            // parsed so that a 5-axis file is not a syntax error, and ignored
+            // so that 5-axis work can add them without changing what is meant now.
             if index >= 3 {
                 continue;
             }

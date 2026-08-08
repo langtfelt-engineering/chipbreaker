@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! The deviation table: per-bundle, best-of-three, against mesh and analytic.
 //!
@@ -42,7 +42,8 @@ fn cases() -> Vec<Case> {
         Case {
             name: "sphere r=10",
             // Deliberately fine: the analytic column is only meaningful while
-            // the mesh's own error stays under the sampling error, and U5
+            // the mesh's own error stays under the sampling error, and a
+            // single bundle
             // showed a coarse icosphere floors out at h/R = 1/40.
             mesh: || shapes::icosphere(10.0, 5),
             analytic: Some(|| Analytic::Sphere { radius: 10.0 }),
@@ -145,7 +146,7 @@ fn oriented_faces() -> TriMesh {
 fn main() {
     println!("Deviation: one-sided Hausdorff distance from densely sampled surface");
     println!("points to the field's span endpoints, which are EXACT ray-surface");
-    println!("intersections. Sampling adequacy, not reconstruction error (that is U9).");
+    println!("intersections. Sampling adequacy, not reconstruction error (that is extraction).");
     println!();
     println!("ADR 0005: volume is a diagnostic, deviation is the metric.");
     println!();
@@ -201,7 +202,7 @@ fn main() {
             let (samples, _) = sample_mesh_budget(&mesh, SAMPLE_BUDGET);
             let report = measure(&field, &samples);
 
-            // Against the ANALYTIC solid: adds U3's tessellation error.
+            // Against the ANALYTIC solid: adds the tessellation error.
             let analytic = case.analytic.map(|make| {
                 let points = make().sample(ANALYTIC_STEPS);
                 measure(&field, &points).best_max
@@ -264,9 +265,7 @@ fn main() {
     println!("intersections, so for a plane the component of this distance along the");
     println!("surface normal is exactly zero -- the whole of it is lateral. Perpendicular");
     println!("error belongs to a RECONSTRUCTION, not to the field: for a flat top per cell");
-    println!(
-        "it is bounded by h/sqrt(3) = {PERPENDICULAR_CONSTANT:.6}*h. Unit 12's gouge depth is a"
-    );
+    println!("it is bounded by h/sqrt(3) = {PERPENDICULAR_CONSTANT:.6}*h. A gouge depth is a");
     println!("perpendicular quantity, so quoting this column there would overstate it.");
     let _ = AXES;
 }

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Canned cycles, checked against the longhand a programmer would have written.
 //!
@@ -387,7 +387,7 @@ fn g73_without_a_clearance_omits_the_retract_and_says_so_structurally() {
     // The omission is exact for material removal -- the retract goes into space
     // already cut -- but it is NOT invisible to a collision check, and a warning
     // in a list is too easy for a downstream unit to ignore. So it is counted in
-    // the header, where U14 can refuse to certify against it.
+    // the header, where a certification step can refuse against it.
     let path = run(&format!("{PREAMBLE}G98 G73 X20. Y30. Z-5. R2. Q3.\nG80\n"));
     assert_eq!(
         path.header.unmodelled_retracts, 1,

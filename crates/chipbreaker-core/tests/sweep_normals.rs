@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Does a cut face carry the normal of the surface that cut it?
 //!
@@ -8,7 +8,7 @@
 //! which decodes to `+Z`, which the subtraction negates to `(0, 0, -1)`. A
 //! slot's two end walls face opposite directions and shared one normal, and
 //! nothing noticed, because dual contouring averages several crossings per
-//! vertex and the sharp-feature tests of Unit 9 all used uncut boxes.
+//! vertex and the sharp-feature tests all used uncut boxes.
 //!
 //! # The oracle is not the engine
 //!
@@ -94,7 +94,7 @@ const ON_SURFACE: f64 = 1.0e-7;
 /// The body-diagonal ramp reaches 0.015 degrees, five times the floor. That is
 /// **not** encoding: a ramp is sub-stepped, so its swept surface is a fan of
 /// chords rather than the smooth sweep the oracle computes, and the residual is
-/// the linearisation Unit 8 bounded. Both sit far below this threshold, which is
+/// the linearisation bound. Both sit far below this threshold, which is
 /// set to catch a wrong *face* rather than to pin a rounding.
 const TOLERANCE_DEG: f64 = 0.2;
 

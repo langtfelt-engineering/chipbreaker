@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! The deterministic self-test suites, and the canonical hash of their results.
 //!
@@ -527,7 +527,7 @@ fn math_kernel_suite() -> SuiteResult {
 /// folded into the canonical hash that CI compares between native and
 /// `wasm32-wasip1`, so the claim is tested on every push.
 ///
-/// U3 tessellates tool profiles as surfaces of revolution and will call `sin`
+/// Tool profiles tessellate as surfaces of revolution, which calls `sin`
 /// and `cos` on its first day. This suite exists so that lands on a foundation
 /// that has already been proven, rather than one that gets proven by failing.
 fn transcendental_suite() -> SuiteResult {
@@ -638,7 +638,7 @@ fn transcendental_suite() -> SuiteResult {
 /// The BVH topology hash is the interesting one. The tree is built by median
 /// split on sorted centroids, so its shape depends on a floating-point sort key;
 /// if that key differed by an ULP on one target, the split would land elsewhere,
-/// the traversal order would change, and — once U11 adds parallelism — results
+/// the traversal order would change, and — with cutting on many threads — results
 /// would follow. Hashing the tree turns that from a latent risk into a CI
 /// failure.
 ///
@@ -764,7 +764,7 @@ fn mesh_suite() -> SuiteResult {
 /// arithmetic.
 ///
 /// The **field** must be identical: same ray origins, same crossings, same
-/// spans, in the same order. That covers the lattice offset, Unit 2's
+/// spans, in the same order. That covers the lattice offset, the
 /// predicates, the parity pairing and the arena's traversal order all at once.
 ///
 /// The **file** must be identical too, byte for byte, and must reload to a field
@@ -891,7 +891,7 @@ fn dexel_field_suite() -> SuiteResult {
 
 /// Cuts a field and hashes what was removed.
 ///
-/// Where Unit 7 enters the cross-platform guarantee. Three things must agree on
+/// Where cutting enters the cross-platform guarantee. Three things must agree on
 /// every target, and only the first is purely about arithmetic.
 ///
 /// The **swept spans**, hashed per ray, which covers Case A's three-piece
@@ -904,7 +904,7 @@ fn dexel_field_suite() -> SuiteResult {
 ///
 /// And the **removed volume per bundle**, on the bits. A float summed in a
 /// different order is a different float, and reordering that sum is exactly what
-/// Unit 11 will be tempted to do.
+/// parallel cutting is tempted to do.
 fn sweep_suite() -> SuiteResult {
     use crate::dexel::tri::{AXES, TriBuildOptions, TriDexelField};
     use crate::math::Ray;
@@ -1397,7 +1397,7 @@ fn sweep_arc_suite() -> SuiteResult {
 ///
 /// Extraction is the newest float-to-integer-to-float path in the engine: an
 /// octahedral quantisation, a Jacobi eigensolver, and a pseudo-inverse, none of
-/// which existed before Unit 9. Each is written to be deterministic by
+/// which existed before extraction did. Each is written to be deterministic by
 /// construction rather than by convergence, and this is where that claim is
 /// checked on four targets instead of argued.
 ///
@@ -1536,7 +1536,7 @@ fn contour_suite() -> SuiteResult {
 ///
 /// # Why this suite exists at all
 ///
-/// Everything Unit 12 added is new arithmetic on the hot path — an analytic tool
+/// Everything the deviation field added is new arithmetic on the hot path — an analytic tool
 /// normal, a branch-and-bound closest-point query, a dihedral-angle floor — and
 /// the guarantee this project sells is that the answer is identical on a 32-bit
 /// target with a different libm and a different codegen backend. A verification
@@ -1976,7 +1976,7 @@ fn root_solver_suite() -> SuiteResult {
 ///
 /// # What would go wrong without it
 ///
-/// The ray-versus-tool path is the whole of Unit 3 in one function: it reaches
+/// The ray-versus-tool path is the whole of tool geometry in one function: it reaches
 /// the root solver, `atan2`, `hypot` and `sin_cos`, and it decides interval
 /// membership from a containment predicate. Any of those disagreeing by one ULP
 /// on one target moves a span endpoint, and a moved span endpoint is material

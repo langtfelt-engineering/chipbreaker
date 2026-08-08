@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! What a job will cost in memory, computed before anything is allocated.
 //!
@@ -29,7 +29,7 @@
 //!
 //! # The uncut prediction is a floor, not a ceiling
 //!
-//! Unit 7 established that cutting **splits spans**, and that spill is per
+//! Cutting **splits spans**, and spill turned out to be per
 //! bundle rather than per ray: the rib case spilled all 4,500 rays of the Y
 //! bundle while X and Z spilled none. A field that fits at construction can
 //! therefore exceed its budget after a pocket is cut.
@@ -75,13 +75,13 @@ pub const fn bytes_per_spilled_ray() -> usize {
 
 /// Bytes per corner in the extraction sweep's window.
 ///
-/// Unit 9's slab sweep holds two planes of corner signs, the crossings on and
+/// The extractor's slab sweep holds two planes of corner signs, the crossings on and
 /// between them, and two planes of cell records. Measured at about 130 bytes per
 /// `(x, y)` corner; the window is `O(area)`, so this multiplies the largest
 /// cross-section rather than the volume.
 pub const EXTRACTION_BYTES_PER_PLANE_CORNER: usize = 130;
 
-/// Bytes per toolpath segment, measured at Unit 4.
+/// Bytes per toolpath segment, measured from the real layout.
 pub const IR_BYTES_PER_SEGMENT: usize = 192;
 
 /// Scratch a parallel worker holds, in bytes.
@@ -98,7 +98,7 @@ pub const BYTES_PER_WORKER: usize = 64 * 1024;
 
 /// How the spill allowance is derived.
 ///
-/// **Not a fudge factor.** Unit 7's corpus measured post-cut span distributions,
+/// **Not a fudge factor.** The sweep corpus measured post-cut span distributions,
 /// and the worst case it produced -- two slots leaving a rib -- spilled *every
 /// ray of one bundle* while the other two spilled none. A bundle at
 /// `INLINE_CAPACITY = 2` spills at three spans, so each spilled ray costs
@@ -108,7 +108,8 @@ pub const BYTES_PER_WORKER: usize = 64 * 1024;
 /// which is exactly the worst the corpus has produced rather than a round
 /// number. It is named in the error message so a user who knows their part is
 /// worse than the corpus can raise the budget deliberately instead of guessing.
-pub const SPILL_MODEL: &str = "the largest bundle spilling entirely, as measured at Unit 7";
+pub const SPILL_MODEL: &str =
+    "the largest bundle spilling entirely, as measured on the sweep corpus";
 
 /// A predicted footprint, broken into the parts a user can act on separately.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -205,7 +206,7 @@ impl Spacing {
     ///
     /// # The anisotropic sampling bound
     ///
-    /// Unit 6 derived `h * sqrt(3/2)` for equal spacings. That derivation
+    /// The sampling theorem derives `h * sqrt(3/2)` for equal spacings. That derivation
     /// assumed three equal cells and does not survive anisotropy as stated, so
     /// here is the general form.
     ///
@@ -251,7 +252,7 @@ impl Spacing {
 
     /// Worst-case perpendicular error of a nearest-neighbour reconstruction.
     ///
-    /// The companion to [`Self::sample_distance_bound`], generalising Unit 6's
+    /// The companion to [`Self::sample_distance_bound`], generalising the
     /// `h / sqrt(3)`. The error at transverse offset `t` is `t * sin(theta)`,
     /// and the same optimisation over unit normals gives
     ///
@@ -260,8 +261,8 @@ impl Spacing {
     /// ```
     ///
     /// which for equal spacings is `h * sqrt(3/2) * sqrt(2/3) = h / sqrt(3)`.
-    /// Reported for continuity with Unit 6; Unit 9's dual contouring beats it by
-    /// a wide margin and Unit 12 will measure its own.
+    /// Reported for continuity; dual contouring beats it by a wide margin and
+    /// the deviation field measures its own.
     #[must_use]
     pub fn perpendicular_bound(&self) -> f64 {
         // sin(theta) at the worst case, where cos(theta) = c_a / D and the three
@@ -442,7 +443,8 @@ impl Budget {
             .saturating_mul(bytes_per_spilled_ray() as u64);
 
         // The extraction window is O(area): the largest cross-section, since the
-        // sweep runs along one axis and holds planes perpendicular to it. Unit 9
+        // sweep runs along one axis and holds planes perpendicular to it. The
+        // extractor
         // sweeps in z, so the window is the x-y plane.
         let extraction_bytes = if extracting {
             let nx = axis_count(extents[0], spacing.x) + 2;
@@ -795,14 +797,14 @@ mod tests {
 
     #[test]
     fn the_isotropic_bound_reproduces_unit_6_exactly() {
-        // The generalisation must not move the number Unit 6 published, or every
+        // The generalisation must not move the published number, or every
         // accuracy claim made since would need restating.
         for h in [0.05, 0.1, 0.4, 1.6] {
             let got = Spacing::uniform(h).sample_distance_bound();
             let expected = h * crate::dexel::tri::SAMPLE_DISTANCE_CONSTANT;
             assert!(
                 (got - expected).abs() < 1.0e-15 * expected.max(1.0),
-                "h={h}: anisotropic form gives {got}, Unit 6 gives {expected}"
+                "h={h}: anisotropic form gives {got}, the isotropic form gives {expected}"
             );
         }
     }

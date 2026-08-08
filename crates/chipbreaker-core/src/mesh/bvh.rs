@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Bounding volume hierarchy and **leak-free** ray casting.
 //!
-//! This is the most important module in Unit 2, and the reason is worth stating
+//! This is the most important module in the mesh pipeline, and the reason is worth stating
 //! plainly before any code.
 //!
 //! # The parity contract
 //!
-//! U5 builds the dexel field by casting millions of parallel rays through a
+//! A dexel field is built by casting millions of parallel rays through a
 //! closed mesh and recording where each ray is inside material. It infers that
 //! from a parity argument: a ray crossing a closed surface produces an **even**
 //! number of crossings, strictly alternating enter, exit, enter, exit.
@@ -94,7 +94,7 @@
 //! Such a triangle is therefore **rejected**, and the occurrence is counted in
 //! [`RayStats::coplanar_rejected`] so it is visible rather than silent. The
 //! practical mitigation, which production dexel implementations use anyway, is
-//! for U5 to place its ray lattice at cell centres rather than cell corners, so
+//! to place the ray lattice at cell centres rather than cell corners, so
 //! rays do not lie in the planes of axis-aligned faces. `chipbreaker mesh parity`
 //! reports the count so the choice can be checked rather than assumed.
 //!
@@ -107,7 +107,7 @@
 //!
 //! Surface area heuristic is deliberately not implemented: bucketed SAH
 //! accumulates floating-point costs whose summation order would then have to be
-//! pinned, and median split is adequate for the coherent, near-parallel rays U5
+//! pinned, and median split is adequate for the coherent, near-parallel rays a field
 //! actually issues. Revisit only with a benchmark that justifies it.
 
 use core::fmt;
@@ -152,9 +152,10 @@ impl Hashable for Hit {
 
 /// Counters describing how a ray query was answered.
 ///
-/// Kept because the exact-fallback rate is a real engineering number: Unit 1
+/// Kept because the exact-fallback rate is a real engineering number: the
+/// benchmarks
 /// measured `orient3d` at roughly 17x the cost of the filtered path, so knowing
-/// how often it fires sets the budget for U5 and U9.
+/// how often it fires sets the budget for field building and extraction.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct RayStats {
     /// Ray-triangle tests performed.
@@ -710,7 +711,7 @@ impl Bvh {
     /// Every crossing of the **infinite line** through the ray, ascending in
     /// `t`, including crossings behind the origin at negative `t`.
     ///
-    /// Line semantics rather than half-line, deliberately. U5 builds a dexel by
+    /// Line semantics rather than half-line, deliberately. A dexel is built by
     /// taking the whole line through the workspace and partitioning it into
     /// inside and outside intervals; clipping at the origin would throw away the
     /// crossings that establish which side the ray starts on, and the caller
@@ -732,7 +733,7 @@ impl Bvh {
 
     /// [`Self::intersect_ray_all`], reusing the caller's buffer.
     ///
-    /// This is the form U5 uses: millions of coherent rays, one scratch `Vec` per
+    /// This is the form field building uses: millions of coherent rays, one scratch `Vec` per
     /// sweep, no allocation after the first ray.
     ///
     /// # Errors
@@ -1093,7 +1094,7 @@ mod tests {
 
     #[test]
     fn cube_crossings_alternate_enter_then_exit() {
-        // Pins the `entering` convention that U5 will rely on.
+        // Pins the `entering` convention that field building relies on.
         let m = unit_cube();
         let bvh = Bvh::build(&m);
         let (hits, _) = bvh
@@ -1184,7 +1185,7 @@ mod tests {
         // Nested solids do NOT alternate: the ray enters the outer shell, then
         // enters the inner one, then leaves each in turn. Alternation is a
         // property of a single closed shell, not of a scene — which is exactly
-        // why U5 must track a depth counter rather than a boolean. Recorded here
+        // why field building tracks a depth counter rather than a boolean. Recorded here
         // because getting this wrong is an easy way to lose the inner solid.
         let entering: Vec<bool> = hits.iter().map(|h| h.entering).collect();
         assert_eq!(entering, vec![true, true, false, false], "{hits:?}");

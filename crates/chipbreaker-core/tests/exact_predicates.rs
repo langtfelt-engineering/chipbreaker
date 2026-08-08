@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Validation of the adaptive predicates against exact rational arithmetic.
 //!
@@ -32,7 +32,7 @@
 //! therefore sign-preserving. Nothing else about the construction matters.
 //!
 //! A predicate that mixes a *length* with *coordinates* — "is this point within
-//! tolerance `t` of that plane?", which is exactly what U12's deviation fields
+//! tolerance `t` of that plane?", which is exactly what the deviation fields
 //! will want — is **not** homogeneous. Scaling the coordinates by `s` scales the
 //! distance term by `s` and the tolerance term by `1`, so the comparison changes
 //! meaning and the sign can flip. The oracle below would then be quietly wrong
@@ -536,7 +536,8 @@ fn near_cospherical(rng: &mut StdRng) -> [f64; 15] {
 fn adaptive_predicates_match_exact_arithmetic_on_seeded_random_cases() {
     let mut rng = StdRng::seed_from_u64(RANDOM_SWEEP_SEED);
 
-    // Weighted toward the two-dimensional predicates, which are the ones U9's
+    // Weighted toward the two-dimensional predicates, which are the ones the
+    // extractor's
     // dual contouring will call hardest, and away from `insphere`, whose exact
     // determinant is a degree-five polynomial and correspondingly slow.
     let plan: [(PredicateKind, usize); 4] = [

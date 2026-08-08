@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 // `criterion_group!` expands to a public function it does not document, and the
 // workspace denies missing docs. Scoped to the benches, where the lint buys us
@@ -11,9 +11,9 @@
 
 //! Root solving and ray-versus-tool throughput.
 //!
-//! # The number that decides Unit 5's budget
+//! # The number that decides a field's budget
 //!
-//! U5 subtracts the tool from a tri-dexel field by casting three orthogonal
+//! Cutting subtracts the tool from a tri-dexel field by casting three orthogonal
 //! bundles of rays at it, millions of times per simulation. The cost of one such
 //! ray is therefore a hard constraint on the whole product, and it is set almost
 //! entirely by which surfaces the tool's profile generates:
@@ -59,7 +59,7 @@
 //! The barrel is the number to worry about. It is not a surprise once the two
 //! tables are read together — a barrel's whole cutting length is one torus, so
 //! nearly every ray pays for two quartic solves, where a bull nose pays only for
-//! the rays that clip its corner — but 19x is a real cost and U5 will feel it.
+//! the rays that clip its corner — but 19x is a real cost and a field feels it.
 //!
 //! **This is deliberate and it is recoverable.** The quartic is slow because it
 //! is always solved the safe way. The obvious recovery is to try Ferrari first
@@ -68,7 +68,7 @@
 //! well-conditioned majority while keeping the guarantee on the cases that
 //! motivated the change. That is not done here because it is an optimisation
 //! that can only be justified against a measurement, and this is the
-//! measurement. It belongs with U11's performance work, not at the end of U3.
+//! measurement. It belongs with parallel performance work, not with tool geometry.
 
 use chipbreaker_core::math::{Ray, Vec3};
 use chipbreaker_core::roots::{solve_cubic, solve_quadratic, solve_quartic};
@@ -207,7 +207,7 @@ fn bench_roots(c: &mut Criterion) {
     group.finish();
 }
 
-/// A bundle of coherent rays, which is what U5 actually casts. Incoherent rays
+/// A bundle of coherent rays, which is what a field actually casts. Incoherent rays
 /// would measure a workload this engine never has.
 fn coherent_rays(profile: &Profile, n: usize) -> Vec<Ray> {
     let cylinder = profile.bounding_cylinder();
@@ -260,7 +260,7 @@ fn bench_raycast(c: &mut Criterion) {
 /// The allocation-free form against the convenient one.
 ///
 /// `intersect_ray` allocates a `Spans` and a scratch buffer per call.
-/// `intersect_ray_into` reuses the caller's. U5 will call this millions of times
+/// `intersect_ray_into` reuses the caller's. A field calls this millions of times
 /// per simulation, so the difference is the whole argument for the scratch
 /// parameter existing at all — and if it turns out not to matter, the API should
 /// lose it.

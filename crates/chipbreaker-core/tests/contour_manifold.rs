@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! **Zero non-manifold outputs. No exceptions.**
 //!
-//! This is Unit 9's exit criterion and it is not a quality target. Unit 12
+//! This is extraction's exit criterion and it is not a quality target. The
+//! deviation field
 //! compares the extracted mesh against the nominal part; a hole in it becomes a
 //! phantom gouge, and a phantom gouge is a customer stopping a machine for
 //! nothing. So every case here asserts the full validator, not a subset.

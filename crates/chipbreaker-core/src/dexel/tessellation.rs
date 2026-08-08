@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! How far is this mesh from the smooth surface it approximates?
 //!
 //! # Why a field builder cares
 //!
-//! Unit 5's error table made the point numerically. A sphere's dexel sampling
+//! The error table makes the point numerically. A sphere's dexel sampling
 //! error falls from 2.25e-3 to 1.63e-6 as the lattice refines — three orders of
 //! magnitude — while its error against the *ideal* sphere stops improving at
 //! 5.42e-4 and parks there. Below about `h/R = 1/40` a finer field bought
@@ -150,7 +150,7 @@ pub fn estimate(mesh: &TriMesh) -> TessellationEstimate {
 
     for (key, faces) in &edges {
         // Only manifold interior edges. A boundary or non-manifold edge says
-        // something about the mesh's validity, which is Unit 2's report, not
+        // something about the mesh's validity, which is the validator's report, not
         // this one's.
         if faces.len() != 2 {
             continue;

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Span storage for a whole field: packed inline, with a spill path.
 //!
@@ -28,9 +28,9 @@
 //! hole gives two spans only when it runs *transverse* to the bundle. Worth
 //! knowing before sizing anything against "holes give two spans".
 //!
-//! # Amended at U7: the spill path was the wrong half
+//! # Amended once cutting exercised it: the spill path was the wrong half
 //!
-//! The table above is the distribution of **stock at rest**, and Unit 7 measured
+//! The table above is the distribution of **stock at rest**, and cutting measured
 //! the population that actually matters — after cutting:
 //!
 //! | geometry | max spans | spilled rays |
@@ -54,14 +54,14 @@
 //!
 //! # Why not `Vec<Spans>`
 //!
-//! Unit 1 measured it: 24 bytes of header per ray plus one allocation each. A
+//! Measured: 24 bytes of header per ray plus one allocation each. A
 //! 2000x2000 lattice is 4M rays, so roughly 96 MB of headers before a single
 //! interval exists, and four million allocations whose addresses depend on
 //! allocator state. The field hash must not depend on allocation history.
 //!
-//! # What U7 needs from this
+//! # What cutting needs from this
 //!
-//! U7 subtracts the tool from these spans millions of times, and subtraction
+//! Cutting subtracts the tool from these spans millions of times, and subtraction
 //! **splits**: cutting a slot through a solid ray turns one span into two.
 //! Growth is therefore the common mutation, not a rare one, which is why the
 //! inline capacity is two rather than one — one would spill on the first pocket
@@ -76,7 +76,7 @@ use crate::spans::{Span, Spans};
 /// Spans stored inline per ray before spilling.
 ///
 /// Two, from the measurement in the module header: one covers every ray of
-/// ordinary stock at rest but only 80.4% of a mesh with a cavity, and U7's
+/// ordinary stock at rest but only 80.4% of a mesh with a cavity, and cutting's
 /// subtraction splits spans, so one would spill on the first pocket. Four would
 /// double the resting footprint to buy a case that has not been observed.
 pub const INLINE_CAPACITY: usize = 2;
@@ -99,7 +99,7 @@ pub struct Arena {
     /// Where each spilled ray's spans begin in [`Self::heap`], or [`NO_SPILL`].
     ///
     /// One `u32` per ray rather than a map entry, and **empty until the first
-    /// ray spills**. Unit 7 measured that spill is per-bundle rather than per-
+    /// ray spills**. Spill was measured to be per-bundle rather than per-
     /// ray: cutting slots along one axis spills every ray of the perpendicular
     /// bundle and none of the other two. Allocating this eagerly would charge
     /// the two clean bundles 4 bytes a ray for a case they never reach.
@@ -195,7 +195,7 @@ impl Arena {
 
     /// Replaces one ray's spans.
     ///
-    /// The only mutation, and deliberately so: U7 will subtract into a scratch
+    /// The only mutation, and deliberately so: cutting subtracts into a scratch
     /// [`Spans`] and store the result, which keeps the growth decision in one
     /// place rather than spread across an insert/remove/split API that each
     /// caller could get subtly wrong.
@@ -251,7 +251,7 @@ impl Arena {
 
     /// Copies one ray's spans into `out`, which is cleared first.
     ///
-    /// The `_into` shape U7 needs: one scratch buffer for a whole sweep, no
+    /// The `_into` shape cutting needs: one scratch buffer for a whole sweep, no
     /// allocation after the first ray.
     pub fn read_into(&self, ray: u32, out: &mut Spans) {
         out.clear();

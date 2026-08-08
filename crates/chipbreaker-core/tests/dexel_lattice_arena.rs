@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! The lattice invariant and the arena's contract.
 //!
@@ -201,7 +201,7 @@ fn spans_beyond_the_inline_capacity_spill_and_read_back_whole() {
 
 #[test]
 fn a_ray_that_shrinks_releases_its_spill() {
-    // Otherwise the arena only ever grows: U7 subtracts, and a ray that splits
+    // Otherwise the arena only ever grows: cutting subtracts, and a ray that splits
     // and later merges back would keep dead storage alive for the whole run.
     let mut arena = Arena::new(4);
     let many: Vec<Span> = (0..6)
@@ -217,7 +217,7 @@ fn a_ray_that_shrinks_releases_its_spill() {
 
 #[test]
 fn read_into_reuses_the_callers_buffer() {
-    // The shape U7 needs: one scratch buffer for a whole sweep.
+    // The shape cutting needs: one scratch buffer for a whole sweep.
     let mut arena = Arena::new(4);
     arena.set(0, &[span(0.0, 1.0), span(3.0, 4.0)]);
     arena.set(1, &[span(5.0, 6.0)]);
@@ -311,7 +311,7 @@ fn memory_is_proportional_to_rays_and_free_of_per_ray_allocation() {
     assert_eq!(a.bytes(), b.bytes(), "filling changes no allocation");
 
     // No ray has spilled, so the spill index has not been allocated at all and
-    // the arena costs exactly what Unit 5 measured. Unit 7 made the index lazy
+    // the arena costs exactly what was measured. Cutting made the index lazy
     // precisely so the bundles that never spill keep paying nothing.
     let expected = 1000 * INLINE_CAPACITY * size_of::<Span>() + 1000 * size_of::<u16>();
     assert_eq!(a.bytes(), expected);
@@ -328,17 +328,17 @@ fn memory_is_proportional_to_rays_and_free_of_per_ray_allocation() {
     );
 }
 
-// --- the U6 amendment ------------------------------------------------------
+// --- the centring amendment ------------------------------------------------
 
 #[test]
 fn a_cell_centre_never_lands_on_the_workspace_boundary() {
-    // The bug Unit 6 found, and it had been there since Unit 5.
+    // The bug a second bundle found, and it had been there from the start.
     //
     // Anchoring cells at `min` puts centre i at `min + (i + 0.5) * h`. A 20 mm
     // box at 1.6 mm cells is 13 cells, and the last centre lands on EXACTLY
     // 20.0 -- the stock's own face. Every ray on it is coplanar with that face,
     // which construction treats as a hard error, so `dexel build` refused a
-    // plain box at a perfectly ordinary spacing. Unit 5 never saw it because it
+    // plain box at a perfectly ordinary spacing. A single bundle never saw it because it
     // only ever cast along Z on meshes whose transverse extents happened not to
     // land that way.
     //

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Detecting a profile that crosses itself.
 //!
@@ -13,8 +13,8 @@
 //! meaningless. Volume follows suit: Green's theorem integrates the boundary
 //! quite happily and returns a number with no interpretation.
 //!
-//! Unit 3's parity test would eventually notice, as a leaking ray somewhere
-//! downstream in U5, at which point the diagnosis is a day's work. Rejecting at
+//! The parity test would eventually notice, as a leaking ray somewhere
+//! downstream in a field, at which point the diagnosis is a day's work. Rejecting at
 //! construction costs one `O(n^2)` scan over a handful of elements and names the
 //! two elements involved.
 //!

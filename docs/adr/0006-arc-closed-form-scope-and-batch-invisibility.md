@@ -2,8 +2,8 @@
 
 - **Status:** accepted
 - **Date:** 2026-08-06
-- **Unit:** 8 (arcs, helices, batching)
-- **Binds:** U9 (surface extraction), U11 (parallelism), U13 (customer-facing accuracy claims), U15 (chained-equals-monolithic)
+- **Governs:** arc and helix sweeping, motion batching, and any future change to
+  how work is grouped
 - **Related:** [ADR 0003](0003-toolpath-ir-coordinate-frame.md), [ADR 0005](0005-deviation-not-volume.md)
 
 ## Two rules
@@ -90,9 +90,9 @@ cost one ULP, and it is why the per-motion slots run the length of the whole
 motion list and are summed once at the end — and why `cut_all` is the entry point
 while `cut_batch` is not.
 
-### What this binds on Unit 11
+### What this binds on parallel cutting
 
-Unit 11 parallelises. The same argument applies to it verbatim and is harder
+Cutting on many threads faces the same argument verbatim, and it is harder
 there, because a thread pool reorders by construction:
 
 - **Rays may be distributed freely.** Each ray's subtraction is independent.

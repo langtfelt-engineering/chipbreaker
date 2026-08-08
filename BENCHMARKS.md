@@ -23,9 +23,9 @@ regressions we would be looking for.
 
 ---
 
-## 2026-08-07 — Unit 12: comparing a result against the part it was meant to be
+## 2026-08-07 — comparing a result against the part it was meant to be
 
-- **Commit:** `HEAD` (Unit 12)
+- **Commit:** `HEAD` (the deviation field)
 - **Machine:** Intel Core Ultra 7 270K Plus, 24 physical / 24 logical cores,
   31.5 GB RAM
 - **OS:** Windows 11 Pro 10.0.26200
@@ -105,7 +105,7 @@ asked for it yet.
 
 Both casts go through `intersect_ray`, which calls `intersect_ray_all` — a
 `Vec` allocation and a full sort of every crossing, to then take the nearest.
-That is the obvious next target and it is Unit 2 code used everywhere, so it
+That is the obvious next target and it is mesh code used everywhere, so it
 wants its own change rather than a drive-by.
 
 ### The tessellation floor
@@ -121,9 +121,9 @@ turns out to be a third of the runtime.
 
 ---
 
-## 2026-08-03 — Unit 4: G-code parsing and the toolpath IR
+## 2026-08-03 — G-code parsing and the toolpath IR
 
-- **Commit:** `HEAD` (Unit 4 complete)
+- **Commit:** `HEAD` (parser and toolpath IR complete)
 - **Machine:** Intel Core Ultra 7 270K Plus, 24 physical / 24 logical cores,
   31.5 GB RAM
 - **OS:** Windows 11 Pro 10.0.26200
@@ -136,7 +136,7 @@ cargo bench --bench gcode -- --warm-up-time 1 --measurement-time 3
 cargo run --release -p chipbreaker-gcode --example ir_memory
 ```
 
-### The number U5 needs: IR memory
+### The number the dexel field has to budget around: IR memory
 
 Measured from the real layout rather than added up from the struct definition,
 because padding and the inline `Option<ArcData>` make the two differ.
@@ -154,12 +154,12 @@ because padding and the inline `Option<ArcData>` make the two differ.
 | 10,000,000 | 1831.1 MB |
 
 **A million segments cost 183 MB**, and a million-segment finishing pass is
-ordinary. U5 holds this beside its dexel field, so that is a real slice of a
+ordinary. The IR is held beside the dexel field, so that is a real slice of a
 working set rather than a footnote.
 
 The arc payload is inline rather than boxed, so a program of pure linear moves
 pays 56 bytes a segment for arcs it does not have — roughly 29% of the total.
-That is the right trade while U7 wants arc data resident during a sweep, and it
+That is the right trade while sweeping wants arc data resident, and it
 is the first thing to revisit if the number becomes a problem. Boxing it would
 take a linear-only program to about 136 bytes a segment.
 
@@ -190,7 +190,8 @@ anything super-linear.
 
 **Lexing dominates at 60%**, which is worth knowing before anyone optimises the
 resolver. It allocates a `Vec<char>` per line and a `String` per word; both are
-straightforward to remove and neither is worth removing until a profile of U5
+straightforward to remove and neither is worth removing until a profile of a
+whole simulation
 says the parse is on a critical path. Resolution — the arithmetic, the arcs, the
 cycles — is about a third.
 
@@ -218,24 +219,24 @@ recorded so the next person does not assume the wrong direction.
 | expansion ratio | ~4.6 segments per cycle line |
 
 A `G83` line with pecking expands to a rapid, a plunge, and two motions per peck
-plus a retract. The ratio is what U5 should budget from: a drilling program is
+plus a retract. The ratio is what a field should budget from: a drilling program is
 five times more IR than it looks.
 
-### Action items carried into U5
+### What this measurement changed
 
-1. **183 MB per million segments.** Decide early whether U5 streams the IR or
+1. **183 MB per million segments.** Decide early whether the engine streams the IR or
    holds it. If it holds it, boxing `ArcData` is the obvious 29% saving on
    linear-dominated programs.
 2. Lexing is 60% of parse time and is allocation-bound. Only worth attacking if
-   parsing shows up in a U5 profile.
+   parsing shows up in a whole-simulation profile.
 3. Cycle expansion multiplies segment count by about 4.6. A drilling-heavy
    program has far more IR than its line count suggests.
 
 ---
 
-## 2026-08-03 — Unit 3: root solving and ray versus tool
+## 2026-08-03 — root solving and ray versus tool
 
-- **Commit:** `05c8c75` (Unit 3, tool geometry and the root solver complete)
+- **Commit:** `05c8c75` (tool geometry and the root solver complete)
 - **Machine:** Intel Core Ultra 7 270K Plus, 24 physical / 24 logical cores,
   31.5 GB RAM
 - **OS:** Windows 11 Pro 10.0.26200
@@ -287,8 +288,8 @@ are ~60% for every row, so the ratios below are comparable.
 | barrel 12 mm R200 | 1323.7 | 21.7x | 54.3% |
 
 **The bull nose is the number that matters and it is 3.6x, not 20x.** A bull nose
-is the workhorse of 3-axis finishing and appears from U5; a barrel is a 5-axis
-specialty that does not appear until U17.
+is the workhorse of 3-axis finishing and appears in every job; a barrel is a
+5-axis specialty that does not appear at all yet.
 
 The mechanism is *not* per-solve conditioning. One quartic costs about the same
 either way -- 1350 ns for the bull's torus, 1308 ns for the barrel's. What
@@ -352,8 +353,8 @@ cannot change which roots are found, so it needs no soundness argument.
 
 A 17% saving, which is smaller than it looks and worth stating plainly: at this
 size the allocator is not the bottleneck, the quartic is. The scratch parameter
-earns its place in the API on the strength of U5's call volume rather than on
-this table, and if a later measurement at U5 scale does not show more than this,
+earns its place in the API on the strength of the field builder's call volume rather than on
+this table, and if a later measurement at field-building scale does not show more than this,
 the API should lose it.
 
 ### Closed-form properties
@@ -378,24 +379,24 @@ rays cost what they do, though the quartic still dominates.
 Roughly `1/sqrt(tolerance)`, as expected: both the angular divisions and the
 chords along an arc scale that way, and the triangle count is their product.
 
-### Action items carried into U5 and U11
+### What this measurement changed
 
 1. Clip the quartic's initial bracket to the element's own `t`-range. Sound by
    construction, and worth up to 2x on its own.
 2. If a closed-form fast path is still wanted after that, gate it on the
    **root count** from the critical-point sign sequence, never on residuals.
-3. Re-measure the allocation table at U5 sweep sizes before trusting the 17%
+3. Re-measure the allocation table at real sweep sizes before trusting the 17%
    figure either way.
 4. `contains_rz` is called once per candidate interval. If the quartic gets
    cheaper, this becomes the next thing to look at.
-5. Barrel cutters are 20x and are a U17 concern. Bull noses are 3.6x and are
-   not a blocker for U5 or U7.
+5. Barrel cutters are 20x and are nobody's concern yet. Bull noses are 3.6x and
+   are not a blocker for building fields or sweeping them.
 
 ---
 
-## 2026-08-02 — Unit 2: mesh pipeline
+## 2026-08-02 — the mesh pipeline
 
-- **Commit:** `550fcab` plus the Unit 2 completion work (self-intersection, 3MF,
+- **Commit:** `550fcab` plus the completion work (self-intersection, 3MF,
   corpus, this table)
 - **Machine:** Intel Core Ultra 7 270K Plus, 24 physical / 24 logical cores,
   31.5 GB RAM
@@ -437,7 +438,7 @@ Lattice blocks, whose triangle count is `12n²`, at ~10k, ~100k and ~1M.
 All three scale slightly worse than linearly — welding is 11.6x and 11.2x across
 decades, validation 11.4x and 11.6x, BVH build 13.8x and 13.8x — which is the
 `log n` of the `BTreeMap` and the sort, plus cache pressure. Nothing here is
-super-linear in a way that would bite at U5's scale.
+super-linear in a way that would bite at a whole field's scale.
 
 **Self-intersection is the outlier, and this is why it is opt-in:**
 
@@ -463,21 +464,21 @@ not about the tree: an icosphere (5,120 triangles) and a lattice block (5,292).
 | coherent, lattice, offset origins | 2.524 ms | 1.623 Melem/s |
 | coherent, lattice, **origins on the integer lattice** | 39.83 ms | 0.103 Melem/s |
 
-**The headline number for U5 is the last row: 15.8x.**
+**The headline number for field building is the last row: 15.8x.**
 
 Coherent and incoherent rays differ by only 2.6%, which is worth knowing on its
-own — the BVH is not especially rewarding locality at this size, so U5 should not
+own — the BVH is not especially rewarding locality at this size, so a ray bundle should not
 expect a large win from ray reordering, and correspondingly does not need to
 worry about ray order hurting it.
 
 The 15.8x is the cost of Simulation of Simplicity firing. The parity suite
 measures the *rate* directly: 3.94% of triangle tests take the exact path on a
-generic mesh against **65.80%** on a lattice-aligned one. Unit 1 measured
+generic mesh against **65.80%** on a lattice-aligned one. The predicate benchmarks measured
 `orient3d` at 16.9x the filtered path, and 0.658 × 16.9 ≈ 11, so the observed
 15.8x is that plus the SoS cascade's own `orient2d` calls. The three
 measurements corroborate each other.
 
-**Action for U5:** place the dexel ray lattice at cell *centres*, not cell
+**Action taken:** place the dexel ray lattice at cell *centres*, not cell
 corners. Rays that miss every vertex and edge cost 2.5 ms per 4,096; rays that
 hit them cost 39.8 ms. That is a factor of sixteen on the innermost loop of the
 product, available for free by choosing an offset.
@@ -488,9 +489,9 @@ unreachable for axis-aligned stock.
 
 ---
 
-## 2026-08-02 — Unit 1 baseline
+## 2026-08-02 — the numeric core, as a baseline
 
-- **Commit:** `85a6f7e` (Unit 1, `spans` and predicates complete)
+- **Commit:** `85a6f7e` (`spans` and predicates complete)
 - **Machine:** Intel Core Ultra 7 270K Plus, 24 physical / 24 logical cores,
   31.5 GB RAM
 - **OS:** Windows 11 Pro 10.0.26200
@@ -523,10 +524,10 @@ escalates to exact expansion arithmetic, `orient2d` costs six times as much and
 `orient3d` nearly seventeen times as much.
 
 That is far better than the naive fear (exact arithmetic is not 1000x here) but
-it is not free, and it matters at U9. Dual contouring evaluates predicates on
+it is not free, and it matters during extraction. Dual contouring evaluates predicates on
 *grid-aligned* data, where degeneracy is not a rare accident but the common
 case — every sample that lands exactly on a cell boundary is degenerate by
-construction. If a naive U9 implementation puts most of its predicate calls on
+construction. If a naive extractor puts most of its predicate calls on
 the exact path, `orient3d` alone could dominate the contouring pass. The
 mitigation to design in, not discover: perturb the sampling grid off the
 canonical lattice, or cache orientation results per cell edge.
@@ -571,7 +572,7 @@ quadratically because every out-of-order insert triggers a full re-sort and
 re-normalize.
 
 This is documented on `Spans::push_merge`, but documentation is not a defence.
-A U5 sweep that happens to walk a dexel ray back-to-front would be a thousand
+A sweep that happens to walk a dexel ray back-to-front would be a thousand
 times slower with no error and no warning, and the symptom would present as
 "the dexel field is slow" rather than "the insert order is wrong".
 
@@ -580,10 +581,10 @@ is *faster* than ascending `push_merge` (1.34 µs against 1.56 µs), because one
 sort of a `Vec` beats a thousand individually-checked appends. Callers that
 cannot guarantee order should collect into a `Vec<Span>` and build once.
 
-### Action items carried into U5
+### What this measurement changed
 
 1. Assert or enforce front-to-back ray traversal in the sweep, rather than
    trusting the convention.
 2. Prefer `from_unsorted` over repeated `push_merge` wherever insertion order is
    not structurally guaranteed.
-3. Budget for `orient3d` on the exact path before U9, not during it.
+3. Budget for `orient3d` on the exact path before writing the extractor, not during it.

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! The sweep corpus: sixteen cut fields pinned by digest.
 //!
-//! Goldens are digests, as at Units 5 and 6, because a cut `.tdx` field cannot
+//! Goldens are digests, as everywhere else, because a cut `.tdx` field cannot
 //! be diffed. What is pinned alongside decides what a failure *means*:
 //!
 //! - digest moves, volumes hold → a serialization change
@@ -307,7 +307,7 @@ fn the_ramps_report_a_bound_beside_their_step_count() {
 
 #[test]
 fn the_corpus_records_what_cutting_does_to_the_arena() {
-    // Unit 7 rebuilt the spill path on the evidence that cutting makes rays
+    // The spill path was rebuilt on the evidence that cutting makes rays
     // split and that spill is per bundle rather than per ray. Pinning the
     // distribution means a change to that behaviour cannot pass unnoticed.
     let data = expectations();

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Topological validation of a welded triangle mesh.
 //!
 //! # What is being decided
 //!
-//! U5 casts rays through the mesh and infers material from crossing parity. That
+//! Field building casts rays through the mesh and infers material from crossing parity. That
 //! inference is only valid for a **closed, consistently oriented, outward-facing**
 //! surface. This module decides whether the mesh in hand is one, and when it is
 //! not, says precisely which elements are at fault.
@@ -28,7 +28,8 @@
 //! Finding IDs are derived from the finding's own content, not from a counter.
 //! Two runs over the same mesh therefore produce byte-identical reports, and two
 //! runs over *similar* meshes produce reports that diff cleanly — a finding that
-//! did not change keeps its ID even if a dozen others appeared before it. U13
+//! did not change keeps its ID even if a dozen others appeared before it. A
+//! findings report
 //! will need exactly this for gouge findings; the pattern is established here.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -96,7 +97,7 @@ impl FindingKind {
         }
     }
 
-    /// True if this finding makes the mesh unusable for U5's parity argument.
+    /// True if this finding makes the mesh unusable for the parity argument.
     ///
     /// The distinction is not cosmetic. A boundary edge or a non-manifold edge
     /// breaks the closed-surface theorem outright, so ray casting cannot infer
@@ -104,17 +105,17 @@ impl FindingKind {
     /// bounds no volume, so removing it changes nothing about which points are
     /// inside.
     ///
-    /// **Amended at U5.** This used to say a degenerate triangle "contributes
+    /// **Amended.** This used to say a degenerate triangle "contributes
     /// nothing to any ray test", and that was wrong. Left in the mesh it is
     /// very much visible to a ray test: all three of its edge functions vanish
     /// for any ray coplanar with the segment it collapsed to, which is the
-    /// caster's `coplanar_rejected` path — and U5 treats a coplanar rejection as
+    /// caster's `coplanar_rejected` path — and field building treats a coplanar rejection as
     /// a hard error, because for a *real* triangle it means a hole of unknown
     /// size. One zero-area triangle in `broken-zero-area.stl` produced 102
     /// rejections across 10,404 rays, every one of them on the diagonal where
     /// the ray happens to be coplanar with that segment.
     ///
-    /// So the sentence is now true only because U5 acts on it:
+    /// So the sentence is now true only because field building acts on it:
     /// [`crate::dexel::DexelField::build`] drops exactly-degenerate triangles
     /// before casting and reports how many. Anyone casting rays at a mesh
     /// without doing that should expect the rejections.
@@ -282,7 +283,7 @@ pub struct MeshReport {
 
 impl MeshReport {
     /// True if the mesh is closed, manifold, consistently oriented and
-    /// outward-facing — that is, safe for U5's parity argument.
+    /// outward-facing — that is, safe for the parity argument.
     #[must_use]
     pub fn is_solid(&self) -> bool {
         self.is_manifold
@@ -353,7 +354,7 @@ struct EdgeUse {
 /// [`orient2d`], so the whole test is exact — no area threshold, and therefore
 /// no dependence on what unit the model happens to be in.
 ///
-/// Public because Unit 5 drops degenerate triangles before casting, and it must
+/// Public because field building drops degenerate triangles before casting, and it must
 /// use *this* test rather than a second one of its own: two definitions of
 /// "degenerate" that disagree by one triangle would put the validator and the
 /// field builder into an argument nobody could settle.
@@ -898,7 +899,7 @@ mod tests {
 
     #[test]
     fn a_nested_component_reports_its_own_positive_volume() {
-        // A small cube inside a large one, both outward-oriented. U5 will care:
+        // A small cube inside a large one, both outward-oriented. Field building cares:
         // the signed volumes add rather than subtract, so a nested shell has to
         // be recognised as a separate component rather than as a cavity.
         let outer = unit_cube();

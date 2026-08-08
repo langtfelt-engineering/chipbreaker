@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
-//! The invariants every unit from U5 onward is entitled to assume.
+//! The invariants everything downstream is entitled to assume.
 //!
 //! These are not tests of a parser — no G-code appears here. They are tests of
 //! the contract itself, written so that the contract fails loudly if a later
@@ -404,7 +404,7 @@ fn orientation_is_reserved_and_empty_in_this_unit() {
     .expect("valid");
     assert!(
         path.segments.iter().all(|s| s.orientation.is_none()),
-        "U16 populates this; until then it must be uniformly None so that the \
+        "5-axis work populates this; until then it must be uniformly None so that the \
          golden hashes it will move are unambiguous"
     );
 }

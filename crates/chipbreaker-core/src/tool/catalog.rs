@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Constructors for the standard tool forms, and for holder stacks.
 //!
@@ -790,7 +790,7 @@ mod tests {
         assert_eq!(p.top_of_role(ElementRole::Cutting), Some(20.0));
         assert!(
             p.top_of_role(ElementRole::Holder).is_some(),
-            "the holder must be tagged, or U8 cannot tell a crash from a cut"
+            "the holder must be tagged, or nothing can tell a crash from a cut"
         );
     }
 

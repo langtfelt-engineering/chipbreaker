@@ -117,7 +117,7 @@
     },
     {
       "id": "mixed-pocket-rib",
-      "note": "two slots leaving a rib, which is the geometry that made the Y bundle spill every ray and rebuilt the arena at Unit 7",
+      "note": "two slots leaving a rib, which is the geometry that made the Y bundle spill every ray and caused the arena to be rebuilt",
       "moves": 2,
       "cases": ["horizontal", "horizontal"],
       "removed_mm3": [4.80000000000000000e3, 4.80000000000000000e3, 4.80000000000000000e3],

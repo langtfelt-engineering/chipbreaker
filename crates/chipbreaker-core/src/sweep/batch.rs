@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Cutting several motions in one traversal.
 //!
 //! # What batching buys
 //!
-//! Unit 7 measured 84.2% of rays rejected by the box test on a raster job. The
+//! 84.2% of rays are rejected by the box test on a raster job. The
 //! remaining cost is not the inner loop but re-walking the same rays for every
 //! consecutive segment: a finishing raster spends its life in a narrow band, so
 //! a batch of 32 or 64 moves rejects nearly as well as one move while paying the

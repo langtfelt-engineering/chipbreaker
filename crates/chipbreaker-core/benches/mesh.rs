@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 // `criterion_group!` expands to a public function it does not document, and the
 // workspace denies missing docs. Scoped to the benches, where the lint buys us
@@ -12,13 +12,13 @@
 //! Mesh pipeline throughput: parsing, welding, validation, BVH build and ray
 //! queries.
 //!
-//! The two numbers that matter most for U5 are at the bottom:
+//! The two numbers that matter most for field building are at the bottom:
 //!
-//! - **coherent versus incoherent ray throughput.** U5 casts millions of
+//! - **coherent versus incoherent ray throughput.** Field building casts millions of
 //!   parallel rays on a lattice, not random ones, so the coherent figure is the
 //!   one that sets its budget. The ratio also says how much the BVH's locality
 //!   is worth.
-//! - **generic versus lattice-aligned ray cost.** Unit 1 measured `orient3d` at
+//! - **generic versus lattice-aligned ray cost.** The predicate benchmarks measured `orient3d` at
 //!   roughly 17x the filtered path; the parity suite measures the exact-fallback
 //!   *rate* at 3.9% generic against 65.8% lattice-aligned. This benchmark turns
 //!   those two facts into a single wall-clock ratio, which is what a scheduling
@@ -144,7 +144,7 @@ fn bench_bvh_build(c: &mut Criterion) {
     group.finish();
 }
 
-/// A batch of parallel rays on a lattice — U5's actual access pattern.
+/// A batch of parallel rays on a lattice — a field builder's actual access pattern.
 fn coherent_rays(mesh: &TriMesh, count: u32) -> Vec<Ray> {
     let b = mesh.bounds();
     let e = b.extent();

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Convergence: the claims the measurements actually support.
 //!
@@ -134,7 +134,7 @@ fn refining_the_lattice_is_not_always_an_improvement() {
     // The Gauss circle error does not decay monotonically. On the axis-parallel
     // cylinder there is a refinement that quadruples the ray count and makes the
     // answer worse. A single-axis field therefore cannot promise a customer that
-    // a finer simulation is a safer one -- which is the argument for Unit 6.
+    // a finer simulation is a safer one -- which is the argument for three bundles.
     let case = standard_cases()
         .into_iter()
         .find(|c| c.model == ErrorModel::LatticeCount)
@@ -181,7 +181,7 @@ fn accuracy_depends_on_the_ratio_and_not_on_the_spacing() {
     // The claim the whole module rests on: a sphere at h/R = 1/40 has the same
     // relative error whether it is 2.5 mm across or 20 mm across. If this ever
     // stops holding, "accuracy depends on feature-size over cell-size" is no
-    // longer true and the U6 argument needs rebuilding from scratch.
+    // longer true and the argument for three bundles needs rebuilding from scratch.
     let mut errors = Vec::new();
     for radius in [2.5, 5.0, 10.0, 20.0] {
         let case = Case {

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Deterministic real-root solving for polynomials up to degree four.
 //!
@@ -17,11 +17,12 @@
 //! | cap | plane | 1 |
 //!
 //! So four is not an arbitrary ceiling: it is exactly what a profile of segments
-//! and arcs requires, and it is what U7 will extend when the tool starts moving.
+//! and arcs requires, and it is what the sweep extends when the tool moves.
 //!
 //! # This module is inner-loop code
 //!
-//! No allocation. [`RootSet`] is a fixed-capacity inline array. U5 and U7 will
+//! No allocation. [`RootSet`] is a fixed-capacity inline array. Field building
+//! and cutting
 //! call this millions of times per simulation.
 //!
 //! # Accuracy, and the one fact that governs the whole design
@@ -37,7 +38,7 @@
 //! Everything else follows from it: why tangency is decided at
 //! [`crate::eps::SQRT_F64_EPSILON`] rather than at machine epsilon, why the
 //! discriminant is computed in double-double arithmetic to protect the *simple*
-//! roots that still deserve sixteen digits, and why U7 must bound its interval
+//! roots that still deserve sixteen digits, and why the sweep bounds its interval
 //! endpoints with this in mind rather than assuming full precision.
 //!
 //! # Determinism
@@ -197,7 +198,7 @@ impl RootSet {
     ///
     /// See [`ROOT_CLUSTER_FACTOR`] for why the threshold is that multiple and
     /// not another. Failing to recognise a double root is the damaging
-    /// direction: it reports a tangency as two crossings, and U5 records a
+    /// direction: it reports a tangency as two crossings, and field building records a
     /// sliver of material that is not there. Merging two genuinely distinct
     /// roots that close is harmless by comparison — at tool scale the
     /// separation is nanometres.
@@ -544,7 +545,8 @@ fn refine_bracket(coefficients: &[f64], mut lo: f64, mut hi: f64) -> f64 {
 ///
 /// Closed-form cubic and quartic solutions route the answer through a resolvent,
 /// several square roots and a cube root. Each step is individually fine and the
-/// composition routinely loses six to eight digits — and U5 and U7 inherit that
+/// composition routinely loses six to eight digits — and field building and
+/// cutting inherit that
 /// error *directly* as the endpoints of a material interval.
 ///
 /// Two iterations on the original coefficients recover most of it, because

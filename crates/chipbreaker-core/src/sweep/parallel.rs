@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Cutting on many threads, with the answer unchanged.
 //!
@@ -19,7 +19,7 @@
 //!
 //! # The arena is never written during compute
 //!
-//! Unit 7 established that spill is per bundle and can be sudden — the rib case
+//! Spill is per bundle and can be sudden — the rib case
 //! spilled all 4,500 rays of one bundle at once. A mutex on the spill path would
 //! serialise exactly the workload that spills, which is the one that needs the
 //! threads.
@@ -35,7 +35,7 @@
 //! This is the second of the two designs the plan suggested, and it was preferred
 //! over addressing spill as a pure function of ray index because that one buys
 //! the problem away at the cost of reserving spill capacity for rays that never
-//! use it — and Unit 10 has just spent a unit making memory predictable.
+//! use it — and a great deal of work went into making memory predictable.
 //!
 //! # Why the removed volume needs more care than the counters
 //!
@@ -43,7 +43,7 @@
 //! freely. `removed_mm3` is a float sum, and the sequential path accumulates it
 //! **flat over rays** for each motion. Chunk-local partials summed in chunk order
 //! would regroup that sum — `(r0+r1) + (r2+r3)` against `((r0+r1)+r2)+r3` — which
-//! is the same ULP that Unit 8's batching had to be redesigned to avoid.
+//! is the same ULP that motion batching had to be redesigned to avoid.
 //!
 //! So a worker does not sum. It records each ray's contribution as a
 //! `(motion, value)` pair, in ray order, and the reduction replays them flat.
@@ -74,7 +74,7 @@ use super::cut::{
 
 /// Rays per chunk.
 ///
-/// Small on purpose. Unit 7 measured 84% of rays rejected by the box test, so
+/// Small on purpose. 84% of rays are rejected by the box test, so
 /// the surviving work is **spatially clustered**: a chunk that covers a whole
 /// raster row is either almost all work or almost all rejection. Chunks well
 /// below that spread the clusters across workers and let stealing do its job.
@@ -92,7 +92,7 @@ pub const DEFAULT_CHUNK: usize = 256;
 /// gain    1.00x   1.24x   1.32x   1.32x
 /// ```
 ///
-/// Raising it is safe because **batch size cannot change the answer** -- Unit 8
+/// Raising it is safe because **batch size cannot change the answer** -- ADR 0006
 /// established that and `batch_size_is_invisible_to_the_parallel_path` re-checks
 /// it here -- so this is a scheduling knob and nothing more. It applies only
 /// when more than one worker is running; a single worker keeps the caller's
@@ -347,7 +347,7 @@ fn compute_bundle(
         for _ in 0..workers {
             scope.spawn(|| {
                 // Per worker, so the inner loop still allocates nothing. This is
-                // the `threads x scratch` the Unit 10 ceiling has to account for.
+                // the `threads x scratch` the memory ceiling has to account for.
                 let mut scratch = CutScratch::new(profile);
                 let mut mine = Vec::new();
                 loop {

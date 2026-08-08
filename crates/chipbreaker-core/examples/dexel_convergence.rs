@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! The convergence table.
 //!
@@ -115,5 +115,5 @@ fn main() {
     println!("So the fix for the upright cylinder is not a finer lattice -- refinement is");
     println!("not even reliably an improvement. It is a bundle along another axis, where");
     println!("that same vertical wall becomes a horizontal surface the rays meet");
-    println!("analytically. That is the whole of Unit 6.");
+    println!("analytically. That is the whole of the sampling theorem.");
 }

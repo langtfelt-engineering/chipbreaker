@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Adaptive-precision exact geometric predicates.
 //!
@@ -260,7 +260,8 @@ impl Hashable for Orientation {
 /// The four exact predicates, behind a swappable implementation.
 ///
 /// Takes `&self` rather than being a set of associated functions so that an
-/// implementation can be selected at run time through `&dyn Predicates` — U9's
+/// implementation can be selected at run time through `&dyn Predicates` — the
+/// extractor's
 /// dual contouring will want to A/B a filtered implementation against this one
 /// on real data without a recompile.
 pub trait Predicates {

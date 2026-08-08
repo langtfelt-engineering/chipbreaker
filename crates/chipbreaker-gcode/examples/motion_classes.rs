@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! How much of a real toolpath is each sweep case?
 //!
-//! Unit 7 decomposes linear motion into three cases:
+//! The sweep decomposes linear motion into three cases:
 //!
 //! - **A**, `dz = 0`: horizontal. Reduces to the tool at each end plus a prism.
 //! - **B**, `dxy = 0`: pure plunge. The swept volume is itself a solid of
-//!   revolution, so U3's existing ray cast handles it whole.
+//!   revolution, so the stationary ray cast handles it whole.
 //! - **C**, both non-zero: a general ramp. Neither reduction applies.
 //!
 //! Case C is the expensive one, and whether it deserves a closed form or

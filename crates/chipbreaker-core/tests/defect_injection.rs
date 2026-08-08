@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Every corpus case must inject the defect it claims, before it may count.
 //!
@@ -226,7 +226,7 @@ fn changed_mm(per_bundle: [f64; 3]) -> f64 {
 /// where `θ` is the angle between the surface normal and that bundle's axis, and
 /// on a bundle the surface nearly grazes that factor is enormous — a wall moved
 /// 0.15 mm sideways displaces the end of an X-bundle span, tangent to the slot's
-/// rounded end, by five millimetres. Unit 6 spent a whole unit on this ratio
+/// rounded end, by five millimetres. The sampling theorem spends a section on this ratio
 /// being unbounded, and it is unbounded here for the same reason.
 ///
 /// Taking the smallest reading is what the tri-dexel guarantee is *for*. No

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
-//! The numbers Unit 6 and Unit 10 have to budget against.
+//! The numbers a tri-dexel field and the memory ceiling have to budget against.
 //!
 //! Three reports, run together because they answer one question between them:
 //! is a single-axis field safe, and what does it cost?
@@ -12,12 +12,14 @@
 //!    makes them unreachable for axis-aligned stock. A non-zero count here means
 //!    the invariant has stopped holding.
 //!
-//! 2. **Memory.** Bytes per cubic centimetre at a range of cell sizes. Unit 6 is
-//!    three bundles, so it is three times this. Unit 10's adaptive resolution has
+//! 2. **Memory.** Bytes per cubic centimetre at a range of cell sizes. A
+//!    tri-dexel field is three bundles, so it is three times this. Any adaptive
+//!    resolution scheme has
 //!    to beat it.
 //!
 //! 3. **Both error columns.** Against `TriMesh::signed_volume`, which isolates
-//!    dexel sampling error, and against the analytic solid, which adds Unit 3's
+//!    dexel sampling error, and against the analytic solid, which adds the
+//!    tessellation's
 //!    tessellation error. The total pipeline budget, visible in one place.
 //!
 //! Run with:
@@ -165,7 +167,7 @@ fn corpus_meshes() -> Vec<(String, TriMesh)> {
         };
         // Only closed solids: the corpus deliberately contains broken meshes,
         // and a mesh with a hole in it will of course produce odd crossings.
-        // Those are Unit 2's business, not this gate's.
+        // Those are the mesh validator's business, not this gate's.
         if validate(&welded).is_solid() {
             out.push((name, welded));
         }
@@ -313,8 +315,8 @@ fn arena_bytes(bounds: Aabb3, spacing: f64) -> Option<(usize, usize)> {
 fn memory_budget() {
     println!("=== 2. MEMORY BUDGET ===");
     println!();
-    println!("Unit 6 is three bundles, so it is 3x every figure here.");
-    println!("Unit 10's adaptive resolution has to beat it.");
+    println!("A tri-dexel field is three bundles, so it is 3x every figure here.");
+    println!("Any adaptive resolution scheme has to beat it.");
     println!();
 
     // Memory per cm^3 depends on the part's DEPTH along the bundle, not only on
@@ -412,7 +414,7 @@ fn error_budget() {
     println!();
     println!("vs MESH      dexel sampling error alone. The mesh is exactly what the");
     println!("             rays met, so this is the transverse sum and nothing else.");
-    println!("vs ANALYTIC  sampling PLUS Unit 3's tessellation error. This is the whole");
+    println!("vs ANALYTIC  sampling PLUS the tessellation error. This is the whole");
     println!("             distance from reality, and it does NOT converge with h --");
     println!("             refining the lattice does nothing about the tessellation.");
     println!();

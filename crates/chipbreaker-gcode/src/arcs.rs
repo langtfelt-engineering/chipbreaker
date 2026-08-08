@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Turning `I`/`J`/`K` or `R` into one unambiguous arc.
 //!
@@ -31,7 +31,8 @@
 //! start almost never equals the distance to the end exactly. Real controls
 //! disagree about this: LinuxCNC rejects beyond a tolerance, Fanuc silently
 //! adjusts. The policy here is to accept within a tolerance, move the centre to
-//! the point that splits the difference, and **record the residual** so that U13
+//! the point that splits the difference, and **record the residual** so that a
+//! report
 //! can tell a surface deviation caused by geometry from one caused by rounding.
 
 use chipbreaker_core::math::Vec3;

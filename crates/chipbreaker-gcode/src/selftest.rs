@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! The parser's contribution to the cross-platform parity guarantee.
 //!
@@ -11,8 +11,8 @@
 //! one-ULP disagreement between targets moves a segment endpoint, and a moved
 //! endpoint is material removed somewhere else.
 //!
-//! Unit 3 learned this the expensive way: every green `wasm parity` job through
-//! that whole unit was covering Units 1 and 2 only, because the new code was not
+//! This was learned the expensive way: for a long stretch every green `wasm
+//! parity` job was covering the older suites only, because the new code was not
 //! in the suite. The hash said nothing about the thing being built.
 //!
 //! # What is hashed

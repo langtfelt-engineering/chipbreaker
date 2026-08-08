@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! How far the extracted surface sits from the surface it represents.
 //!
-//! # This is Unit 9 measuring its own error, which nothing before it bounded
+//! # Extraction measuring its own error, which nothing before it bounded
 //!
-//! Unit 6's two constants describe the *field*: `h * sqrt(3/2)` is how far a
+//! The sampling theorem's two constants describe the *field*: `h * sqrt(3/2)` is how far a
 //! ray endpoint can lie from the true surface along its own ray, and `h/sqrt(3)`
 //! bounds a **nearest-neighbour** reconstruction. Neither bounds this. Dual
 //! contouring does not reconstruct by nearest neighbour; it interpolates between
@@ -26,7 +26,7 @@
 //!
 //! The same field is extracted twice — once with normals and once with them
 //! discarded — and the edge is measured both ways. It is the test that decides
-//! whether Unit 9 section 1b was worth its memory, and it belongs here rather
+//! whether storing normals was worth its memory, and it belongs here rather
 //! than in a one-off measurement because the answer has to keep being true.
 //!
 //! It is run on **two** geometries, and the reason is a defect that lived for
@@ -124,7 +124,7 @@ fn a_sphere_is_reconstructed_well_inside_the_unit_6_bounds() {
         .collect();
     let (worst, rms) = worst_and_rms(&deviations);
 
-    // The two Unit 6 constants, for scale.
+    // The two sampling constants, for scale.
     let lateral = spacing * (3.0f64 / 2.0).sqrt();
     let perpendicular = spacing / 3.0f64.sqrt();
     println!(
@@ -228,7 +228,7 @@ fn sharp_edges_survive_only_when_normals_are_stored() {
     // mesh and never cut, so each endpoint takes the triangle normal of the
     // facet its ray crossed. That path was always correct. The other path --
     // the analytic tool surface normal during a cut -- was not implemented at
-    // all until Unit 12, so this test passed throughout on a field that could
+    // all until the deviation field was built, so this test passed throughout on a field that could
     // not exercise the defect.
     //
     // `sharp_edges_survive_on_cut_geometry_too` is the other half, and both
@@ -301,7 +301,7 @@ fn sharp_edges_survive_only_when_normals_are_stored() {
     );
     assert!(
         with_rms < without_rms,
-        "storing normals must improve edge fidelity, or section 1b bought \
+        "storing normals must improve edge fidelity, or they bought \
          nothing: with {with_rms:.6} mm rms against without {without_rms:.6} mm"
     );
 }
@@ -313,7 +313,7 @@ fn sharp_edges_survive_on_cut_geometry_too() {
     //
     // The uncut test above takes every normal from construction, and construction
     // was never the broken path. A cut face's normal comes from the tool, and
-    // until Unit 12 the sweep set none at all -- so the claim that four bytes buy
+    // the sweep set none at all -- so the claim that four bytes buy
     // sharp features had, for five units, been demonstrated only where it was
     // never in doubt.
     //
@@ -463,12 +463,12 @@ fn extraction_of_an_uncut_field_round_trips_to_the_source_mesh() {
     let (worst, rms) = worst_and_rms(&deviations);
     let bound = spacing * (3.0f64 / 2.0).sqrt();
     println!(
-        "round trip at h={spacing}: worst {worst:.6} mm, rms {rms:.6} mm, Unit 6 \
+        "round trip at h={spacing}: worst {worst:.6} mm, rms {rms:.6} mm, lateral \
          lateral bound {bound:.6} mm"
     );
     assert!(
         worst < bound,
-        "a round trip strayed {worst:.6} mm, past the Unit 6 lateral bound of \
+        "a round trip strayed {worst:.6} mm, past the lateral bound of \
          {bound:.6} mm -- that is an indexing error, not sampling"
     );
 
@@ -514,7 +514,7 @@ fn refining_the_grid_reduces_the_deviation_until_it_meets_the_tessellation() {
     // The lesson generalises and is recorded once, in ADR 0005: **any accuracy
     // metric floors against the fidelity of its input**, and past that point it
     // measures the mesher rather than the pipeline. Volume floors that way,
-    // deviation floors that way, and Unit 12's comparison against a nominal part
+    // deviation floors that way, and a comparison against a nominal part
     // will floor that way twice -- once for each mesh it is given.
     //
     // A subdivision-5 sphere has facets near 0.2 mm, which keeps all three rungs

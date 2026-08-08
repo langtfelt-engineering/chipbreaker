@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 // `criterion_group!` expands to a public function it does not document, and the
 // workspace denies missing docs. Scoped to the benches, where the lint buys us
@@ -21,7 +21,8 @@
 //!   filter cannot decide and the predicate escalates through the adaptive
 //!   stages to exact expansion arithmetic.
 //!
-//! That ratio is how much degeneracy costs, and it feeds a real decision at U9:
+//! That ratio is how much degeneracy costs, and it feeds a real decision in the
+//! extractor:
 //! dual contouring evaluates predicates on grid-aligned data, which is
 //! degenerate far more often than random data is. If the exact path costs two
 //! orders of magnitude more than the filtered one, that has to be designed

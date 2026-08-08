@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 #![allow(
     missing_docs,
@@ -12,7 +12,7 @@
 //!
 //! **Does the arena actually beat `Vec<Spans>`?** ADR 0001 Part 1 argued it
 //! would, from structure rather than measurement, and left the benchmark as an
-//! obligation on Unit 5. This discharges it. The argument was 24 bytes of header
+//! obligation. This discharges it. The argument was 24 bytes of header
 //! per ray plus one allocation each, against two allocations for the whole
 //! field.
 //!
@@ -20,7 +20,7 @@
 //! field is a coffee break or an overnight job, and the budget every later unit
 //! spends against.
 //!
-//! **How much does the half-cell offset buy?** Unit 2 measured 15.8x on a
+//! **How much does the half-cell offset buy?** The mesh benchmarks measured 15.8x on a
 //! synthetic sweep. Measured again here on the real construction path, because a
 //! number that load-bearing should not rest on one measurement in one place.
 
@@ -99,7 +99,7 @@ fn arena_versus_per_ray_vec(c: &mut Criterion) {
             });
         });
 
-        // Reading is the operation U7 performs millions of times, and it is where
+        // Reading is the operation cutting performs millions of times, and it is where
         // locality shows up: the arena's spans are contiguous, the Vec's are
         // scattered across as many allocations as there are rays.
         let mut arena = Arena::new(rays);
@@ -140,7 +140,7 @@ fn arena_versus_per_ray_vec(c: &mut Criterion) {
 /// The half-cell offset, measured on the construction path.
 ///
 /// ADR 0001 Part 2 rests on 2.52 ms against 39.83 ms from a synthetic sweep at
-/// Unit 2. A number that decides a required invariant deserves a second
+/// the mesh benchmarks. A number that decides a required invariant deserves a second
 /// measurement somewhere else, so here it is against the same lattice block, cast
 /// the way construction casts.
 fn cell_centres_versus_corners(c: &mut Criterion) {
@@ -209,7 +209,7 @@ fn serialization(c: &mut Criterion) {
     group.finish();
 }
 
-/// Measuring a field's volume, which is the traversal U7 and U9 repeat.
+/// Measuring a field's volume, which is the traversal cutting and extraction repeat.
 fn volume(c: &mut Criterion) {
     let mut group = c.benchmark_group("dexel/volume");
     for spacing in SPACINGS {
@@ -277,7 +277,7 @@ criterion_main!(benches);
 
 /// Three bundles: build, serialize, and measure deviation.
 ///
-/// The numbers Unit 7 budgets against. Note that three bundles is **not** three
+/// The numbers cutting budgets against. Note that three bundles is **not** three
 /// times one: they cover `(WD + DH + HW) / h^2` rays between them, so the cost
 /// tracks half the bounding-box surface area rather than any single face.
 fn tri(c: &mut Criterion) {

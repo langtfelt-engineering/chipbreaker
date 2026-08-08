@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 // `criterion_group!` expands to a public function it does not document, and the
 // workspace denies missing docs. Scoped to the benches, where the lint buys us
@@ -11,7 +11,7 @@
 
 //! Throughput of the span set algebra.
 //!
-//! This is the hot loop of the entire product: from U5 onward every cut is a
+//! This is the hot loop of the entire product: every cut is a
 //! [`Spans::subtract`] on a dexel ray, and a realistic job performs tens of
 //! millions of them. The merge-scan is `O(|a| + |b|)` by construction, so what
 //! these benchmarks are really checking is that the constant factor is small and

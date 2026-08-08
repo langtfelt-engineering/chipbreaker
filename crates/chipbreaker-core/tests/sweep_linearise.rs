@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Native arcs against the chords a CAM post would emit.
 //!
@@ -18,7 +18,7 @@
 //!
 //! # The crossover that is not there
 //!
-//! Unit 8 asked for the tolerance at which refining the chords stops buying
+//! The question is the tolerance at which refining the chords stops buying
 //! anything, on the reasoning that the disagreement must eventually disappear
 //! under the lattice's own sampling error. **There is no such tolerance**, and
 //! `there_is_no_crossover_below_the_cell_size` measures it out to a 1024th of a

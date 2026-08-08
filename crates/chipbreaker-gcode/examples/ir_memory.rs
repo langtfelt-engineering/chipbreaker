@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! What a million IR segments cost in memory.
 //!
-//! U5 holds a whole toolpath beside its dexel field, and a million-segment
+//! A whole toolpath is held beside the dexel field, and a million-segment
 //! program is an ordinary finishing pass. This is the number that decides
 //! whether that is a footnote or a design constraint, so it is measured rather
 //! than estimated from the struct definition -- padding and the `Option<ArcData>`
@@ -43,6 +43,6 @@ fn main() {
         (1_000_000 * segment) as f64 / (1024.0 * 1024.0)
     );
     println!("segment rather than boxed, so a program of pure linear moves pays for arcs");
-    println!("it does not have -- which is the right trade while U7 wants arcs resident,");
+    println!("it does not have -- which is the right trade while cutting wants arcs resident,");
     println!("and the first thing to revisit if this number becomes a problem.");
 }

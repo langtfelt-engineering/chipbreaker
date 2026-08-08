@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Tool and holder geometry: solids of revolution about the `+Z` axis.
 //!
@@ -182,8 +182,8 @@ pub struct Tool {
     /// toolpath against a library is a lookup by number and nothing else. The
     /// name is metadata for humans reading a report.
     ///
-    /// Unit 3's specification keyed the library by number and the implementation
-    /// drifted to name, which left Unit 7 unable to run any program that changed
+    /// The specification keyed the library by number and the implementation
+    /// drifted to name, which left cutting unable to run any program that changed
     /// tools -- which is nearly every real job.
     number: u32,
     id: ToolId,

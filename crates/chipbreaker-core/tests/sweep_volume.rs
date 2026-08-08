@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Removed volume against closed forms.
 //!
@@ -90,7 +90,7 @@ fn assert_removed(name: &str, motion: &LinearMove, profile: &Profile, expected: 
 /// and one shared tolerance would have to be the worst of the three. A cylinder
 /// seen from the side is a rectangle the lattice tiles exactly; seen end-on it is
 /// a disc, and counting cells inside a disc is the Gauss circle problem from
-/// Unit 5.
+/// a single bundle.
 fn assert_removed_per_bundle(
     name: &str,
     motion: &LinearMove,
@@ -196,7 +196,7 @@ fn a_straight_plunge_removes_a_cylinder() {
         PI * radius * radius * depth,
         // X and Y sum the disc's CHORDS across the transverse cells, which is a
         // midpoint rule on 2*sqrt(R^2 - y^2). Square-root endpoints make that
-        // h^1.5 rather than h^2 -- the same behaviour Unit 6 measured on a lying
+        // h^1.5 rather than h^2 -- the same behaviour measured on a lying
         // cylinder, where the fitted exponent was 1.46. Measured here: 2.6e-3.
         // Z counts whole cells inside the disc and gets the Gauss envelope.
         [5.0e-3, 5.0e-3, 1.6e-2],
@@ -260,7 +260,7 @@ fn the_plunge_shortfall_on_the_z_bundle_is_exactly_the_lattice_point_count() {
         (measured - predicted).abs() < 1.0e-9,
         "the Z bundle removed {measured} mm^3; a lattice-point count of the disc predicts {predicted} mm^3. A plunge's removed volume must be exactly h^2 * depth * (cells inside the disc)."
     );
-    // And that really is short of the true cylinder, by the amount Unit 5 bounds.
+    // And that really is short of the true cylinder, by the bounded amount.
     let truth = PI * radius * radius * depth;
     let shortfall = (truth - measured) / truth;
     assert!(

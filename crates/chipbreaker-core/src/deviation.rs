@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Where the simulated result differs from the part that was intended.
 //!
@@ -16,7 +16,7 @@
 //!
 //! # Three distances, and which one is the metric
 //!
-//! Unit 6 established that **sample distance** — how far a query point is from
+//! The sampling theorem established that **sample distance** — how far a query point is from
 //! the nearest place the field sampled — is a property of the lattice and not of
 //! the part, that it exceeds the real error by up to `3/sqrt(2)`, and that
 //! pointwise the ratio `1/(sin θ · cos θ)` is unbounded. That argument stands and
@@ -46,13 +46,13 @@
 //! step edge in every program.
 //!
 //! So the metric is the surface distance, and the perpendicular one is published
-//! beside it rather than discarded — the same discipline Unit 8 settled on for
+//! beside it rather than discarded — the same discipline arc sweeping settled on for
 //! its two error measures. Their disagreement is itself diagnostic:
 //! [`DeviationField::worst_projection_gap_mm`] is large exactly where the result
 //! meets the nominal at a steep angle, which is where a customer should be told
 //! that a perpendicular reading is not meaningful.
 //!
-//! Both use the endpoint normals stored at Unit 9 — the perpendicular one for its
+//! Both use the stored endpoint normals — the perpendicular one for its
 //! direction, and **both** for their sign. That is the second of the three units
 //! the four-byte decision was justified by.
 //!
@@ -367,7 +367,7 @@ fn facet_reach(mesh: &TriMesh, tri: u32, a: u32, b: u32) -> f64 {
 /// nominal the material sits on.
 ///
 /// `placement` maps the nominal into machine coordinates; the caller resolves it
-/// from the toolpath's work offset or an explicit transform, exactly as Unit 5's
+/// from the toolpath's work offset or an explicit transform, exactly as
 /// stock placement does, rather than a second mechanism being invented here.
 #[must_use]
 pub fn compare(
@@ -432,7 +432,7 @@ pub fn compare(
 
 /// Combines samples in the order they were collected.
 ///
-/// Separate for the reason Unit 11 made [`crate::dexel::deviation::reduce`]
+/// Separate for the reason parallel cutting made [`crate::dexel::deviation::reduce`]
 /// separate: the maxima reassociate freely and **the RMS does not**.
 #[must_use]
 pub fn reduce(

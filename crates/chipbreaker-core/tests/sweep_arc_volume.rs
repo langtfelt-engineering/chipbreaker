@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Removed volume for arcs and helices, against closed forms.
 //!
@@ -311,7 +311,7 @@ fn a_deeper_arc_removes_proportionally_more() {
 
 #[test]
 fn an_arc_does_not_raise_the_quartic_rate() {
-    // **Unit 8's plan predicted this would rise, and it does not.**
+    // **Arcs were predicted to drive this up, and they do not.**
     //
     // The plan expected the middle piece of a swept arc to need an *offset*
     // profile -- the tool's chain translated by the arc radius and mirrored --

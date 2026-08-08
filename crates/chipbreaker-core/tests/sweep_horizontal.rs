@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 //! Case A against the dense reference.
 //!
@@ -239,7 +239,7 @@ fn a_ray_that_misses_the_sweep_entirely_returns_nothing() {
 
 #[test]
 fn a_tangential_graze_removes_nothing_rather_than_a_sliver() {
-    // Unit 3's EPS_TANGENT policy meeting real motion. A ray that touches the
+    // The EPS_TANGENT policy meeting real motion. A ray that touches the
     // swept surface exactly must produce no interval at all: a sliver of a
     // nanometre, multiplied across millions of rays, is what shows up later as
     // a visible artefact on a wall.

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Chipbreaker Contributors
+// Copyright (C) 2026 Langtfelt
 
 #![forbid(unsafe_code)]
 
@@ -184,7 +184,7 @@ fn run_selftest(format: ReportFormat, out: Option<&std::path::Path>) -> ExitCode
     let started = Instant::now();
     // `run_with` rather than `run`: the G-code parser lives in a crate the
     // core cannot see, and it has to be inside the parity guarantee like
-    // everything else. Unit 3 shipped a whole unit outside it by accident.
+    // everything else. A whole subcommand once shipped outside it by accident.
     let results = chipbreaker_core::selftest::run_with(chipbreaker_gcode::selftest::suites());
     let env = Environment::collect(started.elapsed());
 
