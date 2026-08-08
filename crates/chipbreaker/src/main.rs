@@ -13,6 +13,7 @@ mod collide;
 mod compare;
 mod dexel;
 mod extract;
+mod job;
 mod memest;
 mod mesh;
 mod path;
@@ -108,6 +109,12 @@ enum Command {
     Verify(verify::VerifyArgs),
     /// Compare two verification reports.
     ReportDiff(verify::ReportDiffArgs),
+    /// Verify a whole part across setups, carrying the stock between them.
+    ///
+    /// The whole-job verb. Everything inside a setup is exact; crossing between
+    /// setups is the only place a transform can lose anything, and the report
+    /// accounts for each boundary separately.
+    Job(job::JobArgs),
     /// Check the tool's non-cutting geometry against the stock and any fixtures.
     ///
     /// Takes the **stock** field and replays the program, because a collision is
@@ -195,6 +202,11 @@ fn main() -> ExitCode {
         Command::Collide(args) => {
             let as_json = args.json;
             let (outcome, elapsed) = mesh::timed(|| collide::collide(&args));
+            emit(outcome, elapsed, as_json)
+        }
+        Command::Job(args) => {
+            let as_json = args.json;
+            let (outcome, elapsed) = mesh::timed(|| job::job(&args));
             emit(outcome, elapsed, as_json)
         }
         Command::MemEstimate(args) => {

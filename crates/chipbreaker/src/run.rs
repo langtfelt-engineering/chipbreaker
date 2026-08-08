@@ -170,6 +170,14 @@ fn parse_range(s: &str) -> Result<(usize, usize), String> {
     Ok((a, b))
 }
 
+/// Reads a stock field, for callers outside this module.
+///
+/// # Errors
+/// Returns a message suitable for stderr.
+pub fn read_stock_public(file: &std::path::Path) -> Result<TriDexelField, String> {
+    read_stock(file)
+}
+
 fn read_stock(file: &std::path::Path) -> Result<TriDexelField, String> {
     let bytes = std::fs::read(file).map_err(|e| format!("cannot read {}: {e}", file.display()))?;
     match dexel_io::detect(&bytes) {
