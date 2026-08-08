@@ -29,9 +29,9 @@ evaluating the engine should be able to check that the rules are real.
 ## The determinism invariant
 
 Chipbreaker guarantees that **the same input produces bit-identical output across
-runs, thread counts, platforms, and the WASM build**. Neither major incumbent
-publishes such a guarantee; it is the product's commercial differentiator, and it
-is the single constraint that most shapes how this code is written.
+runs, thread counts, platforms, and the WASM build**. It is the product's
+commercial differentiator, and it is the single constraint that most shapes how
+this code is written.
 
 It is enforced from the first commit rather than retrofitted, because retrofitting
 it later would mean auditing every floating-point operation in the codebase.
@@ -139,19 +139,30 @@ Note the knock-on effect: `std::env::set_var` is `unsafe` in edition 2024, so
 configuration is threaded through as values — see `golden::GoldenStore`, which
 takes its root directory rather than reading the environment on every call.
 
-### 8. Transcendental functions are not yet safe
+### 8. Transcendentals come from `transcendental`, never from `std`
 
-`f64::sqrt` is fine: IEEE-754 requires it to be correctly rounded, so it is
-bit-identical everywhere.
+`f64::sqrt` is fine, and is the only exception: IEEE-754 requires it to be
+correctly rounded, so it is bit-identical everywhere.
 
-`sin`, `cos`, `tan`, `atan2`, `exp`, `ln` and friends are **not**. They are
-correctly rounded by no standard, and the native platform libm and the Rust
-`libm` used for WASM differ by an ULP on some inputs. The `math` module
-deliberately exposes no trigonometric constructors for this reason.
+`sin`, `cos`, `tan`, `atan2`, `exp`, `ln` and friends are **not**. No standard
+requires them to be correctly rounded, so the platform libm on x86-64 Linux, the
+one on macOS, and the one WASM gets are all entitled to differ by an ULP — and
+they do.
 
-This becomes a real problem the moment 5-axis kinematics needs rotations. The
-fix is a vendored, bit-reproducible implementation — to be decided and landed
-*before* the first rotation matrix is built, not after.
+So every one of them goes through
+[`chipbreaker_core::transcendental`](crates/chipbreaker-core/src/transcendental.rs),
+which is the pure-Rust [`libm`](https://crates.io/crates/libm) crate, pinned by
+exact version and compiled from the same source for every target. Same source,
+same arithmetic, same bits.
+
+`std`'s versions are **banned mechanically**, not by review:
+[`clippy.toml`](clippy.toml) lists each in `disallowed-methods` with the
+replacement named in the error message. A few — `exp2`, `exp_m1` — have no
+reproducible replacement yet and are simply refused; if you need one, add it to
+`transcendental` rather than reaching for `std`.
+
+The `math` module exposes no trigonometric constructors, for the same reason: a
+`Mat3::from_rotation` would be a supported way to make the guarantee false.
 
 ---
 
@@ -201,14 +212,13 @@ one file each, numbered. A decision belongs there when reversing it later would
 look like a reasonable simplification to somebody who was not present for it —
 which is precisely when a comment in the code is not enough.
 
-| ADR | Decision |
-|---|---|
-| [0001](docs/adr/0001-spans-arena.md) | Dexel span storage, and the ray lattice offset that must not be "simplified" away |
-| [0002](docs/adr/0002-branch-protection.md) | Branch protection on `main`: deferred, why, and what guards the branch meanwhile |
-| [0003](docs/adr/0003-toolpath-ir-coordinate-frame.md) | The toolpath IR stores machine coordinates, so contiguity is unconditional |
+**The index is [the table in the README](README.md#decisions)**, and there is
+exactly one of it. This document used to carry a second copy, which fell three
+entries behind while sitting under a rule telling contributors to keep it up to
+date — a good demonstration of why a duplicated index is worse than none.
 
-Add the new file *and* a row here. An ADR nothing links to is a file nobody
-reads.
+Add the new file *and* a row in the README. An ADR nothing links to is a file
+nobody reads.
 
 ## Fixtures that cross a serialization boundary
 

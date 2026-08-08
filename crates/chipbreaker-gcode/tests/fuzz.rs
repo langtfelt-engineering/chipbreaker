@@ -8,7 +8,8 @@
 //! produced — including files truncated by a full disk and files that went
 //! through a text editor that helpfully re-encoded them.
 //!
-//! `#[ignore]`d and run nightly, like the mesh fuzz: too slow for every commit,
+//! `#[ignore]`d and run nightly, like the span algebra's fuzz: too slow for
+//! every commit,
 //! too valuable to drop. Run with:
 //!
 //! ```text

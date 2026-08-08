@@ -25,28 +25,16 @@ jobs:
   test:
     name: test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # Linux on every push; macOS and Windows nightly and on tags.
+    # All three on every push, with wasm32-wasip1 alongside them in its own job.
     #
-    # Not a reduction in what is verified, but in how often. GitHub bills macOS
-    # at 10x and Windows at 2x, so a three-OS matrix costs about 277 billed
-    # minutes per push against 39 for Linux alone -- eleven pushes a month
-    # against seventy-seven. The parity claim is not weakened: every target still
-    # runs, and the cross-platform hash comparison still gates, just nightly
-    # rather than per-commit.
-    #
-    # Windows is additionally the developer machine, so it is the least
-    # informative of the three per-push: it re-runs what already ran locally
-    # before the commit was made. macOS and Linux are the ones testing something
-    # unobserved, and Linux is the cheap one.
+    # The guarantee this project sells is that the answer is identical on every
+    # target, so a commit that has only been checked on one has not been checked.
+    # `fail-fast: false` because when they do disagree, knowing *which* pair
+    # disagrees is most of the diagnosis.
     strategy:
       fail-fast: false
       matrix:
-        os: >-
-          ${{ fromJSON(
-            (github.event_name == 'schedule' || startsWith(github.ref, 'refs/tags/'))
-            && '["windows-latest", "ubuntu-latest", "macos-latest"]'
-            || '["ubuntu-latest"]'
-          ) }}
+        os: ["ubuntu-latest", "windows-latest", "macos-latest"]
     defaults:
       run:
         shell: bash
@@ -130,10 +118,10 @@ jobs:
           print(f"{len(seen)} platforms agree: {first['hash']}")
           if len(seen) < 3:
               print(
-                  f"::notice::Only {len(seen)} platform(s) ran, so this is NOT a "
-                  "cross-platform parity check. The full matrix runs nightly and "
-                  "on tags; see the matrix comment for why."
+                  f"::error::Only {len(seen)} platform(s) reported, so this is NOT "
+                  "a cross-platform parity check. Every push runs all three."
               )
+              sys.exit(1)
           # Per-suite digests, per platform, printed ALWAYS. The overall hash
           # covers every suite digest via SuiteResult::hash_canonical, so
           # agreement on it implies agreement on each -- but that is an argument

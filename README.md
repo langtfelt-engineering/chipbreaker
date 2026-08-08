@@ -37,22 +37,54 @@ a real workpiece. Tool-holder collision detection is next; see
 > *findings* a machinist can act on, tool-holder collision detection, and
 > multi-setup work. See [Roadmap](#roadmap).
 
+## Scope
+
+What Chipbreaker does **not** do, collected here so nobody spends an afternoon
+finding out. None of these is a bug report.
+
+| Out of scope | Status |
+|---|---|
+| **5-axis and any tilted tool** | planned, last — see [Roadmap](#roadmap) |
+| **Turning, mill-turn, lathe work** | not planned. The workpiece does not rotate; the field is a static solid the tool is subtracted from |
+| **Cutter radius compensation (`G41`/`G42`)** | **refused by design**, see below |
+| **Siemens 840D and Heidenhain Klartext** | refused, detected by name |
+| **Macro and parametric programming, `o`-word subprograms** | refused, detected by name |
+| **Flutes, helix angle, rake, relief, tooth count** | not modelled, and never will be |
+| **A GUI** | not planned. Library plus CLI; a browser demo will consume the library, never be part of it |
+
+The dialect Chipbreaker reads is RS-274 in its Fanuc-style form. Everything else
+is **detected and named** rather than approximated, and that distinction is the
+point:
+
+> `G41` is the sharpest case. Simulating the uncompensated path produces a part
+> that is wrong by the tool radius *everywhere*, and it looks entirely
+> reasonable. A verification tool that is quietly wrong is worse than one that
+> says it cannot answer.
+
+So a Siemens program does not fail with "unexpected character at line 3"; it
+fails with "this is Siemens 840D, which is a different language, not a dialect of
+this one". Somebody who feeds the wrong file to the wrong parser has made a
+category error, and a syntax error will not tell them so.
+
+**Flutes are worth one more sentence**, because their absence looks like a gap
+and is not. Material removal is determined by the tool's swept envelope, which is
+a surface of revolution: a two-flute and a four-flute cutter of the same diameter
+and corner radius remove exactly the same material. Modelling flutes would add no
+accuracy and would turn every ray intersection from a quartic into something with
+no closed form at all.
+
 ## The guarantee
 
 **The same input produces bit-identical output across runs, thread counts,
 platforms, and the WASM build.**
 
-Neither major incumbent publishes such a guarantee. It is enforced from the first
-commit rather than bolted on later, and CI checks it by running the self-test
-natively on Windows, Linux and macOS and under `wasmtime`, then comparing the
-resulting hashes byte for byte. All four currently agree on a single hash over 15
-suites and 27,039 cases, at every thread count.
+It is enforced from the first commit rather than bolted on later, and CI checks
+it by running the self-test natively on Windows, Linux and macOS and under
+`wasmtime`, then comparing the resulting hashes byte for byte. All four currently
+agree on a single hash over 15 suites and 27,039 cases, at every thread count.
 
-Linux and `wasm32-wasip1` run on every push; the full four-target comparison runs
-nightly and on tags. That is a billing decision, not a confidence one — GitHub
-charges macOS at ten times and Windows at twice the Linux rate, so a three-OS
-matrix costs about 277 billed minutes per push against 39 for Linux alone. Every
-target still runs and still gates; it gates once a day rather than once a commit.
+**All four targets run and gate on every push.** A commit that has only been
+checked on one platform has not been checked.
 
 The rules that make it hold — `f64` only, no FMA, no unordered iteration reaching
 a float, no parallelism without a deterministic partition, exact predicates
@@ -316,7 +348,7 @@ depth it claims.
 | `crates/chipbreaker-gcode` | RS-274 parser: the only place that reads G-code text |
 | `crates/chipbreaker-cli` | the `chipbreaker` binary |
 | `docs/adr` | architecture decisions, and the measurements behind them |
-| `tests/corpus` | versioned test inputs, growing every unit |
+| `tests/corpus` | versioned test inputs, grown alongside the engine |
 | `tests/golden` | committed golden hashes |
 | `BENCHMARKS.md` | append-only performance record |
 
@@ -373,14 +405,15 @@ because that is usually the more useful half.
 | WASM target and browser demo | planned |
 | Commercial packaging: C ABI, bindings, evaluation kit | planned |
 | Assurance package: SBOM, signed reproducible builds, error-budget specification | planned |
-| 5-axis kinematics and tilted swept volumes | **conditional**, see below |
+| 5-axis kinematics and tilted swept volumes | last, see below |
 
-5-axis is last and conditional. It is necessary for top-tier CAM and aerospace
-work, but those channels are closed to a new entrant for structural reasons that
-have nothing to do with capability, so building it before a customer asks would
-mean spending a year to arrive at a locked door. The insurance is already in
-place and costs nothing: the toolpath IR carries an `orientation` field that
-stays `None`.
+5-axis is last, and deliberately so. It is the largest single remaining piece of
+work — orientation-aware kinematics, and swept volumes for a tool that tilts as
+it moves, which has no closed form and needs bounded sub-stepping throughout. The
+engine is built for it: the toolpath IR already carries an `orientation` field
+that stays `None`, and the bounded sub-stepping machinery it needs was built and
+validated for ramps and helices. Sequencing it last means the 3-axis verification
+layer ships complete and proven rather than broad and thin.
 
 Chipbreaker ships as a **library plus CLI**. There is no GUI in the core and there
 will not be one; everything must be exercisable from the command line. The
@@ -427,3 +460,7 @@ Copyright (C) 2026 Langtfelt. Dual-licensed:
 **Code contributions are not open at present**, for licensing reasons set out in
 [CONTRIBUTING.md](CONTRIBUTING.md). Issues, bug reports and questions are
 welcome — a reproducer for a wrong answer is worth more here than a patch.
+
+For anything with a security dimension, including an input that makes the engine
+report a gouged part as clean, see [SECURITY.md](SECURITY.md) rather than opening
+a public issue.
