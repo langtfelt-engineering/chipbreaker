@@ -443,10 +443,16 @@ pub fn job(args: &JobArgs) -> Result<(Value, String, bool), String> {
             },
             &mut scratch,
         );
-        let (collisions, unchecked) = match outcome {
+        let (mut collisions, unchecked) = match outcome {
             Ok(c) => (c, None),
             Err(u) => (Vec::new(), Some(u.to_string())),
         };
+        // Stamp which setup named these lines. A line number alone is
+        // ambiguous across a job, since each setup's program numbers its own
+        // lines from one.
+        for c in &mut collisions {
+            c.attribution.setup = setup.index;
+        }
         // The replay consumed the field as the program consumed it, which is
         // exactly the state the next setup starts from.
         field = working;
@@ -601,6 +607,7 @@ pub fn job(args: &JobArgs) -> Result<(Value, String, bool), String> {
                 "obstacle": c.obstacle.kind(),
                 "motion": c.motion.as_str(),
                 "magnitude_mm": c.contact.magnitude(),
+                "setup": c.attribution.setup,
                 "lines": c.attribution.provenance.iter().map(|p| p.line).collect::<Vec<_>>(),
             })).collect::<Vec<_>>(),
         })).collect::<Vec<_>>(),

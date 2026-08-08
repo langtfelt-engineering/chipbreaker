@@ -552,6 +552,9 @@ fn finding_json(f: &Finding) -> Value {
         },
         "attribution": {
             "ambiguous": f.attribution.is_ambiguous(),
+            // A line number alone is ambiguous across a job: two setups number
+            // their own lines from one.
+            "setup": f.attribution.setup,
             "segments": segments,
         },
     })
@@ -627,6 +630,7 @@ fn collision_json(c: &Collision) -> Value {
         },
         "attribution": {
             "ambiguous": c.attribution.is_ambiguous(),
+            "setup": c.attribution.setup,
             "segments": segments,
         },
     })

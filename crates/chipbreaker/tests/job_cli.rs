@@ -473,3 +473,25 @@ fn a_nominal_in_the_wrong_frame_is_refused_rather_than_passed() {
         "and must say which frame the nominal belongs in: {err}"
     );
 }
+
+#[test]
+fn a_collision_names_the_setup_as_well_as_the_line() {
+    // **Line 47 names two different moves in a two-setup job.** Each program
+    // numbers its own lines from one, so a line number without a setup beside
+    // it is ambiguous, and a machinist sent to the wrong file is worse off than
+    // one sent nowhere.
+    let f = Fixture::new("setupindex");
+    let (_, v) = f.job("job.json", "er32-stub-6", true);
+    let detail = v["setups"][1]["detail"].as_array().expect("detail");
+    assert!(
+        !detail.is_empty(),
+        "the stub cutter in setup 1 must produce something to attribute"
+    );
+    for d in detail {
+        assert_eq!(d["setup"], 1, "a contact found in setup 1 must say so: {d}");
+        assert!(
+            d["lines"].as_array().is_some_and(|l| !l.is_empty()),
+            "and must still name a line: {d}"
+        );
+    }
+}

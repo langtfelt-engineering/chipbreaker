@@ -747,6 +747,7 @@ pub fn load_report(path: &std::path::Path) -> Result<Report, String> {
             attribution: Attribution {
                 segments: seg.iter().map(|(s, _)| *s).collect(),
                 provenance: seg.iter().map(|(_, p)| *p).collect(),
+                setup: u32::try_from(f["attribution"]["setup"].as_u64().unwrap_or(0)).unwrap_or(0),
             },
         });
     }
@@ -828,6 +829,7 @@ pub fn load_report(path: &std::path::Path) -> Result<Report, String> {
             attribution: Attribution {
                 segments,
                 provenance,
+                setup: 0,
             },
         });
     }

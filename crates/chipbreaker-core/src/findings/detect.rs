@@ -553,6 +553,7 @@ fn assemble(
             .map_or_else(Attribution::none, |p| Attribution {
                 segments: vec![u32::try_from(k).unwrap_or(u32::MAX)],
                 provenance: vec![*p],
+                setup: 0,
             });
         out.push(Collision {
             id,

@@ -66,6 +66,16 @@ pub struct Attribution {
     pub segments: Vec<u32>,
     /// The provenance of each, in the same order.
     pub provenance: Vec<Provenance>,
+    /// Which setup the naming segments belong to.
+    ///
+    /// **A line number alone is ambiguous across a job.** Two setups have two
+    /// programs, each numbering its own lines from one, so "line 47" names two
+    /// different moves unless the setup is beside it.
+    ///
+    /// Zero for a single-setup run, which is what keeps those reports the shape
+    /// they have always been: the field is present but says the only thing it
+    /// could say.
+    pub setup: u32,
 }
 
 impl Attribution {
@@ -75,6 +85,7 @@ impl Attribution {
         Self {
             segments: Vec::new(),
             provenance: Vec::new(),
+            setup: 0,
         }
     }
 
@@ -161,6 +172,7 @@ pub fn attribute_finding(
     Attribution {
         segments,
         provenance: prov,
+        setup: 0,
     }
 }
 
@@ -203,5 +215,6 @@ pub fn attribute_point(
     Attribution {
         segments,
         provenance: prov,
+        setup: 0,
     }
 }
