@@ -38,14 +38,42 @@
 //! and later work extends it rather than reshaping it. Fields are sorted, the
 //! version is explicit, and a new field is an addition — never a rename, never a
 //! change of meaning under an existing name.
+//!
+//! # The version 2 break
+//!
+//! Version 2 **removes `accepted`** and replaces it with [`verdict`](super::Verdict),
+//! an object with one entry per gate. This is the only breaking change the
+//! schema has made, and it was made deliberately.
+//!
+//! Collision checking gave `accepted` a meaning it could not carry. The field
+//! meant "no gouge above tolerance", and a consumer reading it — the obvious
+//! thing to read — would have passed a program that drives a holder into a
+//! fixture. Two repairs were available and both were worse:
+//!
+//! - **Leaving `accepted` alone and adding a second flag** permits `accepted:
+//!   true` beside a spindle crash. "They should have checked the other field" is
+//!   not a defence that survives the incident report.
+//! - **Widening `accepted` in place** changes an existing field's meaning under
+//!   its own name, breaking every version-1 consumer silently — the one thing
+//!   the contract above promises never happens.
+//!
+//! Renaming breaks them **loudly**, at the moment it can still be fixed. That is
+//! the whole value of the change, and it is why the cost was worth paying now:
+//! the schema froze three units ago and has no installed base, so the price of a
+//! break is currently zero and will never be this low again.
+//!
+//! A schema page that explains a break honestly argues for the contract's
+//! seriousness; one that quietly widens a field argues against it.
 
 use std::collections::BTreeMap;
 
 use serde_json::{Value, json};
 
 use crate::deviation::DeviationField;
-use crate::findings::{Classification, Finding};
+use crate::findings::verdict::{self, GateOutcome, Verdict};
+use crate::findings::{Classification, Collision, Contact, Finding, Obstacle, collide};
 use crate::golden::{CanonicalHash, Hashable};
+use crate::toolpath::RapidPath;
 
 /// The report schema version.
 ///
@@ -53,7 +81,10 @@ use crate::golden::{CanonicalHash, Hashable};
 /// a field does not bump it, because a consumer that ignores unknown keys is
 /// unaffected — and a consumer that does not ignore them was going to break on
 /// anything.
-pub const SCHEMA_VERSION: u32 = 1;
+///
+/// `2` removed `accepted` in favour of `verdict.gates`; see the module header
+/// for why that was the safest of the three options rather than the tidiest.
+pub const SCHEMA_VERSION: u32 = 2;
 
 /// The schema's stable name, so a consumer can tell a Chipbreaker report from
 /// any other JSON it may be handed.
@@ -201,8 +232,21 @@ pub struct Report {
     pub semantics: NumericalSemantics,
     /// The findings, in canonical order.
     pub findings: Vec<Finding>,
-    /// Whether the run is acceptable: no gouge above tolerance.
-    pub accepted: bool,
+    /// Collisions and near misses, in canonical order.
+    ///
+    /// A separate array rather than another [`Classification`]: a collision's
+    /// severity is penetration into an obstacle, not depth into a nominal
+    /// surface, and putting the two under one field name would give
+    /// `worst_depth_mm` two different physical meanings.
+    pub collisions: Vec<Collision>,
+    /// Every gate, and the conjunction over them.
+    pub verdict: Verdict,
+    /// How rapids were represented when the program was replayed.
+    ///
+    /// In the report because a dogleg rapid can collide where a linear one does
+    /// not, so a collision result is only as trustworthy as the path policy it
+    /// was computed against. `None` when no program was replayed.
+    pub rapid_path: Option<RapidPath>,
 }
 
 impl Report {
@@ -212,17 +256,39 @@ impl Report {
         super::counts(&self.findings)
     }
 
-    /// The verdict, and the one rule behind it.
+    /// The gouge gate.
     ///
-    /// **Only a gouge fails a run.** Excess stock is what a roughing pass is
+    /// **Only a gouge fails it.** Excess stock is what a roughing pass is
     /// supposed to leave; an undercut is a property of the part and the setup;
     /// an unreachable region is missing evidence. A tool that failed a correct
     /// roughing pass would be switched off within a day, and one that failed a
     /// part for having an undercut would be blaming the program for the
     /// geometry.
     #[must_use]
-    pub fn decide(findings: &[Finding]) -> bool {
-        !findings.iter().any(Finding::is_defect)
+    pub fn gouge_gate(findings: &[Finding]) -> GateOutcome {
+        let n = findings.iter().filter(|f| f.is_defect()).count();
+        if n == 0 {
+            GateOutcome::pass()
+        } else {
+            GateOutcome::fail(format!(
+                "{n} gouge{} above tolerance",
+                if n == 1 { "" } else { "s" }
+            ))
+        }
+    }
+
+    /// The collision gate, given collisions that were actually looked for.
+    ///
+    /// Near misses do not fail it: passing 0.2 mm from a clamp is a warning
+    /// about the next edit, not a crash. They are reported all the same.
+    #[must_use]
+    pub fn collision_gate(collisions: &[Collision]) -> GateOutcome {
+        let n = collide::collision_count(collisions);
+        if n == 0 {
+            GateOutcome::pass()
+        } else {
+            GateOutcome::fail(format!("{n} collision{}", if n == 1 { "" } else { "s" }))
+        }
     }
 
     /// The report as JSON, with keys sorted and floats at full precision.
@@ -246,14 +312,26 @@ impl Report {
         for (i, class) in Classification::all().iter().enumerate() {
             by_class.insert((*class.as_str()).to_owned(), json!(c[i]));
         }
+        let mut gates = serde_json::Map::new();
+        for (name, outcome) in self.verdict.gates() {
+            gates.insert(
+                name.clone(),
+                match &outcome.why {
+                    Some(w) => json!({"state": outcome.state.as_str(), "why": w}),
+                    None => json!({"state": outcome.state.as_str()}),
+                },
+            );
+        }
+        let collisions: Vec<Value> = self.collisions.iter().map(collision_json).collect();
 
         json!({
             "schema": SCHEMA,
             "schema_version": SCHEMA_VERSION,
-            "accepted": self.accepted,
-            "verdict_rule": "a run is accepted when no finding is a gouge above tolerance; \
-                             excess stock, undercuts and unreachable regions are reported but \
-                             do not decide it",
+            "verdict": {
+                "pass": self.verdict.pass(),
+                "gates": Value::Object(gates),
+            },
+            "verdict_rule": verdict::VERDICT_RULE,
             "manifest": {
                 "digest": self.manifest.digest(),
                 "inputs": inputs,
@@ -295,9 +373,25 @@ impl Report {
             },
             "exclusions": EXCLUSIONS,
             "scope": SCOPE_STATEMENT,
+            "rapid_path": self.rapid_path.map_or_else(
+                || json!({
+                    "available": false,
+                    "why": "no program was replayed, so no rapid policy applied",
+                }),
+                |p| json!({"available": true, "policy": p.as_str()}),
+            ),
             "summary": {
                 "total": self.findings.len(),
                 "by_class": Value::Object(by_class),
+                "collisions": collide::collision_count(&self.collisions),
+                "near_misses": self.collisions.len()
+                    - collide::collision_count(&self.collisions),
+                "worst_penetration_mm": self.collisions.iter()
+                    .filter_map(|c| match c.contact {
+                        Contact::Collision { penetration_mm } => Some(penetration_mm),
+                        Contact::NearMiss { .. } => None,
+                    })
+                    .fold(0.0f64, f64::max),
                 "worst_gouge_mm": self.findings.iter()
                     .filter(|f| f.class == Classification::Gouge)
                     .map(|f| f.worst_depth_mm)
@@ -308,6 +402,7 @@ impl Report {
                     .fold(0.0f64, f64::max),
             },
             "findings": findings,
+            "collisions": collisions,
         })
     }
 
@@ -320,7 +415,25 @@ impl Report {
         let mut h = CanonicalHash::new();
         h.begin("Report");
         self.manifest.hash_canonical(&mut h);
-        h.bool(self.accepted);
+        self.verdict.hash_canonical(&mut h);
+        h.str(self.rapid_path.map_or("", RapidPath::as_str));
+        h.usize(self.collisions.len());
+        for c in &self.collisions {
+            h.str(&c.id);
+            h.str(c.contact.as_str());
+            h.f64(c.contact.magnitude());
+            h.str(c.role.as_str());
+            h.u64(u64::from(c.element_index));
+            h.str(c.obstacle.kind());
+            let (class, index) = c.obstacle.order();
+            h.u64(u64::from(class));
+            h.u64(u64::from(index));
+            h.str(c.motion.as_str());
+            h.f64_slice(&c.at.to_array());
+            for s in &c.attribution.segments {
+                h.u64(u64::from(*s));
+            }
+        }
         for f in &self.findings {
             h.str(&f.id);
             h.str(f.class.as_str());
@@ -385,6 +498,81 @@ fn finding_json(f: &Finding) -> Value {
         },
         "attribution": {
             "ambiguous": f.attribution.is_ambiguous(),
+            "segments": segments,
+        },
+    })
+}
+
+/// One collision as JSON.
+///
+/// Shares `id`, `at`, `bounds` and `attribution` with a finding, and shares
+/// nothing else — the severity block is a different quantity under a different
+/// name, which is the entire reason collisions are not a [`Classification`].
+fn collision_json(c: &Collision) -> Value {
+    let segments: Vec<Value> = c
+        .attribution
+        .segments
+        .iter()
+        .zip(&c.attribution.provenance)
+        .map(|(seg, p)| {
+            let mut o = serde_json::Map::new();
+            o.insert("segment".to_owned(), json!(seg));
+            o.insert("file".to_owned(), json!(p.file));
+            o.insert("line".to_owned(), json!(p.line));
+            o.insert("block".to_owned(), json!(p.block));
+            if p.cycle_step != crate::toolpath::NOT_A_CYCLE_STEP {
+                o.insert("cycle_step".to_owned(), json!(p.cycle_step));
+            }
+            Value::Object(o)
+        })
+        .collect();
+
+    let mut obstacle = serde_json::Map::new();
+    obstacle.insert("kind".to_owned(), json!(c.obstacle.kind()));
+    if let Obstacle::Fixture { index, name } = &c.obstacle {
+        obstacle.insert("index".to_owned(), json!(index));
+        obstacle.insert("name".to_owned(), json!(name));
+    }
+
+    // Penetration and clearance never share a key. A consumer that sorted on one
+    // number would rank a safe pass beside a crash.
+    let mut severity = serde_json::Map::new();
+    match c.contact {
+        Contact::Collision { penetration_mm } => {
+            severity.insert("penetration_mm".to_owned(), json!(penetration_mm));
+        }
+        Contact::NearMiss { clearance_mm } => {
+            severity.insert("clearance_mm".to_owned(), json!(clearance_mm));
+        }
+    }
+    severity.insert(
+        "note".to_owned(),
+        json!(
+            "penetration is how far the element entered the obstacle; clearance is how \
+             close it came without touching. They are separate keys because they are \
+             separate quantities, and neither is an area or a volume over a nominal \
+             surface -- a collision has no position on the nominal part."
+        ),
+    );
+
+    json!({
+        "id": c.id,
+        "contact": c.contact.as_str(),
+        "is_defect": c.is_defect(),
+        "severity": Value::Object(severity),
+        "element": {
+            "role": c.role.as_str(),
+            "index": c.element_index,
+        },
+        "obstacle": Value::Object(obstacle),
+        "motion": c.motion.as_str(),
+        "at": [c.at.x, c.at.y, c.at.z],
+        "bounds": {
+            "min": [c.bounds.min.x, c.bounds.min.y, c.bounds.min.z],
+            "max": [c.bounds.max.x, c.bounds.max.y, c.bounds.max.z],
+        },
+        "attribution": {
+            "ambiguous": c.attribution.is_ambiguous(),
             "segments": segments,
         },
     })

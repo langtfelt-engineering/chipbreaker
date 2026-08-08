@@ -28,8 +28,8 @@ use std::collections::BTreeMap;
 
 use serde_json::{Value, json};
 
-use crate::findings::Finding;
 use crate::findings::report::Report;
+use crate::findings::{Collision, Finding};
 
 /// How a finding changed between two reports.
 ///
@@ -62,6 +62,47 @@ impl Change {
     }
 }
 
+/// How a collision changed between two reports.
+///
+/// Separate from [`Change`] for the same reason collisions are a separate array:
+/// the severity that changed is a penetration, not a depth into a nominal
+/// surface, and a single `worst_depth_mm` covering both would be one field name
+/// carrying two quantities.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CollisionChange {
+    /// Present in the new report, absent from the old.
+    Appeared(Collision),
+    /// Present in the old report, absent from the new.
+    Disappeared(Collision),
+    /// Present in both, at a different penetration or clearance.
+    Changed {
+        /// As it was.
+        before: Box<Collision>,
+        /// As it is.
+        after: Box<Collision>,
+    },
+}
+
+impl CollisionChange {
+    /// The collision's identity, whichever side it came from.
+    #[must_use]
+    pub fn id(&self) -> &str {
+        match self {
+            Self::Appeared(c) | Self::Disappeared(c) => &c.id,
+            Self::Changed { after, .. } => &after.id,
+        }
+    }
+
+    /// Whether this change involves a real collision on either side.
+    #[must_use]
+    pub fn touches_a_collision(&self) -> bool {
+        match self {
+            Self::Appeared(c) | Self::Disappeared(c) => c.is_defect(),
+            Self::Changed { before, after } => before.is_defect() || after.is_defect(),
+        }
+    }
+}
+
 /// What differs between two reports.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Diff {
@@ -71,15 +112,27 @@ pub struct Diff {
     /// reader who starts with the finding list will look for a program bug that
     /// is not there.
     pub manifest: Vec<(String, String, String)>,
+    /// Gates whose state changed, as `gate: (old, new)`.
+    ///
+    /// Reported alongside the manifest rather than buried with the findings: a
+    /// gate that went from `pass` to `unchecked` has no finding attached to it
+    /// at all, and a diff that only listed findings would show that change as
+    /// nothing whatsoever.
+    pub gates: Vec<(String, String, String)>,
     /// Findings that appeared, disappeared or changed, in canonical order.
     pub changes: Vec<Change>,
+    /// Collisions that appeared, disappeared or changed, in canonical order.
+    pub collisions: Vec<CollisionChange>,
 }
 
 impl Diff {
     /// True when the two reports say the same thing.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.manifest.is_empty() && self.changes.is_empty()
+        self.manifest.is_empty()
+            && self.gates.is_empty()
+            && self.changes.is_empty()
+            && self.collisions.is_empty()
     }
 
     /// How many of each kind of change.
@@ -190,10 +243,72 @@ pub fn diff(old: &Report, new: &Report) -> Diff {
         }
     }
 
+    // Every gate on either side, so one that vanished is reported rather than
+    // silently dropped.
+    let mut gates = Vec::new();
+    let mut names: Vec<&String> = old
+        .verdict
+        .gates()
+        .keys()
+        .chain(new.verdict.gates().keys())
+        .collect();
+    names.sort_unstable();
+    names.dedup();
+    for name in names {
+        let show = |r: &Report| {
+            r.verdict
+                .gate(name)
+                .map_or_else(|| "absent".to_owned(), |g| g.state.as_str().to_owned())
+        };
+        let (a, b) = (show(old), show(new));
+        if a != b {
+            gates.push((name.clone(), a, b));
+        }
+    }
+
+    let by_id = |r: &Report| -> BTreeMap<String, Collision> {
+        r.collisions
+            .iter()
+            .map(|c| (c.id.clone(), c.clone()))
+            .collect()
+    };
+    let (co, cn) = (by_id(old), by_id(new));
+    let mut collisions = Vec::new();
+    for (id, before) in &co {
+        match cn.get(id) {
+            None => collisions.push(CollisionChange::Disappeared(before.clone())),
+            Some(after) => {
+                // A penetration that became a clearance is a change even at the
+                // same magnitude: the program went from crashing to not.
+                let moved = before.contact.is_collision() != after.contact.is_collision()
+                    || (before.contact.magnitude() - after.contact.magnitude()).abs()
+                        > SAME_DEPTH_MM
+                    || before.attribution.segments != after.attribution.segments;
+                if moved {
+                    collisions.push(CollisionChange::Changed {
+                        before: Box::new(before.clone()),
+                        after: Box::new(after.clone()),
+                    });
+                }
+            }
+        }
+    }
+    for (id, after) in &cn {
+        if !co.contains_key(id) {
+            collisions.push(CollisionChange::Appeared(after.clone()));
+        }
+    }
+
     // Canonical order, so a diff of a diff is meaningful and so the exit code
     // and the text agree about what came first.
     changes.sort_by(|a, b| a.id().cmp(b.id()));
-    Diff { manifest, changes }
+    collisions.sort_by(|a, b| a.id().cmp(b.id()));
+    Diff {
+        manifest,
+        gates,
+        changes,
+        collisions,
+    }
 }
 
 /// The diff as JSON.
@@ -229,15 +344,55 @@ pub fn to_json(d: &Diff) -> Value {
             }),
         })
         .collect();
+    let sev = |c: &Collision| match c.contact {
+        crate::findings::Contact::Collision { penetration_mm } => {
+            json!({ "penetration_mm": penetration_mm })
+        }
+        crate::findings::Contact::NearMiss { clearance_mm } => {
+            json!({ "clearance_mm": clearance_mm })
+        }
+    };
+    let collisions: Vec<Value> = d
+        .collisions
+        .iter()
+        .map(|c| match c {
+            CollisionChange::Appeared(x) => json!({
+                "change": "appeared",
+                "id": x.id,
+                "contact": x.contact.as_str(),
+                "severity": sev(x),
+            }),
+            CollisionChange::Disappeared(x) => json!({
+                "change": "disappeared",
+                "id": x.id,
+                "contact": x.contact.as_str(),
+                "severity": sev(x),
+            }),
+            CollisionChange::Changed { before, after } => json!({
+                "change": "changed",
+                "id": after.id,
+                "contact": { "old": before.contact.as_str(), "new": after.contact.as_str() },
+                "severity": { "old": sev(before), "new": sev(after) },
+            }),
+        })
+        .collect();
+    let gates: Vec<Value> = d
+        .gates
+        .iter()
+        .map(|(k, a, b)| json!({ "gate": k, "old": a, "new": b }))
+        .collect();
     let (appeared, disappeared, changed) = d.tally();
     json!({
         "identical": d.is_empty(),
         "manifest_differences": manifest,
+        "gate_differences": gates,
         "summary": {
             "appeared": appeared,
             "disappeared": disappeared,
             "changed": changed,
+            "collision_changes": d.collisions.len(),
         },
         "changes": changes,
+        "collision_changes": collisions,
     })
 }

@@ -85,6 +85,16 @@ impl RapidPath {
             Self::Dogleg => "dogleg",
         }
     }
+
+    /// Parses a policy back out of a report or an IR header.
+    #[must_use]
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "linear" => Some(Self::Linear),
+            "dogleg" => Some(Self::Dogleg),
+            _ => None,
+        }
+    }
 }
 
 impl Hashable for RapidPath {

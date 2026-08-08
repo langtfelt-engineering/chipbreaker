@@ -42,6 +42,22 @@
       "total_length": 50.0,
       "volume": 1379.7388265971758
     },
+    "er16-flat-6": {
+      "area": null,
+      "cutting_length": 20.0,
+      "diameter": 34.925,
+      "formula": "cylinder r=3.0 h=50.0, nut r=13.493749999999999 h=21.0, body r=17.4625 h=41.0",
+      "total_length": 112.0,
+      "volume": 52703.99367010547
+    },
+    "er32-stub-6": {
+      "area": null,
+      "cutting_length": 10.0,
+      "diameter": 61.912499999999994,
+      "formula": "cylinder r=3.0 h=28.0, nut r=25.4 h=28.0, body r=30.956249999999997 h=50.0",
+      "total_length": 106.0,
+      "volume": 208070.66816920522
+    },
     "flat-6": {
       "area": 999.0264638415542,
       "cutting_length": 20.0,
@@ -57,6 +73,14 @@
       "formula": "cylinder r=6 h=60, holder cylinder r=16 h=28, holder frustum 16->25 over 22",
       "total_length": 110.0,
       "volume": 58816.897660508104
+    },
+    "long-reach-6": {
+      "area": null,
+      "cutting_length": 20.0,
+      "diameter": 34.925,
+      "formula": "cylinder r=3.0 h=95.0, nut r=13.493749999999999 h=21.0, body r=17.4625 h=41.0",
+      "total_length": 157.0,
+      "volume": 53976.33869480934
     },
     "taper-3deg": {
       "area": 1161.923801131871,

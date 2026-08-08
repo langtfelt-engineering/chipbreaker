@@ -29,6 +29,7 @@ use chipbreaker_core::deviation::{Deviation, compare};
 use chipbreaker_core::dexel::tri::{TriBuildOptions, TriDexelField};
 use chipbreaker_core::findings::cluster::{ClusterParams, cluster};
 use chipbreaker_core::findings::report::{Manifest, Report, semantics_from};
+use chipbreaker_core::findings::verdict::{self, Verdict};
 use chipbreaker_core::findings::{attribute_finding, diff, identify};
 use chipbreaker_core::math::Vec3;
 use chipbreaker_core::mesh::{TriMesh, shapes};
@@ -187,7 +188,6 @@ fn diffing(c: &mut Criterion) {
         let (s, _) = samples(depth);
         let params = ClusterParams::for_spacing(SPACING, SPACING / 2.0);
         let findings = identify(cluster(&s, &params, SPACING), params.radius_mm);
-        let accepted = Report::decide(&findings);
         Report {
             manifest: Manifest {
                 inputs: Vec::new(),
@@ -203,8 +203,10 @@ fn diffing(c: &mut Criterion) {
                 SPACING / 2.0,
                 None,
             ),
+            verdict: Verdict::new().with(verdict::GATE_GOUGE, Report::gouge_gate(&findings)),
             findings,
-            accepted,
+            collisions: Vec::new(),
+            rapid_path: None,
         }
     };
     let a = build(2.0);

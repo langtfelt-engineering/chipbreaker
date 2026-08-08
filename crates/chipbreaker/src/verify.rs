@@ -33,14 +33,20 @@ use chipbreaker_core::dexel::tri::TriDexelField;
 use chipbreaker_core::dexel::{FieldFormat, io as dexel_io};
 use chipbreaker_core::findings::cluster::{ClusterParams, cluster, unsampled};
 use chipbreaker_core::findings::report::{
-    InputHash, Manifest, Report, SCHEMA, SweptSplit, digest_bytes, environment, semantics_from,
+    InputHash, Manifest, Report, SCHEMA, SCHEMA_VERSION, SweptSplit, digest_bytes, environment,
+    semantics_from,
 };
-use chipbreaker_core::findings::{Attribution, attribute_finding, identify};
+use chipbreaker_core::findings::verdict::{self, Gate, GateOutcome, Verdict};
+use chipbreaker_core::findings::{
+    Attribution, Collision, Contact, Obstacle, attribute_finding, identify,
+};
 use chipbreaker_core::mesh::TriMesh;
 use chipbreaker_core::sweep::Motion;
 use chipbreaker_core::sweep::cut::{CutScratch, SweepMethod};
 use chipbreaker_core::tool::Profile;
+use chipbreaker_core::tool::profile::ElementRole;
 use chipbreaker_core::toolpath::Provenance;
+use chipbreaker_core::toolpath::{MotionKind, RapidPath};
 use clap::Args;
 use serde_json::{Value, json};
 
@@ -306,12 +312,25 @@ pub fn verify(args: &VerifyArgs) -> Result<(Value, String, bool), String> {
     };
     let semantics = semantics_from(&d, manifest.spacing_mm, args.tol, sweep);
 
-    let accepted = Report::decide(&findings);
+    // The collision gate is `unchecked` here, not `pass`. `verify` compares
+    // geometry; nothing in this path has looked at the holder, and a gate that
+    // reported "clear" on the strength of never having checked would be the
+    // exact failure the version 2 rename exists to prevent.
+    let verdict = Verdict::new()
+        .with(verdict::GATE_GOUGE, Report::gouge_gate(&findings))
+        .with(
+            verdict::GATE_COLLISION,
+            GateOutcome::unchecked(
+                "verify compares geometry against the nominal and does not replay the                  program; run `chipbreaker collide` for the collision gate",
+            ),
+        );
     let report = Report {
         manifest,
         semantics,
         findings,
-        accepted,
+        collisions: Vec::new(),
+        verdict,
+        rapid_path: None,
     };
 
     if let Some(out) = &args.report {
@@ -334,7 +353,8 @@ pub fn verify(args: &VerifyArgs) -> Result<(Value, String, bool), String> {
          UNREACHABLE    {} finding(s)   (no ray sampled it; absence of evidence)\n\
          \n\
          attributed {attributed} of {} cut findings, {ambiguous} ambiguous\n\
-         verdict    {}\n\
+         \n\
+         {}\
          \n\
          {}\n",
         args.file.display(),
@@ -345,11 +365,7 @@ pub fn verify(args: &VerifyArgs) -> Result<(Value, String, bool), String> {
         c[2],
         c[3],
         c[0] + c[1],
-        if accepted {
-            "no gouge above tolerance"
-        } else {
-            "GOUGED above tolerance"
-        },
+        gate_lines(&report.verdict),
         chipbreaker_core::findings::report::SCOPE_STATEMENT,
     );
 
@@ -358,7 +374,7 @@ pub fn verify(args: &VerifyArgs) -> Result<(Value, String, bool), String> {
         map.insert("environment".to_owned(), environment("local", elapsed));
         map.insert("schema".to_owned(), json!(SCHEMA));
     }
-    Ok((value, text, accepted))
+    Ok((value, text, report.verdict.pass()))
 }
 
 /// Runs `chipbreaker report-diff`.
@@ -413,6 +429,42 @@ pub fn report_diff(args: &ReportDiffArgs) -> Result<(Value, String, bool), Strin
             }
         }
     }
+    // Gates before collisions and after findings: a gate change with no finding
+    // behind it -- pass to unchecked, say -- would otherwise show as nothing at
+    // all, which is the most misleading possible diff.
+    if !d.gates.is_empty() {
+        text.push_str("\ngates      CHANGED\n");
+        for (k, a, b) in &d.gates {
+            text.push_str(&format!("             {k}: {a} -> {b}\n"));
+        }
+    }
+    if !d.collisions.is_empty() {
+        text.push_str(&format!("\ncollisions {} changed\n", d.collisions.len()));
+        for c in &d.collisions {
+            use chipbreaker_core::findings::diff::CollisionChange as Cc;
+            let line = |mark: char, x: &chipbreaker_core::findings::Collision| {
+                format!(
+                    "  {mark} {} {:<10} {:<9} {:.4} mm\n",
+                    x.id,
+                    x.contact.as_str(),
+                    x.motion.as_str(),
+                    x.contact.magnitude()
+                )
+            };
+            match c {
+                Cc::Appeared(x) => text.push_str(&line('+', x)),
+                Cc::Disappeared(x) => text.push_str(&line('-', x)),
+                Cc::Changed { before, after } => text.push_str(&format!(
+                    "  ~ {} {:<10} {:<9} {:.4} -> {:.4} mm\n",
+                    after.id,
+                    after.contact.as_str(),
+                    after.motion.as_str(),
+                    before.contact.magnitude(),
+                    after.contact.magnitude()
+                )),
+            }
+        }
+    }
     if d.is_empty() {
         text.push_str("\nidentical\n");
     }
@@ -448,6 +500,36 @@ fn read_sweep_split(path: &std::path::Path) -> Result<SweptSplit, String> {
 /// Only the fields a diff needs are reconstructed. A report is written for a
 /// reader and consumed for a comparison, and the comparison does not need the
 /// prose.
+/// Every gate on its own line, with the reason when there is one.
+///
+/// One line per gate rather than a single summary word. A reader who sees only
+/// "FAIL" has to open the JSON to find out which gate failed, and a reader who
+/// sees only "PASS" cannot tell a run where everything was checked from one
+/// where half of it was skipped — which is the distinction this whole schema
+/// change exists to make visible.
+fn gate_lines(v: &Verdict) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::new();
+    for (name, g) in v.gates() {
+        let label = match g.state {
+            Gate::Pass => "pass     ",
+            Gate::Fail => "FAIL     ",
+            Gate::Unchecked => "unchecked",
+        };
+        let _ = write!(out, "gate       {label} {name}");
+        if let Some(w) = &g.why {
+            let _ = write!(out, " -- {w}");
+        }
+        out.push('\n');
+    }
+    out.push_str(if v.pass() {
+        "verdict    PASS\n"
+    } else {
+        "verdict    DOES NOT PASS\n"
+    });
+    out
+}
+
 pub fn load_report(path: &std::path::Path) -> Result<Report, String> {
     use chipbreaker_core::findings::{Classification, Finding};
     use chipbreaker_core::math::{Aabb3, Vec3};
@@ -461,6 +543,21 @@ pub fn load_report(path: &std::path::Path) -> Result<Report, String> {
             "{} is not a Chipbreaker verification report (schema is {:?})",
             path.display(),
             v["schema"].as_str().unwrap_or("absent")
+        ));
+    }
+
+    // The version check is not politeness. Version 1 carried `accepted`, which
+    // version 2 removed; reading a version-1 file with version-2 code would find
+    // no verdict and quietly report one it invented. Refusing is the entire
+    // point of having renamed the field -- a consumer that cannot read a report
+    // must say so, not guess.
+    let version = v["schema_version"].as_u64();
+    if version != Some(u64::from(SCHEMA_VERSION)) {
+        return Err(format!(
+            "{} is a schema version {} report and this build reads version {}.              Version 1 carried `accepted`, which version 2 replaced with `verdict.gates`;              regenerate the report rather than reading it with the wrong reader.",
+            path.display(),
+            version.map_or_else(|| "absent".to_owned(), |n| n.to_string()),
+            SCHEMA_VERSION,
         ));
     }
 
@@ -540,6 +637,101 @@ pub fn load_report(path: &std::path::Path) -> Result<Report, String> {
         });
     }
 
+    let parse_segments = |a: &Value| -> (Vec<u32>, Vec<Provenance>) {
+        let pairs: Vec<_> = a
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .map(|s| {
+                        (
+                            u32::try_from(s["segment"].as_u64().unwrap_or(0)).unwrap_or(0),
+                            Provenance {
+                                file: u32::try_from(s["file"].as_u64().unwrap_or(0)).unwrap_or(0),
+                                line: u32::try_from(s["line"].as_u64().unwrap_or(0)).unwrap_or(0),
+                                block: u32::try_from(s["block"].as_u64().unwrap_or(0)).unwrap_or(0),
+                                cycle_step: u32::try_from(s["cycle_step"].as_u64().unwrap_or(
+                                    u64::from(chipbreaker_core::toolpath::NOT_A_CYCLE_STEP),
+                                ))
+                                .unwrap_or(chipbreaker_core::toolpath::NOT_A_CYCLE_STEP),
+                            },
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        (
+            pairs.iter().map(|(s, _)| *s).collect(),
+            pairs.iter().map(|(_, p)| *p).collect(),
+        )
+    };
+
+    let mut collisions = Vec::new();
+    for c in v["collisions"].as_array().into_iter().flatten() {
+        let sev = &c["severity"];
+        // The two quantities live under different keys precisely so that a
+        // reader cannot mistake one for the other, and this is the reader.
+        let contact = if sev["penetration_mm"].is_null() {
+            Contact::NearMiss {
+                clearance_mm: num(&sev["clearance_mm"]),
+            }
+        } else {
+            Contact::Collision {
+                penetration_mm: num(&sev["penetration_mm"]),
+            }
+        };
+        let at = c["at"].as_array().map_or(Vec3::ZERO, |a| {
+            Vec3::new(num(&a[0]), num(&a[1]), num(&a[2]))
+        });
+        let (segments, provenance) = parse_segments(&c["attribution"]["segments"]);
+        collisions.push(Collision {
+            id: c["id"].as_str().unwrap_or_default().to_owned(),
+            contact,
+            role: match c["element"]["role"].as_str().unwrap_or_default() {
+                "cutting" => ElementRole::Cutting,
+                "holder" => ElementRole::Holder,
+                _ => ElementRole::NonCutting,
+            },
+            element_index: u32::try_from(c["element"]["index"].as_u64().unwrap_or(0)).unwrap_or(0),
+            obstacle: if c["obstacle"]["kind"].as_str() == Some("fixture") {
+                Obstacle::Fixture {
+                    index: u32::try_from(c["obstacle"]["index"].as_u64().unwrap_or(0)).unwrap_or(0),
+                    name: c["obstacle"]["name"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .to_owned(),
+                }
+            } else {
+                Obstacle::Stock
+            },
+            at,
+            bounds: Aabb3::EMPTY,
+            motion: match c["motion"].as_str().unwrap_or_default() {
+                "rapid" => MotionKind::Rapid,
+                "arc" => MotionKind::Arc,
+                "helix" => MotionKind::Helix,
+                _ => MotionKind::Linear,
+            },
+            attribution: Attribution {
+                segments,
+                provenance,
+            },
+        });
+    }
+
+    let mut verdict = Verdict::new();
+    for (name, g) in v["verdict"]["gates"].as_object().into_iter().flatten() {
+        let raw = g["state"].as_str().unwrap_or_default();
+        // An unreadable state is not a pass. A newer writer may use a word this
+        // build has never seen, and guessing "fine" about it is how a tool
+        // certifies what it did not check.
+        let state = Gate::parse(raw).unwrap_or(Gate::Unchecked);
+        let why = g["why"].as_str().map(str::to_owned).or_else(|| {
+            (state != Gate::Pass && Gate::parse(raw).is_none())
+                .then(|| format!("unrecognised gate state {raw:?}, read as unchecked"))
+        });
+        verdict = verdict.with(name, GateOutcome { state, why });
+    }
+
     let semantics = semantics_from(
         &chipbreaker_core::deviation::DeviationField::default(),
         sp,
@@ -556,7 +748,11 @@ pub fn load_report(path: &std::path::Path) -> Result<Report, String> {
             engine_selftest: m["engine_selftest"].as_str().unwrap_or_default().to_owned(),
         },
         semantics,
-        accepted: v["accepted"].as_bool().unwrap_or(false),
+        verdict,
         findings,
+        collisions,
+        rapid_path: v["rapid_path"]["policy"]
+            .as_str()
+            .and_then(RapidPath::parse),
     })
 }

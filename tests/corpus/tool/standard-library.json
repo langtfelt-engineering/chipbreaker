@@ -495,6 +495,282 @@
           ]
         }
       ]
+    },
+    {
+      "description": "6 mm flat, 20 mm flute, in an ER16 collet chuck",
+      "gauge_length": 140.0,
+      "id": "er16-flat-6",
+      "number": 10,
+      "profile": [
+        {
+          "end": [
+            3.0,
+            0.0
+          ],
+          "kind": "segment",
+          "role": "cutting",
+          "start": [
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "end": [
+            3.0,
+            20.0
+          ],
+          "kind": "segment",
+          "role": "cutting",
+          "start": [
+            3.0,
+            0.0
+          ]
+        },
+        {
+          "end": [
+            3.0,
+            50.0
+          ],
+          "kind": "segment",
+          "role": "non-cutting",
+          "start": [
+            3.0,
+            20.0
+          ]
+        },
+        {
+          "end": [
+            13.493749999999999,
+            50.0
+          ],
+          "kind": "segment",
+          "role": "holder",
+          "start": [
+            3.0,
+            50.0
+          ]
+        },
+        {
+          "end": [
+            13.493749999999999,
+            71.0
+          ],
+          "kind": "segment",
+          "role": "holder",
+          "start": [
+            13.493749999999999,
+            50.0
+          ]
+        },
+        {
+          "end": [
+            17.4625,
+            71.0
+          ],
+          "kind": "segment",
+          "role": "holder",
+          "start": [
+            13.493749999999999,
+            71.0
+          ]
+        },
+        {
+          "end": [
+            17.4625,
+            112.0
+          ],
+          "kind": "segment",
+          "role": "holder",
+          "start": [
+            17.4625,
+            71.0
+          ]
+        }
+      ]
+    },
+    {
+      "description": "6 mm flat, 10 mm flute, stub, in a bulky ER32 chuck",
+      "gauge_length": 130.0,
+      "id": "er32-stub-6",
+      "number": 11,
+      "profile": [
+        {
+          "end": [
+            3.0,
+            0.0
+          ],
+          "kind": "segment",
+          "role": "cutting",
+          "start": [
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "end": [
+            3.0,
+            10.0
+          ],
+          "kind": "segment",
+          "role": "cutting",
+          "start": [
+            3.0,
+            0.0
+          ]
+        },
+        {
+          "end": [
+            3.0,
+            28.0
+          ],
+          "kind": "segment",
+          "role": "non-cutting",
+          "start": [
+            3.0,
+            10.0
+          ]
+        },
+        {
+          "end": [
+            25.4,
+            28.0
+          ],
+          "kind": "segment",
+          "role": "holder",
+          "start": [
+            3.0,
+            28.0
+          ]
+        },
+        {
+          "end": [
+            25.4,
+            56.0
+          ],
+          "kind": "segment",
+          "role": "holder",
+          "start": [
+            25.4,
+            28.0
+          ]
+        },
+        {
+          "end": [
+            30.956249999999997,
+            56.0
+          ],
+          "kind": "segment",
+          "role": "holder",
+          "start": [
+            25.4,
+            56.0
+          ]
+        },
+        {
+          "end": [
+            30.956249999999997,
+            106.0
+          ],
+          "kind": "segment",
+          "role": "holder",
+          "start": [
+            30.956249999999997,
+            56.0
+          ]
+        }
+      ]
+    },
+    {
+      "description": "6 mm flat, 20 mm flute, 95 mm reach, in an ER16 chuck",
+      "gauge_length": 185.0,
+      "id": "long-reach-6",
+      "number": 12,
+      "profile": [
+        {
+          "end": [
+            3.0,
+            0.0
+          ],
+          "kind": "segment",
+          "role": "cutting",
+          "start": [
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "end": [
+            3.0,
+            20.0
+          ],
+          "kind": "segment",
+          "role": "cutting",
+          "start": [
+            3.0,
+            0.0
+          ]
+        },
+        {
+          "end": [
+            3.0,
+            95.0
+          ],
+          "kind": "segment",
+          "role": "non-cutting",
+          "start": [
+            3.0,
+            20.0
+          ]
+        },
+        {
+          "end": [
+            13.493749999999999,
+            95.0
+          ],
+          "kind": "segment",
+          "role": "holder",
+          "start": [
+            3.0,
+            95.0
+          ]
+        },
+        {
+          "end": [
+            13.493749999999999,
+            116.0
+          ],
+          "kind": "segment",
+          "role": "holder",
+          "start": [
+            13.493749999999999,
+            95.0
+          ]
+        },
+        {
+          "end": [
+            17.4625,
+            116.0
+          ],
+          "kind": "segment",
+          "role": "holder",
+          "start": [
+            13.493749999999999,
+            116.0
+          ]
+        },
+        {
+          "end": [
+            17.4625,
+            157.0
+          ],
+          "kind": "segment",
+          "role": "holder",
+          "start": [
+            17.4625,
+            116.0
+          ]
+        }
+      ]
     }
   ],
   "version": 2

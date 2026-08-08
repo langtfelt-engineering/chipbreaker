@@ -1,6 +1,6 @@
 # The verification report schema
 
-**Version 1. Frozen.**
+**Version 2.**
 
 `chipbreaker verify --report r.json` writes this. It is a **public interface**:
 integrators build against it, and later work extends it rather than reshaping
@@ -19,21 +19,82 @@ it.
 - **Keys are sorted and floats are full precision**, so two reports of the same
   inputs are byte-identical and `diff` on the files themselves is meaningful.
 
+## The version 2 break, and why it was made
+
+Version 2 **removes `accepted`** and replaces it with `verdict`. This is the only
+breaking change the schema has made. It is documented here rather than smoothed
+over, because a schema page that explains a break honestly argues for the
+contract's seriousness, and one that quietly widens a field argues against it.
+
+`accepted` meant "no gouge above tolerance". Collision checking gave that bit a
+job it could not do: a consumer reading `accepted` — the obvious thing to read —
+would have passed a program that drives a holder into a fixture. Three options
+existed and two were worse.
+
+| option | why not |
+|---|---|
+| Keep `accepted`, add a second flag | Permits `accepted: true` beside a spindle crash. "They should have checked the other field" is not a defence that survives the incident report. |
+| Widen `accepted` in place | Changes an existing field's meaning under its own name, breaking every version-1 consumer **silently** — the one thing the contract above promises never happens. |
+| **Rename it** | Breaks version-1 consumers **loudly**, at the moment it can still be fixed. |
+
+The rename is the load-bearing part. A version-1 consumer looking for `accepted`
+finds nothing and fails, rather than reading a bit that no longer accounts for
+everything that can condemn a program. `report-diff` refuses a version-1 file for
+the same reason instead of reading it with version-2 code.
+
+The cost was worth paying now: the schema had no installed base, so the price of
+a break was zero and will never be this low again.
+
+## `verdict`
+
+```json
+"verdict": {
+  "pass": false,
+  "gates": {
+    "gouge":     {"state": "pass"},
+    "collision": {"state": "fail", "why": "1 collision"}
+  }
+}
+```
+
+`pass` is the **conjunction** over every gate. A gate is `pass`, `fail`, or
+`unchecked`.
+
+**`unchecked` does not pass.** A gate that could not run says so and carries a
+`why`. This is the whole point of having three states: a holder that is not
+modelled cannot be found hitting anything, and a tool reporting "clear" on that
+basis would be manufacturing safety out of missing data. A run is `unchecked` for
+the collision gate when the tool has no holder geometry, when the program's
+`unmodelled_retracts` is non-zero, or when `verify` was used without replaying
+the program.
+
+**Forward compatibility, which integrators may rely on:** every future gate is a
+new key under `gates`. Because `pass` is a conjunction, a consumer that computes
+its own answer while ignoring keys it does not recognise still gets a correct
+answer — and never a laxer one. Adding a gate can only ever make a verdict
+stricter.
+
 ## Top level
 
 | key | type | meaning |
 |---|---|---|
 | `schema` | string | always `chipbreaker.verification-report` |
-| `schema_version` | integer | `1` |
-| `accepted` | bool | the verdict — see `verdict_rule` |
-| `verdict_rule` | string | what `accepted` means, in the artifact |
+| `schema_version` | integer | `2` |
+| `verdict` | object | `pass`, and one entry per gate — see above |
+| `verdict_rule` | string | what `pass` means, in the artifact |
 | `manifest` | object | which inputs, at what settings |
 | `numerical_semantics` | object | what the numbers are worth |
 | `exclusions` | array of string | what the comparison does **not** model |
 | `scope` | string | what was verified: the program, not the machine |
 | `summary` | object | counts and worst depths |
 | `findings` | array | the findings, in canonical order |
+| `collisions` | array | collisions and near misses, in canonical order |
+| `rapid_path` | object | which rapid policy was replayed, or why none was |
 | `environment` | object | host and timing — **excluded from every digest** |
+
+`rapid_path` is in the report because a dogleg rapid can collide where a linear
+one does not, so a collision result is only as trustworthy as the path policy it
+was computed against.
 
 `environment` appears only on standard output, never in the written report file,
 and is excluded from every hash. Two runs of the same inputs on two machines an
@@ -139,6 +200,38 @@ Only `gouge` is a defect on its own.
 - **`unreachable`** is nominal surface no sample mapped to. It is an absence of
   evidence, not a measurement, and its `worst_depth_mm` is `0.0` because
   inventing a depth there would put a number in the report that nothing measured.
+
+## `collisions[]`
+
+A collision is **not** a `class` of finding, and the separation is deliberate.
+
+| key | type | meaning |
+|---|---|---|
+| `id` | string | content-derived, sixteen hex characters |
+| `contact` | string | `collision` or `near-miss` |
+| `is_defect` | bool | true for `collision` alone |
+| `severity` | object | `penetration_mm` **or** `clearance_mm`, never both |
+| `element` | object | `{role, index}` — which part of the tool stack |
+| `obstacle` | object | `{kind}`, plus `{index, name}` for a fixture |
+| `motion` | string | `rapid`, `linear`, `arc`, `helix` |
+| `at`, `bounds`, `attribution` | | as for a finding |
+
+A finding's severity is a depth into the **nominal surface**, with an area and a
+volume measured over that surface. A collision's is penetration of a non-cutting
+element into an **obstacle**: no nominal surface is involved, area and volume over
+one do not exist, and `worst_depth_mm` would be one field name carrying two
+different physical quantities — which the stability contract forbids.
+
+They also come from different places. A finding is derived from the deviation
+field and governed by its detection floor. A collision is a property of the
+**trajectory**, computed as the program is replayed, and the deviation field never
+enters into it.
+
+**Penetration and clearance are separate keys.** A `-0.2` meaning "cleared by
+0.2 mm" and a `0.2` meaning "buried by 0.2 mm" are different enough that a
+consumer sorting on one number would rank a safe pass beside a crash. A near miss
+is reported but is not a defect: it names the thing that will collide after a
+small edit, which is often more useful than the crash itself.
 
 ## `report-diff`
 

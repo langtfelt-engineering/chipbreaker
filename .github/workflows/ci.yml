@@ -178,6 +178,28 @@ jobs:
             'Parallelism found. It belongs behind a deterministic partition; CONTRIBUTING.md rule 4.'
           exit $fail
 
+      - name: No internal development references in a public tree
+        run: |
+          # The repository is public and its history is not organised around
+          # anything a reader can see. A reference to internal sequencing is
+          # meaningless to them and, worse, dates the file it sits in.
+          #
+          # This exists because prose drifted where nothing was looking: a
+          # generator's rationale text was updated and its committed output was
+          # not, and a second reference survived in a hand-maintained corpus that
+          # no regeneration job covers. Both were prose, so no assertion about
+          # geometry could ever have caught them. A grep can.
+          #
+          # Every tracked file, with no exclusions -- the earlier sweep missed
+          # both cases precisely because it excluded the generated JSON.
+          hits=$(git ls-files -z | xargs -0 grep -nE '\bUnits? [0-9]+\b|\bU[0-9]+\b' \
+                 -- . ':(exclude).github/workflows/ci.yml' 2>/dev/null || true)
+          if [ -n "$hits" ]; then
+            echo "::error::internal development references found in a public tree"
+            echo "$hits"
+            exit 1
+          fi
+
       - name: serde_json is only ever taken from the workspace
         run: |
           # The workspace entry carries `float_roundtrip`, without which

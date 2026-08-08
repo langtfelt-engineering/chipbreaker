@@ -49,13 +49,17 @@
 
 pub mod attribute;
 pub mod cluster;
+pub mod collide;
 pub mod diff;
 pub mod report;
+pub mod verdict;
 
 pub use attribute::{Attribution, attribute_finding, attribute_point, motion_reaches};
 pub use cluster::{Classification, Cluster, ClusterParams, cluster, unsampled};
+pub use collide::{Collision, Contact, Obstacle, collision_id};
 pub use diff::{Change, Diff};
 pub use report::{Manifest, NumericalSemantics, Report};
+pub use verdict::{Gate, GateOutcome, Verdict};
 
 use crate::golden::CanonicalHash;
 use crate::math::{Aabb3, Vec3};

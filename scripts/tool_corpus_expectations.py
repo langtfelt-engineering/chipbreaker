@@ -274,6 +274,55 @@ tools["held-12"] = dict(
     formula="cylinder r=6 h=60, holder cylinder r=16 h=28, holder frustum 16->25 over 22",
 )
 
+# --- the collet-chuck tools -------------------------------------------------
+#
+# Stacks of plain cylinders, so the closed forms are elementary and the
+# quadrature cross-check is exact rather than merely close. The interest is not
+# in the arithmetic; it is that these carry real ER dimensions, and that one
+# radius in each needs all seventeen significant digits to round-trip. A corpus
+# built from catalogue-round numbers alone would pass through a parser that
+# truncates and never notice.
+ER16_NUT_R = 26.987499999999997 / 2  # 1 1/16 in
+ER16_BODY_R = 34.925 / 2  # 1 3/8 in
+ER32_NUT_R = 50.8 / 2  # 2 in
+ER32_BODY_R = 61.912499999999994 / 2  # 2 7/16 in
+
+
+def collet_tool(name, shank_r, shank_h, nut_r, nut_h, body_r, body_h, cutting):
+    """A cutter and shank of one diameter under a two-stage chuck."""
+    z1 = shank_h + nut_h
+    z2 = z1 + body_h
+    return dict(
+        volume=check(
+            name,
+            cyl(shank_r, shank_h) + cyl(nut_r, nut_h) + cyl(body_r, body_h),
+            [
+                piece_z(lambda z: shank_r, 0, shank_h),
+                piece_z(lambda z: nut_r, shank_h, z1),
+                piece_z(lambda z: body_r, z1, z2),
+            ],
+        ),
+        area=None,
+        diameter=2 * max(shank_r, nut_r, body_r),
+        total_length=z2,
+        cutting_length=cutting,
+        formula=(
+            f"cylinder r={shank_r} h={shank_h}, nut r={nut_r} h={nut_h}, "
+            f"body r={body_r} h={body_h}"
+        ),
+    )
+
+
+tools["er16-flat-6"] = collet_tool(
+    "er16-flat-6", 3.0, 50.0, ER16_NUT_R, 21.0, ER16_BODY_R, 41.0, 20.0
+)
+tools["er32-stub-6"] = collet_tool(
+    "er32-stub-6", 3.0, 28.0, ER32_NUT_R, 28.0, ER32_BODY_R, 50.0, 10.0
+)
+tools["long-reach-6"] = collet_tool(
+    "long-reach-6", 3.0, 95.0, ER16_NUT_R, 21.0, ER16_BODY_R, 41.0, 20.0
+)
+
 doc = {
     "schema": "chipbreaker.tool-corpus-expectations",
     "version": 1,

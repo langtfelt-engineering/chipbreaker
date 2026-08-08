@@ -306,12 +306,20 @@ fn a_roughing_pass_is_not_reported_as_a_failure() {
 
     let by_class = &r["summary"]["by_class"];
     println!(
-        "roughing pass: {} excess, {} gouge, accepted={}",
-        by_class["excess-stock"], by_class["gouge"], r["accepted"]
+        "roughing pass: {} excess, {} gouge, gouge gate={}",
+        by_class["excess-stock"], by_class["gouge"], r["verdict"]["gates"]["gouge"]["state"]
     );
 
-    assert_eq!(code, 0, "a roughing pass must not fail a run");
-    assert_eq!(r["accepted"], Value::Bool(true));
+    // The *gouge* gate is what this test is about, and it must pass. The overall
+    // verdict does not, because `verify` does not replay the program and so
+    // cannot speak for the collision gate -- which is asserted separately in
+    // `verify_alone_cannot_certify_collisions`. Reading `pass` here would
+    // conflate "roughing is fine" with "everything was checked".
+    assert_eq!(r["verdict"]["gates"]["gouge"]["state"], "pass");
+    assert_eq!(
+        code, 1,
+        "an unchecked collision gate must keep the exit code non-zero"
+    );
     assert!(
         by_class["excess-stock"].as_u64().expect("a count") > 0,
         "a pass a millimetre shallow must leave excess stock to report; with \
@@ -345,7 +353,14 @@ fn a_gouge_fails_the_run_and_names_the_line() {
     let (code, r) = f.verify("deep", &field, &[]);
 
     assert_eq!(code, 1, "a gouged part must fail the run");
-    assert_eq!(r["accepted"], Value::Bool(false));
+    assert_eq!(r["verdict"]["gates"]["gouge"]["state"], "fail");
+    assert_eq!(r["verdict"]["pass"], Value::Bool(false));
+    assert!(
+        r["accepted"].is_null(),
+        "`accepted` was removed in schema version 2; leaving it in place beside \
+         `verdict` would let a version-1 consumer keep reading a bit that no \
+         longer accounts for collisions"
+    );
 
     let gouge = r["findings"]
         .as_array()
@@ -604,5 +619,82 @@ fn report_diff_refuses_a_file_that_is_not_a_report() {
     assert!(
         err.contains("not a Chipbreaker verification report"),
         "the refusal should say what the file is not: {err}"
+    );
+}
+
+#[test]
+fn a_version_1_report_is_refused_rather_than_misread() {
+    // **The reason the field was renamed rather than widened.**
+    //
+    // Version 1 carried `accepted`, a bit that meant "no gouge" and knew nothing
+    // about collisions. Version 2 removed it. A reader that accepted a version-1
+    // file would find no verdict and report one it invented -- which is exactly
+    // the silent misreading the rename exists to make impossible.
+    //
+    // So this asserts the loud failure, not merely that the new shape works.
+    let f = Fixture::new("v1");
+    let field = f.cut("deep", FLOOR - 1.0);
+    let (_, r) = f.verify("deep", &field, &[]);
+
+    // A version-1-shaped report: the old field, the old version number.
+    let mut v1 = r.clone();
+    let map = v1.as_object_mut().expect("an object");
+    map.insert("schema_version".to_owned(), Value::from(1));
+    map.insert("accepted".to_owned(), Value::Bool(true));
+    map.remove("verdict");
+    std::fs::write(
+        f.path("v1-report.json"),
+        serde_json::to_string_pretty(&v1).expect("renders") + "\n",
+    )
+    .expect("writes");
+
+    let (code, out, err) = run(&[
+        "report-diff",
+        &f.s("v1-report.json"),
+        &f.s("deep-report.json"),
+    ]);
+    assert_ne!(
+        code, 0,
+        "a version-1 report must be refused, not read with version-2 code"
+    );
+    assert!(
+        err.contains("schema version 1") && err.contains("accepted"),
+        "the refusal must name the version and the removed field, so the reader \
+         knows what to regenerate rather than merely that something went wrong: {err}"
+    );
+    assert!(
+        !out.contains("identical"),
+        "refusing must not also claim the two reports agree"
+    );
+}
+
+#[test]
+fn verify_alone_cannot_certify_collisions() {
+    // `verify` compares a cut field against a nominal. It never replays the
+    // program, so it has looked at no trajectory and no holder -- and a
+    // collision gate reporting `pass` on that basis would be manufacturing
+    // safety out of work that was never done.
+    let f = Fixture::new("uncertified");
+    let field = f.cut("shallow", FLOOR + 1.0);
+    let (code, r) = f.verify("shallow", &field, &[]);
+
+    assert_eq!(r["verdict"]["gates"]["gouge"]["state"], "pass");
+    assert_eq!(
+        r["verdict"]["gates"]["collision"]["state"], "unchecked",
+        "verify must not claim a collision gate it did not run"
+    );
+    assert_eq!(
+        r["verdict"]["pass"],
+        Value::Bool(false),
+        "an unchecked gate must not certify the run"
+    );
+    assert_eq!(code, 1, "the exit code must follow the whole verdict");
+
+    let why = r["verdict"]["gates"]["collision"]["why"]
+        .as_str()
+        .expect("an unchecked gate must say why");
+    assert!(
+        why.contains("collide"),
+        "the reason must name what to run to get the gate: {why}"
     );
 }

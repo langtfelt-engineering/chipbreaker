@@ -35,6 +35,42 @@ fn main() {
         ],
     );
 
+    // Real collet-chuck dimensions, because collision work is only worth doing
+    // against geometry somebody could actually be holding. An ER16 nut is 28 mm
+    // across and the chuck body behind it 34; an ER32 nut is 50 and its body 63.
+    //
+    // One diameter in each is an **inch size converted to millimetres**, which is
+    // where a seventeen-significant-digit dimension in tool data actually comes
+    // from: 1 1/16 in is 26.987499999999997 mm and 2 7/16 in is
+    // 61.912499999999994 mm, and neither survives a parser that truncates, a
+    // formatter that prints six digits, or a round trip through `f32`.
+    //
+    // A corpus built only from catalogue-round numbers cannot fail that way, so
+    // it cannot detect it either. These are not invented noise -- they are what
+    // an imperial chuck listed in millimetres genuinely measures.
+    let er16 = |shank: f64, length: f64| {
+        Shank::with_holder(
+            shank,
+            length,
+            [
+                // 1 1/16 in nut, 1 3/8 in body.
+                HolderStage::cylinder(26.987499999999997, 21.0),
+                HolderStage::cylinder(34.925, 41.0),
+            ],
+        )
+    };
+    let er32 = |shank: f64, length: f64| {
+        Shank::with_holder(
+            shank,
+            length,
+            [
+                // 2 in nut, 2 7/16 in body.
+                HolderStage::cylinder(50.8, 28.0),
+                HolderStage::cylinder(61.912499999999994, 50.0),
+            ],
+        )
+    };
+
     let entries: Vec<(&str, &str, Profile, f64)> = vec![
         (
             "flat-6",
@@ -89,6 +125,33 @@ fn main() {
             "12 mm flat in a shrink holder, for holder-collision work",
             flat_end_mill(12.0, 30.0, &held).expect("valid"),
             160.0,
+        ),
+        // The three cases below exist for collision checking, and each is a
+        // shape where collisions actually happen rather than a tidy example.
+        (
+            "er16-flat-6",
+            "6 mm flat, 20 mm flute, in an ER16 collet chuck",
+            flat_end_mill(6.0, 20.0, &er16(6.0, 50.0)).expect("valid"),
+            140.0,
+        ),
+        (
+            "er32-stub-6",
+            "6 mm flat, 10 mm flute, stub, in a bulky ER32 chuck",
+            // The awkward one. A 6 mm cutter with only 28 mm of shank under a
+            // holder 63 mm across: anything deeper than 28 mm and the chuck is
+            // in the pocket. This is the geometry that crashes machines, and a
+            // corpus of well-proportioned tools would never contain it.
+            flat_end_mill(6.0, 10.0, &er32(6.0, 28.0)).expect("valid"),
+            130.0,
+        ),
+        (
+            "long-reach-6",
+            "6 mm flat, 20 mm flute, 95 mm reach, in an ER16 chuck",
+            // The other side of the same test: identical cutter, identical
+            // holder, 67 mm more shank. It clears what the stub cannot, so a
+            // collision reported for both is a collision the checker invented.
+            flat_end_mill(6.0, 20.0, &er16(6.0, 95.0)).expect("valid"),
+            185.0,
         ),
     ];
 

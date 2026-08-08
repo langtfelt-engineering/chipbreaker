@@ -73,6 +73,17 @@ pub enum CatalogError {
     },
     /// A holder stack with no stages.
     EmptyHolder,
+    /// The bottom of the holder is narrower than the shank it grips.
+    ///
+    /// A collet chuck cannot clamp a shank wider than its own bore, so this is
+    /// always a data-entry error — and a dangerous one, because it understates
+    /// the holder and would let a collision check pass a move that crashes.
+    HolderNarrowerThanShank {
+        /// Diameter at the bottom of the first holder stage.
+        holder_diameter: f64,
+        /// Diameter of the shank it sits on.
+        shank_diameter: f64,
+    },
     /// The assembled chain failed profile validation. Should not happen for
     /// dimensions that pass the checks above; if it does, it is a bug here
     /// rather than in the caller's data.
@@ -107,6 +118,14 @@ impl fmt::Display for CatalogError {
                 "{parameter} is {value} but must be at least {minimum}, because {because}"
             ),
             Self::EmptyHolder => write!(f, "a holder stack needs at least one stage"),
+            Self::HolderNarrowerThanShank {
+                holder_diameter,
+                shank_diameter,
+            } => write!(
+                f,
+                "the holder is {holder_diameter} across where it meets a {shank_diameter} shank, \
+                 and cannot grip what is wider than its own bore"
+            ),
             Self::Profile(e) => write!(f, "{e}"),
         }
     }
@@ -329,15 +348,52 @@ impl Shank {
         );
 
         let mut z = self.overall_length;
-        for stage in &self.holder {
+        for (index, stage) in self.holder.iter().enumerate() {
             positive("holder stage bottom diameter", stage.bottom_diameter)?;
             positive("holder stage top diameter", stage.top_diameter)?;
+            // Strictly positive, so the stack advances up the axis at every
+            // stage. A zero-length stage would revolve to nothing and a
+            // negative one would fold the holder back down through itself.
             positive("holder stage length", stage.length)?;
+
+            // The bottom of the stack has to be able to hold the shank. Nothing
+            // above it does: an ER collet nut is routinely *wider* than the
+            // holder body above it, so a stack that narrows going up is a real
+            // holder and not an error. Requiring the diameters to increase
+            // monotonically would reject correct tooling, which is a worse
+            // failure than accepting an odd stack — the self-intersection check
+            // already catches a stack that folds through itself.
+            if index == 0 && stage.bottom_diameter < self.diameter - EPS_LENGTH {
+                return Err(CatalogError::HolderNarrowerThanShank {
+                    holder_diameter: stage.bottom_diameter,
+                    shank_diameter: self.diameter,
+                });
+            }
+
             chain.line_to(0.5 * stage.bottom_diameter, z, ElementRole::Holder);
             z += stage.length;
             chain.line_to(0.5 * stage.top_diameter, z, ElementRole::Holder);
         }
         Ok(())
+    }
+
+    /// Height of the assembled shank and holder above the tip.
+    ///
+    /// The top of the stack, which is the shortest gauge length that does not
+    /// put the gauge line inside the holder.
+    #[must_use]
+    pub fn top(&self) -> f64 {
+        self.overall_length + self.holder.iter().map(|s| s.length).sum::<f64>()
+    }
+
+    /// Whether this tool carries any holder geometry at all.
+    ///
+    /// A tool without it cannot be collision-checked, and the answer must be
+    /// "unchecked" rather than "clear": a holder that is not modelled cannot hit
+    /// anything, and silence there reads as safety.
+    #[must_use]
+    pub fn has_holder(&self) -> bool {
+        !self.holder.is_empty()
     }
 }
 
