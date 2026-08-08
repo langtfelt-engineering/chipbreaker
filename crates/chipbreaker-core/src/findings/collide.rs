@@ -89,6 +89,21 @@ pub enum Contact {
         /// How far in, at the deepest point. Strictly positive.
         penetration_mm: f64,
     },
+    /// A **cutting** element entered a fixture. **Always a defect.**
+    ///
+    /// Kept distinct rather than folded into [`Self::Collision`], because the
+    /// two are different mistakes with different fixes. A shank rubbing a wall
+    /// means the tool is too short for the pocket; a flute in a clamp means the
+    /// program is machining the wrong thing entirely, and the toolpath is wrong
+    /// rather than the tooling.
+    ///
+    /// Widening "non-cutting contact" to cover it would have made that field
+    /// mean "anything hit anything", and a reader could no longer tell which of
+    /// the two they had without going back to the element role.
+    CutterIntoFixture {
+        /// How far in, at the deepest point. Strictly positive.
+        penetration_mm: f64,
+    },
     /// The element passed within the clearance threshold without touching.
     ///
     /// Not a defect, and reported anyway: it names the thing that will collide
@@ -103,7 +118,10 @@ impl Contact {
     /// Whether this condemns the program.
     #[must_use]
     pub const fn is_collision(self) -> bool {
-        matches!(self, Self::Collision { .. })
+        matches!(
+            self,
+            Self::Collision { .. } | Self::CutterIntoFixture { .. }
+        )
     }
 
     /// The name used in the report.
@@ -111,6 +129,7 @@ impl Contact {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Collision { .. } => "collision",
+            Self::CutterIntoFixture { .. } => "cutter-into-fixture",
             Self::NearMiss { .. } => "near-miss",
         }
     }
@@ -120,7 +139,9 @@ impl Contact {
     #[must_use]
     pub const fn magnitude(self) -> f64 {
         match self {
-            Self::Collision { penetration_mm } => penetration_mm,
+            Self::Collision { penetration_mm } | Self::CutterIntoFixture { penetration_mm } => {
+                penetration_mm
+            }
             Self::NearMiss { clearance_mm } => clearance_mm,
         }
     }

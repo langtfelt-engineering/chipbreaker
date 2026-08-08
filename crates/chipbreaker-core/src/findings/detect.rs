@@ -275,6 +275,9 @@ pub fn collide_with_stock(
     if unmodelled_retracts > 0 {
         return Err(Unchecked::UnmodelledRetracts(unmodelled_retracts));
     }
+    // The cutter alone, for checking against fixtures. `None` when the tool is
+    // entirely cutting geometry, which the branch below already handles.
+    let cutting = cutting_only(profile);
     let Some(non_cutting) = non_cutting_only(profile) else {
         // Entirely cutting geometry: nothing above the flutes exists, so there
         // is nothing that could collide. An empty list is the right answer here
@@ -298,6 +301,12 @@ pub fn collide_with_stock(
         // Fixtures are checked against the same motion and never cut. A clamp
         // does not get out of the way, which is the entire reason it is
         // dangerous.
+        //
+        // And a fixture is checked against the **cutting** geometry too, which
+        // the stock is not: a flute in the stock is the point of the exercise,
+        // and a flute in a clamp is a crash. It is reported under its own
+        // contact kind rather than as a non-cutting collision, because the two
+        // have different fixes -- a short tool against a wrong toolpath.
         for (index, (name, field)) in fixtures.iter().enumerate() {
             let obstacle = Obstacle::Fixture {
                 index: u32::try_from(index).unwrap_or(u32::MAX),
@@ -313,6 +322,19 @@ pub fn collide_with_stock(
                 scratch,
             ) {
                 raw.push((k, hit));
+            }
+            if let Some(cutting) = &cutting {
+                for mut hit in
+                    hits_for_motion(field, &obstacle, profile, cutting, motion, params, scratch)
+                {
+                    // The sweep does not know which profile it was handed, so
+                    // the classification is applied here where it is known.
+                    if let Contact::Collision { penetration_mm } = hit.contact {
+                        hit.contact = Contact::CutterIntoFixture { penetration_mm };
+                        hit.role = ElementRole::Cutting;
+                    }
+                    raw.push((k, hit));
+                }
             }
         }
         // Then, and only then, remove what this motion cuts.

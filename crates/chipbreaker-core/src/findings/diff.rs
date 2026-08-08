@@ -345,7 +345,8 @@ pub fn to_json(d: &Diff) -> Value {
         })
         .collect();
     let sev = |c: &Collision| match c.contact {
-        crate::findings::Contact::Collision { penetration_mm } => {
+        crate::findings::Contact::Collision { penetration_mm }
+        | crate::findings::Contact::CutterIntoFixture { penetration_mm } => {
             json!({ "penetration_mm": penetration_mm })
         }
         crate::findings::Contact::NearMiss { clearance_mm } => {

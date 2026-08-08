@@ -441,7 +441,8 @@ impl Report {
                     - collide::collision_count(&self.collisions),
                 "worst_penetration_mm": self.collisions.iter()
                     .filter_map(|c| match c.contact {
-                        Contact::Collision { penetration_mm } => Some(penetration_mm),
+                        Contact::Collision { penetration_mm }
+                        | Contact::CutterIntoFixture { penetration_mm } => Some(penetration_mm),
                         Contact::NearMiss { .. } => None,
                     })
                     .fold(0.0f64, f64::max),
@@ -591,7 +592,7 @@ fn collision_json(c: &Collision) -> Value {
     // number would rank a safe pass beside a crash.
     let mut severity = serde_json::Map::new();
     match c.contact {
-        Contact::Collision { penetration_mm } => {
+        Contact::Collision { penetration_mm } | Contact::CutterIntoFixture { penetration_mm } => {
             severity.insert("penetration_mm".to_owned(), json!(penetration_mm));
         }
         Contact::NearMiss { clearance_mm } => {

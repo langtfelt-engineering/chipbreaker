@@ -233,7 +233,7 @@ fn collision_json(c: &chipbreaker_core::findings::Collision) -> Value {
     use chipbreaker_core::findings::{Contact, Obstacle};
     let mut severity = serde_json::Map::new();
     match c.contact {
-        Contact::Collision { penetration_mm } => {
+        Contact::Collision { penetration_mm } | Contact::CutterIntoFixture { penetration_mm } => {
             severity.insert("penetration_mm".to_owned(), json!(penetration_mm));
         }
         Contact::NearMiss { clearance_mm } => {

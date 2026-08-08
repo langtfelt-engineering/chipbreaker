@@ -19,6 +19,7 @@
 //! geometry differs by nothing except how deep the tool goes.
 
 use chipbreaker_core::dexel::tri::{TriBuildOptions, TriDexelField};
+use chipbreaker_core::findings::Contact;
 use chipbreaker_core::findings::detect::{
     CollideParams, Unchecked, collide_with_stock, cutting_only, holder_present,
 };
@@ -562,5 +563,76 @@ fn collisions_are_independent_of_fixture_order() {
         key(&one),
         key(&two),
         "swapping the order the fixtures were listed changed the collisions found"
+    );
+}
+
+#[test]
+fn a_flute_in_a_clamp_is_classified_separately_from_a_shank_rub() {
+    // **A flute in a clamp is a different mistake from a shank rubbing a wall,
+    // and the report has to say which.** One means the tool is too short for
+    // the pocket; the other means the toolpath is machining the wrong thing.
+    // Folding them together would make the field mean "anything hit anything".
+    //
+    // The feed runs to x = 45 at z = 38 with a 6 mm cutter, so its flutes reach
+    // x = 48 and z = 38..48. A clamp sitting there is hit by the cutter itself.
+    let clamp = {
+        let mesh = shapes::box_solid(Vec3::new(44.0, 14.0, 30.0), Vec3::new(56.0, 26.0, 46.0));
+        let f = TriDexelField::build(
+            &mesh,
+            &TriBuildOptions {
+                spacing: SPACING,
+                ..TriBuildOptions::default()
+            },
+        )
+        .expect("builds")
+        .0;
+        ("clamp".to_owned(), f)
+    };
+    let found = run_with(&long_reach_in_chuck(), 38.0, &[clamp], 0.0);
+    eprintln!("cutter against a clamp: {} contacts", found.len());
+    for c in &found {
+        eprintln!(
+            "  {} {} {} vs {}",
+            c.id,
+            c.contact.as_str(),
+            c.role.as_str(),
+            c.obstacle.kind()
+        );
+    }
+
+    let cutter: Vec<_> = found
+        .iter()
+        .filter(|c| matches!(c.contact, Contact::CutterIntoFixture { .. }))
+        .collect();
+    assert!(
+        !cutter.is_empty(),
+        "a flute driving into a clamp was not reported under its own kind"
+    );
+    assert!(
+        cutter.iter().all(|c| c.role == ElementRole::Cutting),
+        "a cutter-into-fixture contact must name a cutting element"
+    );
+    assert!(
+        cutter.iter().all(|c| c.is_defect()),
+        "a flute in a clamp is a crash, whatever it is called"
+    );
+    assert_eq!(cutter[0].contact.as_str(), "cutter-into-fixture");
+}
+
+#[test]
+fn a_flute_in_the_stock_is_not_a_collision() {
+    // The mutation check, and the one that matters most: cutting the stock is
+    // the entire point. If the new kind fired against stock as well, every
+    // correct program in existence would report a crash on its first move.
+    let found = run_with(&long_reach_in_chuck(), 10.0, &[], 0.0);
+    assert!(
+        found
+            .iter()
+            .all(|c| !matches!(c.contact, Contact::CutterIntoFixture { .. })),
+        "cutting the stock was reported as a cutter collision: {:?}",
+        found
+            .iter()
+            .map(|c| (c.contact.as_str(), c.role.as_str()))
+            .collect::<Vec<_>>()
     );
 }
