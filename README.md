@@ -167,9 +167,9 @@ cargo test --workspace
 Run the deterministic self-test:
 
 ```sh
-cargo run --release -p chipbreaker-cli -- selftest
-cargo run --release -p chipbreaker-cli -- selftest --report json --out report.json
-cargo run --release -p chipbreaker-cli -- version --json
+cargo run --release -p chipbreaker -- selftest
+cargo run --release -p chipbreaker -- selftest --report json --out report.json
+cargo run --release -p chipbreaker -- version --json
 ```
 
 `selftest` exits 0 when every suite passes and 1 otherwise. Its JSON report has
@@ -181,7 +181,7 @@ would disagree with every other one.
 Check native/WASM parity locally:
 
 ```sh
-cargo build --release --target wasm32-wasip1 -p chipbreaker-cli
+cargo build --release --target wasm32-wasip1 -p chipbreaker
 wasmtime target/wasm32-wasip1/release/chipbreaker.wasm selftest --report json
 ```
 
@@ -346,7 +346,7 @@ depth it claims.
 |---|---|
 | `crates/chipbreaker-core` | `math`, `predicates`, `transcendental`, `eps`, `spans`, `roots`, `mesh`, `tool`, `toolpath`, `dexel`, `sweep`, `contour`, `deviation`, `defect`, `budget`, `golden`, `selftest` |
 | `crates/chipbreaker-gcode` | RS-274 parser: the only place that reads G-code text |
-| `crates/chipbreaker-cli` | the `chipbreaker` binary |
+| `crates/chipbreaker` | the `chipbreaker` binary |
 | `docs/adr` | architecture decisions, and the measurements behind them |
 | `tests/corpus` | versioned test inputs, grown alongside the engine |
 | `tests/golden` | committed golden hashes |

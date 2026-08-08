@@ -3,7 +3,7 @@ resolver = "3"
 members = [
     "crates/chipbreaker-core",
     "crates/chipbreaker-gcode",
-    "crates/chipbreaker-cli",
+    "crates/chipbreaker",
 ]
 
 [workspace.package]

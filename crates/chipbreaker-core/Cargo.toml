@@ -8,6 +8,9 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
+readme = "README.md"
+keywords = ["cnc", "machining", "geometry", "simulation", "determinism"]
+categories = ["science", "simulation", "mathematics"]
 
 [dependencies]
 robust.workspace = true

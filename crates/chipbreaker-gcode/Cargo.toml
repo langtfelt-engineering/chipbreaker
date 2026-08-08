@@ -8,6 +8,9 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
+readme = "README.md"
+keywords = ["gcode", "cnc", "rs274", "parser", "machining"]
+categories = ["parser-implementations", "science"]
 
 [dependencies]
 chipbreaker-core.workspace = true

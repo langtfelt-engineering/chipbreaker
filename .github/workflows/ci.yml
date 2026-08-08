@@ -72,7 +72,7 @@ jobs:
 
       - name: Self-test
         run: |
-          cargo run --release -p chipbreaker-cli -- \
+          cargo run --release -p chipbreaker -- \
             selftest --report json --out "selftest-${{ matrix.os }}.json"
 
       - uses: actions/upload-artifact@v4
@@ -322,8 +322,8 @@ jobs:
 
       - name: Build native and WASM
         run: |
-          cargo build --release -p chipbreaker-cli
-          cargo build --release --target wasm32-wasip1 -p chipbreaker-cli
+          cargo build --release -p chipbreaker
+          cargo build --release --target wasm32-wasip1 -p chipbreaker
 
       - name: Run both self-tests
         run: |

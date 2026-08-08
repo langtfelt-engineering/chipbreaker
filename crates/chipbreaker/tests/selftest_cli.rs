@@ -155,7 +155,7 @@ fn version_reports_both_forms() {
     assert_eq!(code, 0);
     let value: Value = serde_json::from_str(&stdout).expect("valid JSON");
     assert_eq!(value["version"], Value::from(env!("CARGO_PKG_VERSION")));
-    assert_eq!(value["name"], Value::from("chipbreaker-cli"));
+    assert_eq!(value["name"], Value::from("chipbreaker"));
     assert!(value["target"].is_string());
     assert!(value["encoding_version"].is_number());
 }

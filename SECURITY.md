@@ -6,13 +6,9 @@
 
 Use GitHub's [private vulnerability
 reporting](https://github.com/spanwerk/chipbreaker/security/advisories/new) on
-this repository, which is the preferred route and needs no email exchange to get
-started.
-
-If that is unavailable to you, write to
-[licensing@langtfelt.com](mailto:licensing@langtfelt.com) with `SECURITY` in the
-subject line. It is not a dedicated security address — it is the address we know
-is monitored — and it will reach the right people.
+this repository. It is the only channel for security reports: it is private by
+construction, it keeps the whole exchange attached to the repository, and it
+turns into a published advisory when the fix ships.
 
 What helps, in rough order of usefulness:
 

@@ -74,7 +74,7 @@ name = "chipbreaker-core"
 allow = ["GPL-3.0-or-later"]
 
 [[licenses.exceptions]]
-name = "chipbreaker-cli"
+name = "chipbreaker"
 allow = ["GPL-3.0-or-later"]
 
 # The G-code parser. First-party, so the same reasoning applies as for the other

@@ -1,25 +1,46 @@
-Numeric core for **Chipbreaker**, a material-removal simulation and machining
-verification engine.
+# chipbreaker-core
 
-This crate provides the four foundations every later unit is built on:
+The geometry and determinism core of
+[Chipbreaker](https://github.com/spanwerk/chipbreaker), a material-removal
+simulation and machining verification engine.
 
-- [`math`] — `f64` vector, matrix, AABB and ray types with no external linear
-  algebra dependency.
-- [`predicates`] — adaptive-precision exact geometric predicates behind a
-  swappable trait, returning an explicit three-valued [`predicates::Orientation`]
-  rather than a float sign.
-- [`spans`] — sorted, disjoint, normalized sets of half-open intervals on a
-  line, with union / intersection / difference implemented as a single
-  merge-scan. Every material-removal operation in the engine bottoms out here.
-- [`golden`] — the bit-exact determinism harness: canonical binary hashing and
-  golden-file comparison.
+This crate holds everything that is not G-code parsing or the command line:
 
-## The determinism invariant
+- **Exact geometric predicates** with Simulation of Simplicity, so a ray through
+  a shared edge or a vertex is decided by sign information rather than by
+  rounding.
+- **Interval spans** — the sorted, disjoint interval algebra every cut is
+  expressed in.
+- **Triangle meshes**, STL/OBJ/3MF readers, validation, welding, and a BVH whose
+  ray casting is leak-free by construction.
+- **Tool geometry**: solids of revolution, a deterministic root solver, and ray
+  intersection against cylinders, cones, spheres and tori.
+- **Tri-dexel fields**, material removal for linear moves, arcs and helices, and
+  dual contouring back to a watertight mesh.
+- **Deviation fields**: comparing a simulated result against the part it was
+  meant to be.
+- `#![forbid(unsafe_code)]`, and a canonical binary hashing harness that makes
+  the determinism guarantee checkable rather than asserted.
 
-The same input produces bit-identical output across runs, thread counts,
-platforms, and the WASM build. That guarantee is enforced from the first commit,
-not retrofitted. In practice it means: `f64` only, no FMA, no unordered
-iteration that can reach a float, no parallelism without a deterministic
-partition, exact predicates instead of raw float sign tests, and canonical
-*binary* serialization for hashing. See `CONTRIBUTING.md` at the repository root
-for the full rules.
+## The guarantee
+
+**The same input produces bit-identical output across runs, thread counts,
+platforms, and the WASM build.** `f64` only, no FMA, no unordered iteration that
+can reach a float, transcendentals from a pinned pure-Rust `libm` rather than the
+platform's, and every parallel reduction combined in a fixed order.
+
+The rules and the reasoning behind each are in
+[CONTRIBUTING.md](https://github.com/spanwerk/chipbreaker/blob/main/CONTRIBUTING.md).
+
+## A note on the tests
+
+Many of the integration tests read fixtures from `tests/corpus/` at the
+repository root, which is outside this package. They are shipped because they are
+a large part of the argument for why the code is the way it is — but to *run*
+them, clone the repository rather than the crate.
+
+## Licence
+
+Copyright (C) 2026 Langtfelt. Dual-licensed: GPL-3.0-or-later, or a commercial
+licence for use in a proprietary product. See the
+[repository](https://github.com/spanwerk/chipbreaker) for details.

@@ -1,5 +1,5 @@
 [package]
-name = "chipbreaker-cli"
+name = "chipbreaker"
 description = "Command-line front end for the Chipbreaker machining verification engine."
 version.workspace = true
 edition.workspace = true
@@ -8,6 +8,9 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
+readme = "README.md"
+keywords = ["cnc", "cam", "gcode", "machining", "verification"]
+categories = ["command-line-utilities", "science", "simulation"]
 
 [[bin]]
 name = "chipbreaker"

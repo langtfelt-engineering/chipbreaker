@@ -7,7 +7,7 @@
 //! binary: the generator makes the files reproducible, and the files being
 //! committed makes the tests fast and independent of generator changes. Run it
 //! deliberately with
-//! `cargo test -p chipbreaker-cli --test corpus -- --ignored regenerate`.
+//! `cargo test -p chipbreaker --test corpus -- --ignored regenerate`.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
