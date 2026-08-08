@@ -6,6 +6,7 @@
 
 pub mod budget;
 pub mod contour;
+pub mod crash;
 pub mod defect;
 pub mod deviation;
 pub mod dexel;
