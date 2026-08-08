@@ -133,8 +133,17 @@ bytes from different directories are the same run.
 is identical across all four targets, so a report produced on Linux and one
 produced under `wasmtime` carry the same value.
 
-**Same manifest digest implies byte-identical findings.** That is a test, not an
-aspiration.
+**Same manifest digest implies byte-identical findings and collisions.** That is
+a test, not an aspiration.
+
+That promise is only as wide as the self-test behind it, and it was briefly
+narrower than it claimed. Collision detection shipped before it had a self-test
+suite, so two builds whose collision behaviour differed carried the *same*
+`engine_selftest` — and a diff of two such reports showed collisions changing
+under an identical manifest, which is exactly what the manifest exists to make
+impossible. It was found by running the diff, not by reasoning about it. The
+`collision` suite closes it; anything added later that a report can carry needs
+one too.
 
 ## `numerical_semantics`
 

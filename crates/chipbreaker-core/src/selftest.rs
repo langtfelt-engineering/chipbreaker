@@ -207,6 +207,7 @@ pub fn run_with(extra: Vec<SuiteResult>) -> SelfTestReport {
         sweep_arc_suite(),
         contour_suite(),
         deviation_suite(),
+        collision_suite(),
         canonical_hash_suite(),
     ];
     suites.extend(extra);
@@ -1735,6 +1736,152 @@ fn deviation_suite() -> SuiteResult {
         name: "deviation",
         description: "comparison against a nominal, the analytic tool normal, and the \
                       tessellation floor",
+        cases: count,
+        failures,
+        digest: h.finish(),
+    }
+}
+
+/// Collision detection, hashed so that `engine_selftest` covers it.
+///
+/// # Why this suite had to exist
+///
+/// A report's manifest carries `engine_selftest` and promises that the same
+/// manifest digest implies byte-identical findings. Collision detection was
+/// added without a suite, so two builds whose collision behaviour differed
+/// shared a digest — and a diff of two such reports showed collisions changing
+/// under an *identical* manifest, which is precisely the thing the manifest
+/// exists to make impossible.
+///
+/// That was found by running the diff, not by reasoning about it. The promise is
+/// only as wide as the self-test behind it.
+fn collision_suite() -> SuiteResult {
+    use crate::dexel::tri::{TriBuildOptions, TriDexelField};
+    use crate::findings::detect::{CollideParams, collide_with_stock, non_cutting_only};
+    use crate::mesh::shapes;
+    use crate::sweep::cut::{CutScratch, SweepMethod};
+    use crate::tool::catalog::{HolderStage, Shank, flat_end_mill};
+    use crate::toolpath::{MotionKind, Provenance};
+
+    let mut failures = Vec::new();
+    let mut count = 0usize;
+    let mut h = CanonicalHash::new();
+    h.begin("collision");
+
+    // The isolated non-cutting profile, which is what gets swept. Hashing the
+    // geometry catches a change in how the shank is separated from the cutter,
+    // independently of whether any particular case still collides.
+    h.begin("non-cutting-profile");
+    for (name, flute, shank_top) in [
+        ("stub", 10.0, 20.0),
+        ("mid", 16.0, 40.0),
+        ("long", 20.0, 95.0),
+    ] {
+        let shank = Shank::with_holder(
+            6.0,
+            shank_top,
+            [
+                HolderStage::cylinder(50.8, 28.0),
+                HolderStage::cylinder(61.912_499_999_999_994, 50.0),
+            ],
+        );
+        match flat_end_mill(6.0, flute, &shank) {
+            Ok(p) => match non_cutting_only(&p) {
+                Some(nc) => {
+                    h.str(name).add(&nc);
+                    count += 1;
+                }
+                None => failures.push(Failure {
+                    case: format!("collision/profile/{name}"),
+                    detail: "a held tool reported no non-cutting geometry".to_owned(),
+                }),
+            },
+            Err(e) => failures.push(Failure {
+                case: format!("collision/profile/{name}"),
+                detail: format!("the catalogue refused a standard held mill: {e}"),
+            }),
+        }
+    }
+    h.end();
+
+    // Then the detection itself, over a few planted cases from the crash
+    // corpus. Every field of every collision is hashed, so a change in
+    // penetration, identity, element or attribution moves the digest.
+    h.begin("detect");
+    let spacing = 1.0;
+    for case in crate::crash::corpus().iter().step_by(17) {
+        let mesh = shapes::box_solid(
+            Vec3::ZERO,
+            Vec3::new(
+                crate::crash::STOCK[0],
+                crate::crash::STOCK[1],
+                crate::crash::STOCK[2],
+            ),
+        );
+        let Ok((mut field, _)) = TriDexelField::build(
+            &mesh,
+            &TriBuildOptions {
+                spacing,
+                ..TriBuildOptions::default()
+            },
+        ) else {
+            failures.push(Failure {
+                case: format!("collision/{}", case.id),
+                detail: "the stock field would not build".to_owned(),
+            });
+            continue;
+        };
+        let profile = case.profile();
+        let kinds: Vec<MotionKind> = case.motions.iter().map(|_| MotionKind::Linear).collect();
+        let provenance: Vec<Provenance> = (0..case.motions.len())
+            .map(|i| Provenance::new(0, u32::try_from(i).unwrap_or(0), 0))
+            .collect();
+        let mut scratch = CutScratch::new(&profile);
+        match collide_with_stock(
+            &mut field,
+            &profile,
+            &case.motions,
+            &kinds,
+            &provenance,
+            0,
+            &[],
+            &CollideParams {
+                clearance_mm: 0.0,
+                grid_mm: 2.0 * spacing,
+                method: SweepMethod::Analytic {
+                    tolerance: spacing / 10.0,
+                },
+            },
+            &mut scratch,
+        ) {
+            Ok(found) => {
+                h.begin(&case.id);
+                h.usize(found.len());
+                for c in &found {
+                    h.str(&c.id)
+                        .str(c.contact.as_str())
+                        .f64(c.contact.magnitude())
+                        .str(c.role.as_str())
+                        .u64(u64::from(c.element_index))
+                        .str(c.obstacle.kind())
+                        .str(c.motion.as_str())
+                        .f64_slice(&c.at.to_array());
+                }
+                h.end();
+                count += 1;
+            }
+            Err(u) => failures.push(Failure {
+                case: format!("collision/{}", case.id),
+                detail: format!("a corpus case was unexpectedly unchecked: {u}"),
+            }),
+        }
+    }
+    h.end();
+
+    h.end();
+    SuiteResult {
+        name: "collision",
+        description: "non-cutting geometry against the stock, replayed over planted crash cases",
         cases: count,
         failures,
         digest: h.finish(),
