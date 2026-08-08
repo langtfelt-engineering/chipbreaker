@@ -141,6 +141,17 @@ impl Fixture {
 
     /// Writes a job file and runs it. `tool1` is setup 1's cutter.
     fn job(&self, name: &str, tool1: &str, fixtures: bool) -> (i32, Value) {
+        self.job_with(name, tool1, fixtures, None)
+    }
+
+    /// The same, optionally comparing against a nominal.
+    fn job_with(
+        &self,
+        name: &str,
+        tool1: &str,
+        fixtures: bool,
+        nominal: Option<&str>,
+    ) -> (i32, Value) {
         let fx = if fixtures { "\"clamp.stl\"" } else { "" };
         let text = format!(
             r#"{{
@@ -161,7 +172,15 @@ impl Fixture {
             tools = tool_library()
         );
         std::fs::write(self.path(name), text).expect("writes");
-        let (code, out, err) = run(&["job", "--setups", &self.s(name), "--json"]);
+        let path = self.s(name);
+        let mut args = vec!["job", "--setups", &path, "--json"];
+        let n;
+        if let Some(x) = nominal {
+            n = self.s(x);
+            args.push("--nominal");
+            args.push(&n);
+        }
+        let (code, out, err) = run(&args);
         assert!(!out.trim().is_empty(), "the job produced no JSON: {err}");
         let top: Value = serde_json::from_str(&out).expect("valid JSON");
         (code, top["results"].clone())
@@ -177,8 +196,7 @@ impl Drop for Fixture {
 #[test]
 fn a_two_setup_job_crosses_its_boundary_exactly() {
     let f = Fixture::new("clean");
-    let (code, v) = f.job("job.json", "long-reach-6", true);
-    assert_eq!(code, 0, "a clean two-setup job must pass: {v}");
+    let (_, v) = f.job("job.json", "long-reach-6", true);
 
     let boundaries = v["boundaries"].as_array().expect("boundaries");
     assert_eq!(
@@ -192,7 +210,10 @@ fn a_two_setup_job_crosses_its_boundary_exactly() {
     );
     assert_eq!(boundaries[0]["bound_mm"], 0.0);
     assert_eq!(v["accumulated_transform_bound_mm"], 0.0);
-    assert_eq!(v["verdict"]["pass"], Value::Bool(true));
+    assert_eq!(
+        v["verdict"]["gates"]["collision"]["state"], "pass",
+        "no tool in this job can reach anything it should not"
+    );
 
     // Both setups reported, in order, each named.
     let setups = v["setups"].as_array().expect("setups");
@@ -349,5 +370,106 @@ fn a_file_that_is_not_a_job_is_refused() {
     assert!(
         err.contains("not a Chipbreaker job file"),
         "the refusal should say what the file is not: {err}"
+    );
+}
+
+#[test]
+fn without_a_nominal_the_gouge_gate_is_unchecked_and_the_job_does_not_pass() {
+    // **The same fail-safe rule the single-setup report follows.** A gate that
+    // did not run has not passed, and a job verb that returned success while
+    // comparing nothing would be certifying a part it never looked at.
+    let f = Fixture::new("nonominal");
+    let (code, v) = f.job("job.json", "long-reach-6", true);
+    assert_eq!(v["verdict"]["gates"]["gouge"]["state"], "unchecked");
+    assert_eq!(
+        v["verdict"]["pass"],
+        Value::Bool(false),
+        "a job with an unchecked gate must not pass, however clean the rest is"
+    );
+    assert_eq!(code, 1, "the exit code must follow the whole verdict");
+    let why = v["verdict"]["gates"]["gouge"]["why"]
+        .as_str()
+        .expect("an unchecked gate must say why");
+    assert!(
+        why.contains("nominal"),
+        "the reason must name what is missing: {why}"
+    );
+    // And the collision gate, which *did* run, still reports its own answer.
+    assert_eq!(v["verdict"]["gates"]["collision"]["state"], "pass");
+}
+
+#[test]
+fn the_gouge_gate_runs_and_is_sensitive_to_the_nominal() {
+    // Comparing the finished part against the **uncut block** must report the
+    // slots as gouges: they are material missing relative to that nominal. A
+    // deliberately wrong nominal, chosen because it makes the sensitivity
+    // unmistakable -- a gate that passed here would be looking at nothing.
+    //
+    // The block has to be drawn where the finished stock *is*, which after a
+    // quarter turn is x -50..-10, y 10..70. That is the whole point of the
+    // frame check below.
+    let f = Fixture::new("gouge");
+    write_box(
+        &f.path("turned-block.stl"),
+        [-50.0, 10.0, 0.0],
+        [-10.0, 70.0, 30.0],
+    );
+    let (code, v) = f.job_with("job.json", "long-reach-6", true, Some("turned-block.stl"));
+    assert_eq!(
+        v["verdict"]["gates"]["gouge"]["state"], "fail",
+        "two slots against an uncut block must register as gouges: {v}"
+    );
+    assert_eq!(v["verdict"]["pass"], Value::Bool(false));
+    assert_eq!(code, 1);
+    let why = v["verdict"]["gates"]["gouge"]["why"]
+        .as_str()
+        .expect("a failing gate must say why");
+    assert!(
+        why.contains("gouge"),
+        "the reason should name the finding kind and its depth: {why}"
+    );
+}
+
+#[test]
+fn a_nominal_in_the_wrong_frame_is_refused_rather_than_passed() {
+    // **The rough edge this check exists for.** The stock is carried through
+    // every setup transform; the nominal is not, because it is an input rather
+    // than a result. A nominal drawn in the first setup's frame therefore does
+    // not overlap the finished stock at all -- and the comparison used to
+    // sample nothing and report a clean part, which is the worst answer
+    // available.
+    let f = Fixture::new("wrongframe");
+    let text = format!(
+        r#"{{
+  "schema": "chipbreaker.job",
+  "version": 1,
+  "stock": "stock.tdx",
+  "units": "mm",
+  "setups": [
+    {{ "name": "a", "program": "op1.nc", "tools": "{t}", "tool": "long-reach-6" }},
+    {{ "name": "b", "transform": "rotate-z-90", "program": "op2.nc",
+       "tools": "{t}", "tool": "long-reach-6" }}
+  ]
+}}
+"#,
+        t = tool_library()
+    );
+    std::fs::write(f.path("job.json"), text).expect("writes");
+    // `stock.stl` is the first setup's frame, and the job ends in the second.
+    let (code, out, err) = run(&[
+        "job",
+        "--setups",
+        &f.s("job.json"),
+        "--nominal",
+        &f.s("stock.stl"),
+    ]);
+    assert_ne!(code, 0, "a nominal in the wrong frame must not pass: {out}");
+    assert!(
+        err.contains("does not overlap"),
+        "the refusal must say the two do not line up: {err}"
+    );
+    assert!(
+        err.contains("last setup"),
+        "and must say which frame the nominal belongs in: {err}"
     );
 }

@@ -459,6 +459,63 @@ pub fn job(args: &JobArgs) -> Result<(Value, String, bool), String> {
         });
     }
 
+    // The gouge gate runs once, on the finished stock, in the frame of the last
+    // setup -- which is where the nominal part is expressed. Comparing after
+    // each setup would flag every surface a later operation has still to reach,
+    // and call an unfinished part defective.
+    let gouge = match &args.nominal {
+        Some(path) => {
+            let unit = match &plan.units {
+                Some(u) => Some(crate::mesh::parse_unit(u)?),
+                None => None,
+            };
+            let (nominal, _) = crate::mesh::load(&crate::mesh::Input {
+                file: path.clone(),
+                units: unit,
+                weld_tol: chipbreaker_core::eps::EPS_WELD,
+                json: false,
+            })?;
+            // **The nominal must be expressed in the last setup's frame.** The
+            // stock has been carried through every transform; the nominal has
+            // not, because it is an input rather than a result.
+            //
+            // Supplying it in the first setup's frame is an easy mistake and it
+            // used to produce a *clean pass*: the two solids do not overlap, so
+            // nothing is sampled and nothing is found. A comparison that finds
+            // nothing because it was looking somewhere else is the worst answer
+            // available, so it is refused here instead.
+            let (a, b) = (field.material_bounds(), nominal.bounds());
+            if !a.intersects(&b) {
+                return Err(format!(
+                    "the nominal does not overlap the finished stock at all, so the                      comparison would sample nothing and report a clean part.
+                       stock    {:?} .. {:?}
+                       nominal  {:?} .. {:?}
+                     The stock is carried through every setup transform and the                      nominal is not, so a nominal drawn in the first setup's frame                      will not line up. Express it in the last setup's frame.",
+                    a.min.to_array(),
+                    a.max.to_array(),
+                    b.min.to_array(),
+                    b.max.to_array()
+                ));
+            }
+            let d = chipbreaker_core::deviation::compare(&field, &nominal, None);
+            let params = chipbreaker_core::findings::cluster::ClusterParams::for_spacing(
+                spacing,
+                plan.tolerance_mm,
+            );
+            let clusters =
+                chipbreaker_core::findings::cluster::cluster(&d.samples, &params, spacing);
+            let findings = chipbreaker_core::findings::identify(clusters, params.radius_mm);
+            let defects = findings.iter().filter(|f| f.is_defect()).count();
+            let worst = findings
+                .iter()
+                .filter(|f| f.is_defect())
+                .map(|f| f.worst_depth_mm)
+                .fold(0.0f64, f64::max);
+            Some((defects, worst))
+        }
+        None => None,
+    };
+
     let elapsed = started.elapsed().as_secs_f64() * 1000.0;
     let total: usize = outcomes
         .iter()
@@ -466,9 +523,16 @@ pub fn job(args: &JobArgs) -> Result<(Value, String, bool), String> {
         .sum();
     let any_unchecked = outcomes.iter().any(|o| o.unchecked.is_some());
     let accumulated: f64 = crossings.iter().map(|c| c.regime.bound_mm()).sum();
-    // A conjunction over setups. A part is not acceptable because two of its
-    // three setups were, and an unchecked setup has certified nothing.
-    let pass = total == 0 && !any_unchecked;
+    // A conjunction over gates *and* over setups. A part is not acceptable
+    // because two of its three setups were, and an unchecked gate has certified
+    // nothing -- including the gouge gate, which is unchecked when no nominal
+    // was given rather than quietly passing.
+    let gouge_state = match gouge {
+        Some((0, _)) => "pass",
+        Some(_) => "fail",
+        None => "unchecked",
+    };
+    let pass = total == 0 && !any_unchecked && gouge_state == "pass";
 
     let mut text = format!(
         "job        {}\nsetups     {}\nstock      {}\n\n",
@@ -500,8 +564,14 @@ pub fn job(args: &JobArgs) -> Result<(Value, String, bool), String> {
             )),
         }
     }
+    match gouge {
+        Some((n, worst)) => text.push_str(&format!(
+            "\ngouge      {n} finding(s), worst {worst:.4} mm\n"
+        )),
+        None => text.push_str("\ngouge      UNCHECKED -- no --nominal, so nothing was compared\n"),
+    }
     text.push_str(&format!(
-        "\ntransform bound accumulated {accumulated:.4} mm over {} boundary(ies)\nverdict    {}\n",
+        "transform bound accumulated {accumulated:.4} mm over {} boundary(ies)\nverdict    {}\n",
         crossings.len(),
         if pass { "PASS" } else { "DOES NOT PASS" }
     ));
@@ -545,7 +615,23 @@ pub fn job(args: &JobArgs) -> Result<(Value, String, bool), String> {
         }).collect::<Vec<_>>(),
         "verdict": {
             "pass": pass,
-            "gates": { "collision": { "state": state } },
+            "gates": {
+                "collision": { "state": state },
+                "gouge": {
+                    "state": gouge_state,
+                    "why": match gouge {
+                        Some((0, _)) => None,
+                        Some((n, worst)) => Some(format!(
+                            "{n} gouge(s) above tolerance, worst {worst:.4} mm"
+                        )),
+                        None => Some(
+                            "no --nominal was given, so no comparison ran; a gate that \
+                             did not run has not passed"
+                                .to_owned(),
+                        ),
+                    },
+                },
+            },
             "rule": "a gate that fails in any setup fails the job, and an unchecked \
                      setup certifies nothing",
         },
