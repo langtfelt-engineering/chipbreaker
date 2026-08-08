@@ -43,9 +43,12 @@
 //! with a computable bound instead of two lossy conversions with an empirical
 //! one.
 
+use crate::dexel::arena::Arena;
+use crate::dexel::field::DexelField;
 use crate::dexel::lattice::Lattice;
-use crate::dexel::tri::AXES;
-use crate::math::{Axis, Mat4, Vec3};
+use crate::dexel::tri::{AXES, TriDexelField};
+use crate::math::{Aabb3, Axis, Mat4, OctNormal, Vec3};
+use crate::spans::Span;
 
 /// How a setup boundary was crossed, and what it cost.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -184,6 +187,177 @@ pub fn resample_bound(spacing_mm: f64) -> f64 {
 #[must_use]
 pub fn accumulated_bound(regimes: &[Regime]) -> f64 {
     regimes.iter().map(Regime::bound_mm).sum()
+}
+
+/// The workspace a lattice covers, recovered from its stored parts.
+///
+/// `origin` is the lower corner and the extents are stored rather than derived,
+/// so this is the box the lattice was built from and not the box its cells
+/// happen to cover. The difference is the padding, and rebuilding from the
+/// covered box instead would grow the workspace by a cell on every setup.
+#[must_use]
+fn workspace_of(lattice: &Lattice) -> Aabb3 {
+    let [u, v, w] = lattice.axis().cyclic();
+    let mut span = [0.0; 3];
+    span[u] = lattice.extent()[0];
+    span[v] = lattice.extent()[1];
+    span[w] = lattice.length();
+    let min = lattice.origin();
+    Aabb3::from_min_max(min, min + Vec3::from_array(span))
+}
+
+/// Moves a field into a new setup, exactly.
+///
+/// Only for the axis-aligned case, where rays map onto rays and the whole
+/// operation is a relabelling. Returns `None` if the transform is not
+/// axis-aligned — the caller then owes the reader a bound, and silently
+/// resampling here would hide that.
+///
+/// # What makes the result bit-identical to a direct build
+///
+/// The destination lattices are constructed from the **rotated workspace** by
+/// the same constructor a fresh build uses, rather than by carrying counts and
+/// extents across. Under a signed permutation the rotated box is exact, so the
+/// two lattices agree by construction rather than by luck — and every ray then
+/// lands on a ray, with its parameters unchanged.
+#[must_use]
+pub fn refixture_exact(field: &TriDexelField, transform: &Mat4) -> Option<TriDexelField> {
+    let spacing = field
+        .bundles()
+        .next()
+        .map(|(_, b)| b.lattice().spacing_uv()[0])?;
+    let Regime::Exact { from, flipped } = classify(transform, spacing)? else {
+        return None;
+    };
+
+    // The rotated workspace, from whichever bundle is present. Every bundle of
+    // a field covers the same box, so any of them will do.
+    let source_box = field
+        .bundles()
+        .next()
+        .map(|(_, b)| workspace_of(b.lattice()))?;
+    let rotated = rotate_box(&source_box, transform);
+
+    let mut bundles: [Option<DexelField>; 3] = [None, None, None];
+    for (index, dest) in AXES.into_iter().enumerate() {
+        let source_axis = from[index];
+        let Some(source) = field.bundle(source_axis) else {
+            continue;
+        };
+        let src_lattice = source.lattice();
+        let dst_lattice = Lattice::anisotropic(
+            rotated,
+            [
+                src_lattice.spacing_uv()[0],
+                src_lattice.spacing_uv()[0],
+                src_lattice.spacing_uv()[0],
+            ],
+            dest,
+        )
+        .ok()?;
+        let mut arena = Arena::new(dst_lattice.ray_count());
+
+        let sign = if flipped[index] { -1.0 } else { 1.0 };
+        let d = dest.index();
+        let mut moved = Vec::new();
+        for ray in 0..u32::try_from(src_lattice.ray_count()).unwrap_or(u32::MAX) {
+            let spans = source.arena().get(ray);
+            if spans.is_empty() {
+                continue;
+            }
+            let (i, j) = src_lattice.coords(ray);
+            let start = src_lattice.origin_of(i, j);
+            let image = transform.transform_point(start);
+            let Some(target) = ray_at_point(&dst_lattice, image) else {
+                // A ray whose image falls outside the destination lattice would
+                // mean the rotated workspace does not cover the rotated stock,
+                // which is a bug here rather than a case to skip quietly.
+                return None;
+            };
+            let dst_start = dst_lattice.origin_of(target.0, target.1);
+            let delta = image.to_array()[d] - dst_start.to_array()[d];
+
+            moved.clear();
+            if sign > 0.0 {
+                for s in spans {
+                    moved.push(Span::with_normals(
+                        s.t0 + delta,
+                        s.t1 + delta,
+                        rotate_normal(s.n0, transform),
+                        rotate_normal(s.n1, transform),
+                    ));
+                }
+            } else {
+                // The ray runs the other way, so the intervals reverse and each
+                // one's ends swap -- including which normal belongs to which.
+                for s in spans.iter().rev() {
+                    moved.push(Span::with_normals(
+                        delta - s.t1,
+                        delta - s.t0,
+                        rotate_normal(s.n1, transform),
+                        rotate_normal(s.n0, transform),
+                    ));
+                }
+            }
+            arena.set(dst_lattice.index(target.0, target.1), &moved);
+        }
+        bundles[index] = Some(DexelField::from_parts(dst_lattice, arena, Mat4::IDENTITY));
+    }
+    Some(TriDexelField::from_parts(
+        bundles,
+        field.provenance().clone(),
+    ))
+}
+
+/// The image of an axis-aligned box under a signed permutation.
+///
+/// Exact: every coordinate is copied or negated, never combined.
+fn rotate_box(b: &Aabb3, transform: &Mat4) -> Aabb3 {
+    let (lo, hi) = (b.min.to_array(), b.max.to_array());
+    let mut out = Aabb3::EMPTY;
+    for corner in 0..8u8 {
+        let p = Vec3::new(
+            if corner & 1 == 0 { lo[0] } else { hi[0] },
+            if corner & 2 == 0 { lo[1] } else { hi[1] },
+            if corner & 4 == 0 { lo[2] } else { hi[2] },
+        );
+        out = out.union_point(transform.transform_point(p));
+    }
+    out
+}
+
+/// Rotates an encoded normal.
+///
+/// Decode, rotate, re-encode. Exact for a signed permutation, because the
+/// octahedral encoding is odd-symmetric about zero — measured over 40 000
+/// normals rather than assumed. See the module header.
+fn rotate_normal(n: OctNormal, transform: &Mat4) -> OctNormal {
+    OctNormal::encode(transform.transform_direction(n.decode()))
+}
+
+/// Which ray of `lattice` passes through `point`.
+fn ray_at_point(lattice: &Lattice, point: Vec3) -> Option<(u32, u32)> {
+    let [u, v, _] = lattice.axis().cyclic();
+    let pad = lattice.pad();
+    let origin = lattice.origin().to_array();
+    let p = point.to_array();
+    let spacing = lattice.spacing_uv();
+    let counts = lattice.counts();
+    let index = |world: usize, k: usize| -> Option<u32> {
+        let raw = (p[world] - origin[world] + pad[k]) / spacing[k] - 0.5;
+        let rounded = raw.round();
+        // A ray image that does not land on a ray means the two lattices are
+        // not registered, which is the failure this whole approach exists to
+        // avoid. Half a thousandth of a cell is far looser than the exact case
+        // needs and far tighter than a genuine misregistration.
+        if (raw - rounded).abs() > 1.0e-3 || rounded < 0.0 {
+            return None;
+        }
+        #[allow(clippy::cast_possible_truncation, reason = "range checked below")]
+        let n = rounded as i64;
+        u32::try_from(n).ok().filter(|k2| *k2 < counts[k])
+    };
+    Some((index(u, 0)?, index(v, 1)?))
 }
 
 /// Where a lattice ends up under an axis-aligned transform.
