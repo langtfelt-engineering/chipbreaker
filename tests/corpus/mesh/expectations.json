@@ -210,7 +210,7 @@
       "findings": {}
     },
     {
-      "_why": "A small sphere entirely inside a large one, both outward-oriented. The signed volumes ADD rather than subtract, which is the question U5 will care about: a nested shell is a separate solid, not a cavity.",
+      "_why": "A small sphere entirely inside a large one, both outward-oriented. The signed volumes ADD rather than subtract, which is the question a dexel field cares about: a nested shell is a separate solid, not a cavity.",
       "file": "broken-nested.stl", "units": "mm", "load": "ok",
       "is_manifold": true, "is_watertight": true,
       "is_orientation_consistent": true, "is_solid": true,
