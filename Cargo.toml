@@ -7,7 +7,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 rust-version = "1.96.0"
 license = "GPL-3.0-or-later"
@@ -16,8 +16,8 @@ repository = "https://github.com/langtfelt-engineering/chipbreaker"
 homepage = "https://github.com/langtfelt-engineering/chipbreaker"
 
 [workspace.dependencies]
-chipbreaker-core = { path = "crates/chipbreaker-core", version = "0.1.0" }
-chipbreaker-gcode = { path = "crates/chipbreaker-gcode", version = "0.1.0" }
+chipbreaker-core = { path = "crates/chipbreaker-core", version = "0.1.1" }
+chipbreaker-gcode = { path = "crates/chipbreaker-gcode", version = "0.1.1" }
 
 # --- Determinism-critical dependencies ---------------------------------------
 # These are pinned with `=` because their output feeds a canonical hash that is
