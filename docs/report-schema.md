@@ -182,6 +182,11 @@ claim, and an audited artifact should not make one by accident. Pass
 | `bounds` | object | `{min, max}` |
 | `attribution` | object | `{ambiguous, segments}` |
 
+`attribution` carries a **`setup`** index beside its segments. A line number
+alone is ambiguous across a job: two setups have two programs, each numbering
+its own lines from one, so "line 47" names two different moves. It is `0` for a
+single-setup run.
+
 `attribution.segments` is an array of `{segment, file, line, block, cycle_step?}`.
 `cycle_step` is present only for a segment expanded from a canned cycle — one
 `G81` becomes rapid, plunge and retract, and a report naming line 42 three times
