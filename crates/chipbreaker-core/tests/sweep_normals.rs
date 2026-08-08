@@ -43,8 +43,32 @@
 //!
 //! So the oracle below negates: it takes the direction **from the swept surface
 //! back toward the tool's centre line**. Written the other way round, every case
-//! here failed by exactly 180 degrees, which is a pleasant way to find out that
-//! the directions were already right.
+//! here failed by exactly 180 degrees.
+//!
+//! # An error of exactly 180 degrees is a diagnosis, not a magnitude
+//!
+//! Worth stating as a general rule, because the pattern recurs and reads as a
+//! precision problem to anybody meeting it for the first time.
+//!
+//! 180 degrees is the *maximum possible* error between two unit vectors. A
+//! numerical fault — a bad epsilon, an accumulated rounding, a degenerate
+//! normalisation — produces a distribution of errors, and lands on the maximum
+//! only by coincidence. A **convention** fault produces exactly the maximum,
+//! every time, across every case, because it is not an error in the direction at
+//! all: the direction is right and the sign is inverted.
+//!
+//! So the exactness is the signal. `180.0000` on six cases out of six meant the
+//! geometry was already correct and one negation was missing; a genuine accuracy
+//! problem would have shown 179.3, 178.8, 180.0, 177.1. The same reasoning
+//! applies to any quantity with a bounded maximum:
+//!
+//! | reading | says |
+//! |---|---|
+//! | exactly the maximum, every case | a convention is inverted |
+//! | near the maximum, scattered | a real accuracy problem |
+//! | exactly zero, every case | the check is not running |
+//!
+//! Read the exactness before reaching for the tolerance.
 //!
 //! # It cannot go vacuous
 //!

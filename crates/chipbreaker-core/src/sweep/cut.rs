@@ -354,6 +354,32 @@ pub(crate) fn cut_one_ray(
 /// **Touches no shared state.** That is the whole reason it is separate: the
 /// parallel path runs this across threads against an immutable field, and only
 /// the subtraction and the write-back are ordered afterwards.
+/// The intervals of `ray` inside a motion's swept volume, or `None` if it misses.
+///
+/// A public window onto the same dispatcher a cut uses, so that a caller asking
+/// "did this motion reach that point" is answered by exactly the code that
+/// performed the cut. Attribution is the caller this exists for: a second
+/// implementation of the swept volume, written to answer a different question,
+/// would eventually disagree with the first about a grazing contact, and the
+/// disagreement would surface as a finding blamed on the wrong line.
+///
+/// The statistics a cut accumulates are discarded here — the caller is asking a
+/// question, not performing work anybody is budgeting.
+pub fn swept_spans_for<'a>(
+    profile: &Profile,
+    motion: &Motion,
+    method: SweepMethod,
+    scratch: &'a mut CutScratch,
+    ray: &Ray,
+) -> Option<&'a Spans> {
+    let mut stats = CutStats::default();
+    if swept_for_ray(profile, motion, method, scratch, ray, &mut stats) {
+        Some(&scratch.swept)
+    } else {
+        None
+    }
+}
+
 pub(crate) fn swept_for_ray(
     profile: &Profile,
     motion: &Motion,

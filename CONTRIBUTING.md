@@ -288,6 +288,51 @@ Any of these counts as evidence, in rough order of preference:
 If none of the three is practical, say so in the test's own documentation and say
 what would make it possible.
 
+## What a green CI run proves, and what it does not
+
+Two cadences, and the difference is worth knowing before you trust a green tick.
+
+### Every push
+
+| job | covers |
+|---|---|
+| `test (ubuntu / windows / macos)` | fmt, clippy, the full test suite, benchmarks compile, self-test |
+| `wasm parity` | the same self-test under `wasmtime` on `wasm32-wasip1` |
+| `cross-platform parity` | all four `results` hashes compared byte for byte, per suite |
+| `determinism rules` | no `f32`, FMA, `HashMap`, or ad-hoc threads; SPDX headers; golden file format |
+| `corpus regenerates identically` | every generated corpus file matches its generator |
+| `dependency licences` | `cargo deny` |
+
+**All four targets gate every push.** This was Linux-only for a while, on a
+billing argument that stopped applying when the repository became public.
+
+### Nightly only
+
+- **The two full-corpus statistical sweeps.** `every_case_injects_the_defect_it_claims`
+  walks all 295 corpus cases, and `recall_against_depth` builds two fields and
+  contours one per sampled case. 96 and 140 seconds respectively in the debug
+  build `cargo test` uses; 15 and 18 in the release build nightly uses.
+- **The fuzz suites**, against deliberately hostile input.
+
+### So what does a green push prove?
+
+**It proves the answer is identical on four targets**, that every rule in this
+document holds, and that nothing in the fast suite regressed — including the
+sign convention, the false-positive floor, the deviation ladder, and the
+corpus's *identity*, which is pinned by digest and is what both empty-case bugs
+would have tripped.
+
+**It does not prove the recall figure still holds.** That is measured nightly.
+A change that leaves every case injecting correctly but degrades detection would
+pass a push and fail the following morning.
+
+If you are about to publish a number from the recall curve, run the sweeps
+yourself rather than trusting the last green tick:
+
+```sh
+cargo test --release --all -- --ignored --nocapture
+```
+
 ## Commit style
 
 Small, logical commits. One deliverable per commit is about right. Explain *why*

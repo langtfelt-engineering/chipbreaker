@@ -10,6 +10,7 @@ pub mod defect;
 pub mod deviation;
 pub mod dexel;
 pub mod eps;
+pub mod findings;
 pub mod golden;
 pub mod math;
 pub mod mesh;
