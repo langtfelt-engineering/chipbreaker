@@ -22,19 +22,18 @@
 //!
 //! # How the non-cutting geometry is isolated
 //!
-//! Not by building a separate profile for the shank — a profile must begin at
-//! the tip, and a shank does not. Instead the swept volume of the **cutting-only**
-//! profile is subtracted from the swept volume of the whole tool, on each ray:
+//! By sweeping it directly, using the **same swept-volume code that performs the
+//! cut**. That last part is what keeps the answer consistent with the cutter: a
+//! second implementation written to answer this question separately would
+//! eventually disagree about a grazing contact, and the disagreement would
+//! surface as a collision reported against a move that never happened.
 //!
-//! ```text
-//! non_cutting = swept(whole tool) - swept(cutting geometry alone)
-//! ```
-//!
-//! Both terms come from the same swept-volume code that performs the cut, which
-//! is what keeps the answer consistent with it. A second implementation written
-//! to answer this question separately would eventually disagree with the cutter
-//! about a grazing contact, and the disagreement would surface as a collision
-//! reported against a move that never happened.
+//! A profile has to begin at the tip and a shank does not, so the first attempt
+//! swept the whole tool, swept the cutter alone, and subtracted. Correct, and it
+//! computed a swept volume twice on every ray — about half the cost of the whole
+//! check. [`non_cutting_only`] builds a legal profile for the shank and holder
+//! instead, by running up the axis at zero radius to the top of the flutes; the
+//! stub revolves to nothing, so the solid is exactly the non-cutting part.
 //!
 //! # What penetration means here
 //!
@@ -46,14 +45,14 @@
 use std::collections::BTreeMap;
 
 use crate::dexel::tri::TriDexelField;
-use crate::math::{Aabb3, Axis, Ray, Vec3};
+use crate::math::{Aabb3, Axis, Ray, Vec2, Vec3};
 use crate::spans::Spans;
 use crate::sweep::Motion;
 use crate::sweep::cut::{
     CutScratch, SweepMethod, cut_tri_motion, swept_spans_for, transverse_overlaps,
 };
 use crate::tool::Profile;
-use crate::tool::profile::ElementRole;
+use crate::tool::profile::{ElementRole, ProfileElement, RoledElement};
 use crate::toolpath::{MotionKind, Provenance};
 
 use super::attribute::Attribution;
@@ -128,6 +127,49 @@ pub fn cutting_only(profile: &Profile) -> Option<Profile> {
 #[must_use]
 pub fn holder_present(profile: &Profile) -> bool {
     profile.top_of_role(ElementRole::Holder).is_some()
+}
+
+/// The non-cutting geometry alone, as a profile in its own right.
+///
+/// # Why this is worth the trouble
+///
+/// The obvious way to isolate the shank and holder is to sweep the whole tool,
+/// sweep the cutter alone, and subtract. That is correct, and it computes a
+/// swept volume **twice per ray** — which turned out to be about half the cost
+/// of collision checking. Sweeping the non-cutting part directly does one.
+///
+/// # How a profile that does not start at the tip is made legal
+///
+/// A profile must begin at `(0, 0)` and its solid is bounded by the chain, the
+/// axis, and one top cap. So the chain runs **up the axis at zero radius** to
+/// the top of the flutes, steps out to the shank, and continues. The zero-radius
+/// stub revolves to nothing, so the solid is exactly the shank and holder and
+/// contains no part of the cutter.
+#[must_use]
+pub fn non_cutting_only(profile: &Profile) -> Option<Profile> {
+    let first = profile
+        .elements()
+        .iter()
+        .position(|e| e.role != ElementRole::Cutting)?;
+    let start = profile.elements()[first].element.start();
+    let mut chain = Vec::with_capacity(profile.elements().len() - first + 2);
+    // Up the axis to the height where the non-cutting geometry begins.
+    if start.y > 0.0 {
+        chain.push(RoledElement::non_cutting(ProfileElement::Segment {
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(0.0, start.y),
+        }));
+    }
+    // Out to where it actually starts. A horizontal step, so it revolves to an
+    // annular disc of zero thickness and adds no volume.
+    if start.x > 0.0 {
+        chain.push(RoledElement::non_cutting(ProfileElement::Segment {
+            start: Vec2::new(0.0, start.y),
+            end: start,
+        }));
+    }
+    chain.extend(profile.elements()[first..].iter().copied());
+    Profile::new(chain).ok()
 }
 
 /// The grouping key: motion, role severity, element, contact kind, obstacle.
@@ -233,7 +275,7 @@ pub fn collide_with_stock(
     if unmodelled_retracts > 0 {
         return Err(Unchecked::UnmodelledRetracts(unmodelled_retracts));
     }
-    let Some(cutting) = cutting_only(profile) else {
+    let Some(non_cutting) = non_cutting_only(profile) else {
         // Entirely cutting geometry: nothing above the flutes exists, so there
         // is nothing that could collide. An empty list is the right answer here
         // and is not the same as `unchecked`.
@@ -246,7 +288,7 @@ pub fn collide_with_stock(
             stock,
             &Obstacle::Stock,
             profile,
-            &cutting,
+            &non_cutting,
             motion,
             params,
             scratch,
@@ -261,8 +303,15 @@ pub fn collide_with_stock(
                 index: u32::try_from(index).unwrap_or(u32::MAX),
                 name: name.clone(),
             };
-            for hit in hits_for_motion(field, &obstacle, profile, &cutting, motion, params, scratch)
-            {
+            for hit in hits_for_motion(
+                field,
+                &obstacle,
+                profile,
+                &non_cutting,
+                motion,
+                params,
+                scratch,
+            ) {
                 raw.push((k, hit));
             }
         }
@@ -287,6 +336,8 @@ fn hits_for_motion(
     params: &CollideParams,
     scratch: &mut CutScratch,
 ) -> Vec<Hit> {
+    // `cutting` is the non-cutting sub-profile; the name is kept for the call
+    // sites below, which read it as "the geometry being swept".
     let mut out = Vec::new();
     // Widened by the clearance when near misses are wanted, so a ray that passes
     // close without touching is still visited. Without this the rejection would
@@ -312,16 +363,13 @@ fn hits_for_motion(
                 direction: axis.direction(),
             };
 
-            // Whole tool, then cutter alone. The difference is the shank and
-            // holder, expressed on this ray.
-            let Some(whole) = swept_spans_for(profile, motion, params.method, scratch, &ray) else {
+            // One sweep, of the shank and holder alone. See `non_cutting_only`
+            // for why this is not the whole tool minus the cutter.
+            let Some(non_cutting) = swept_spans_for(cutting, motion, params.method, scratch, &ray)
+            else {
                 continue;
             };
-            let whole = whole.clone();
-            let cut = swept_spans_for(cutting, motion, params.method, scratch, &ray)
-                .cloned()
-                .unwrap_or_else(|| Spans::with_capacity(0));
-            let non_cutting = whole.subtract(&cut);
+            let non_cutting = non_cutting.clone();
             if non_cutting.is_empty() {
                 continue;
             }

@@ -30,6 +30,10 @@ criterion.workspace = true
 num-rational = "0.4"
 
 [[bench]]
+name = "collision"
+harness = false
+
+[[bench]]
 name = "deviation"
 harness = false
 

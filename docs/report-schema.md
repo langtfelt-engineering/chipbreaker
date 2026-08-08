@@ -63,10 +63,24 @@ a break was zero and will never be this low again.
 **`unchecked` does not pass.** A gate that could not run says so and carries a
 `why`. This is the whole point of having three states: a holder that is not
 modelled cannot be found hitting anything, and a tool reporting "clear" on that
-basis would be manufacturing safety out of missing data. A run is `unchecked` for
-the collision gate when the tool has no holder geometry, when the program's
-`unmodelled_retracts` is non-zero, or when `verify` was used without replaying
-the program.
+basis would be manufacturing safety out of missing data.
+
+The collision gate is `unchecked` when:
+
+| condition | why it cannot be answered |
+|---|---|
+| the tool has no holder geometry | nothing above the shank is modelled, so nothing above the shank can be found hitting anything |
+| `unmodelled_retracts` is non-zero | the machine makes motion this replay does not contain |
+| no `--stock-field` was given | `verify` holds the **cut** field, and a collision is judged against the material present when each move ran |
+| no `--path` was given | there is no program to replay |
+
+That third row is worth stating plainly. A collision is a property of the
+**trajectory**: at the moment a move executes, the material in its way is the
+stock as it stood then. Judging against the final field would test every move
+against the least material the job ever contains and would miss every collision
+with material a later pass removes. So `verify` needs the field the program
+started from, and `chipbreaker collide` takes it as its only positional
+argument.
 
 **Forward compatibility, which integrators may rely on:** every future gate is a
 new key under `gates`. Because `pass` is a conjunction, a consumer that computes

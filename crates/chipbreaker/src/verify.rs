@@ -29,9 +29,10 @@
 use std::path::PathBuf;
 
 use chipbreaker_core::deviation::compare as deviation_compare;
-use chipbreaker_core::dexel::tri::TriDexelField;
+use chipbreaker_core::dexel::tri::{TriBuildOptions, TriDexelField};
 use chipbreaker_core::dexel::{FieldFormat, io as dexel_io};
 use chipbreaker_core::findings::cluster::{ClusterParams, cluster, unsampled};
+use chipbreaker_core::findings::detect::{CollideParams, collide_with_stock};
 use chipbreaker_core::findings::report::{
     InputHash, Manifest, Report, SCHEMA, SCHEMA_VERSION, SweptSplit, digest_bytes, environment,
     semantics_from,
@@ -96,6 +97,19 @@ pub struct VerifyArgs {
     /// zeros for it.
     #[arg(long, value_name = "FILE")]
     pub run_report: Option<PathBuf>,
+    /// The **stock** field the program started from, for the collision gate.
+    ///
+    /// `verify` holds the cut field, and a collision is judged against the
+    /// material present when each move runs. Without this the collision gate
+    /// reports `unchecked` rather than a clear it never established.
+    #[arg(long, value_name = "FILE")]
+    pub stock_field: Option<PathBuf>,
+    /// Static obstacles for the collision gate. Comma separated.
+    #[arg(long, value_name = "FILES", value_delimiter = ',')]
+    pub fixtures: Vec<PathBuf>,
+    /// Report a near miss when the gap is below this, in millimetres.
+    #[arg(long, value_name = "MM", default_value_t = 0.0)]
+    pub clearance: f64,
     /// Where to write the report.
     #[arg(long, value_name = "FILE")]
     pub report: Option<PathBuf>,
@@ -312,25 +326,30 @@ pub fn verify(args: &VerifyArgs) -> Result<(Value, String, bool), String> {
     };
     let semantics = semantics_from(&d, manifest.spacing_mm, args.tol, sweep);
 
-    // The collision gate is `unchecked` here, not `pass`. `verify` compares
-    // geometry; nothing in this path has looked at the holder, and a gate that
-    // reported "clear" on the strength of never having checked would be the
-    // exact failure the version 2 rename exists to prevent.
+    // The collision gate needs the **stock** field, because a collision is
+    // judged against the material present when each move runs. `verify` holds
+    // the cut field, so without `--stock-field` there is nothing here to replay
+    // against and the gate says so rather than reporting a clear it never
+    // established.
+    let (collisions, collision_gate, rapid_path) =
+        collision_gate(args, spacing).unwrap_or_else(|e| {
+            (
+                Vec::new(),
+                GateOutcome::unchecked(format!("collision checking could not run: {e}")),
+                None,
+            )
+        });
+
     let verdict = Verdict::new()
         .with(verdict::GATE_GOUGE, Report::gouge_gate(&findings))
-        .with(
-            verdict::GATE_COLLISION,
-            GateOutcome::unchecked(
-                "verify compares geometry against the nominal and does not replay the                  program; run `chipbreaker collide` for the collision gate",
-            ),
-        );
+        .with(verdict::GATE_COLLISION, collision_gate);
     let report = Report {
         manifest,
         semantics,
         findings,
-        collisions: Vec::new(),
+        collisions,
         verdict,
-        rapid_path: None,
+        rapid_path,
     };
 
     if let Some(out) = &args.report {
@@ -500,6 +519,98 @@ fn read_sweep_split(path: &std::path::Path) -> Result<SweptSplit, String> {
 /// Only the fields a diff needs are reconstructed. A report is written for a
 /// reader and consumed for a comparison, and the comparison does not need the
 /// prose.
+/// Runs the collision gate for `verify`, when it has what it needs.
+///
+/// Returns the collisions, the gate, and the rapid policy that was replayed.
+/// Every path that cannot produce an answer returns `unchecked` with a reason —
+/// never a pass.
+fn collision_gate(
+    args: &VerifyArgs,
+    spacing: f64,
+) -> Result<(Vec<Collision>, GateOutcome, Option<RapidPath>), String> {
+    let Some(stock_field) = &args.stock_field else {
+        return Ok((
+            Vec::new(),
+            GateOutcome::unchecked(
+                "verify holds the cut field, and a collision is judged against the material \
+                 present when each move runs; pass --stock-field with the field the program \
+                 started from, or run `chipbreaker collide`",
+            ),
+            None,
+        ));
+    };
+    let Some(program) = &args.path else {
+        return Ok((
+            Vec::new(),
+            GateOutcome::unchecked("no --path, so there is no program to replay"),
+            None,
+        ));
+    };
+
+    let mut field = read_field(stock_field)?;
+    let replay =
+        crate::run::resolve_for_collision(program, args.tools.as_deref(), args.tool.as_deref())?;
+    let rapid = replay.rapid_path;
+
+    let unit = match &args.units {
+        Some(u) => Some(crate::mesh::parse_unit(u)?),
+        None => None,
+    };
+    let mut fixtures = Vec::with_capacity(args.fixtures.len());
+    for f in &args.fixtures {
+        let (mesh, _) = crate::mesh::load(&Input {
+            file: f.clone(),
+            units: unit,
+            weld_tol: chipbreaker_core::eps::EPS_WELD,
+            json: false,
+        })?;
+        let (built, _) = TriDexelField::build(
+            &mesh,
+            &TriBuildOptions {
+                spacing,
+                ..TriBuildOptions::default()
+            },
+        )
+        .map_err(|e| format!("cannot build a field for {}: {e}", f.display()))?;
+        fixtures.push((
+            f.file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("fixture")
+                .to_owned(),
+            built,
+        ));
+    }
+
+    let mut scratch = CutScratch::new(&replay.profile);
+    match collide_with_stock(
+        &mut field,
+        &replay.profile,
+        &replay.motions,
+        &replay.kinds,
+        &replay.provenance,
+        replay.unmodelled_retracts,
+        &fixtures,
+        &CollideParams {
+            clearance_mm: args.clearance,
+            grid_mm: 2.0 * spacing,
+            method: SweepMethod::Analytic {
+                tolerance: spacing / 10.0,
+            },
+        },
+        &mut scratch,
+    ) {
+        Ok(c) => {
+            let gate = Report::collision_gate(&c);
+            Ok((c, gate, Some(rapid)))
+        }
+        Err(u) => Ok((
+            Vec::new(),
+            GateOutcome::unchecked(u.to_string()),
+            Some(rapid),
+        )),
+    }
+}
+
 /// Every gate on its own line, with the reason when there is one.
 ///
 /// One line per gate rather than a single summary word. A reader who sees only
