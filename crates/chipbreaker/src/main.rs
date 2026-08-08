@@ -19,6 +19,7 @@ mod report;
 mod roots;
 mod run;
 mod tool;
+mod verify;
 
 use std::io::Write;
 use std::path::PathBuf;
@@ -97,6 +98,15 @@ enum Command {
     Compare(compare::CompareArgs),
     /// The distribution behind `compare`: where the deviation is, and how deep.
     DeviationStat(compare::DeviationStatArgs),
+    /// Produce a verification report: findings, attribution, and a manifest.
+    ///
+    /// Where `compare` answers "is this acceptable", `verify` produces the
+    /// artifact somebody audits: each finding named, attributed to the lines
+    /// that could have caused it, beside a statement of what the numbers are
+    /// worth and what they exclude.
+    Verify(verify::VerifyArgs),
+    /// Compare two verification reports.
+    ReportDiff(verify::ReportDiffArgs),
     /// Predict what a job will cost in memory, without allocating any of it.
     MemEstimate(memest::MemEstimateArgs),
     /// Print version information.
@@ -163,6 +173,16 @@ fn main() -> ExitCode {
         Command::DeviationStat(args) => {
             let as_json = args.compare.json;
             let (outcome, elapsed) = mesh::timed(|| compare::deviation_stat(&args));
+            emit(outcome, elapsed, as_json)
+        }
+        Command::Verify(args) => {
+            let as_json = args.json;
+            let (outcome, elapsed) = mesh::timed(|| verify::verify(&args));
+            emit(outcome, elapsed, as_json)
+        }
+        Command::ReportDiff(args) => {
+            let as_json = args.json;
+            let (outcome, elapsed) = mesh::timed(|| verify::report_diff(&args));
             emit(outcome, elapsed, as_json)
         }
         Command::MemEstimate(args) => {

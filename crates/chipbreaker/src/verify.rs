@@ -1,0 +1,523 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Langtfelt
+
+//! `chipbreaker verify` and `chipbreaker report-diff`.
+//!
+//! # `compare` answers a question; `verify` produces an artifact
+//!
+//! `compare` prints the worst gouge and the worst excess. That is the right
+//! answer to "is this part acceptable" and the wrong shape for anything else:
+//! it cannot be diffed, it does not say which line caused what, and six months
+//! later it cannot be checked against the inputs that produced it.
+//!
+//! `verify` produces a report — findings with identities, each attributed to the
+//! lines that could have caused it, a content-addressed manifest of every input,
+//! and a statement of what the numbers are worth. It is the thing a quality
+//! engineer reads during an audit, and it is designed for that reader first and
+//! for the terminal second.
+//!
+//! # The exit code contract
+//!
+//! | code | means |
+//! |---|---|
+//! | 0 | no gouge above tolerance |
+//! | 1 | a gouge above tolerance, or the run could not be completed |
+//!
+//! `report-diff` uses the same two codes for "identical" and "differs", which
+//! is what makes it usable as a CI gate without parsing anything.
+
+use std::path::PathBuf;
+
+use chipbreaker_core::deviation::compare as deviation_compare;
+use chipbreaker_core::dexel::tri::TriDexelField;
+use chipbreaker_core::dexel::{FieldFormat, io as dexel_io};
+use chipbreaker_core::findings::cluster::{ClusterParams, cluster, unsampled};
+use chipbreaker_core::findings::report::{
+    InputHash, Manifest, Report, SCHEMA, digest_bytes, environment, semantics_from,
+};
+use chipbreaker_core::findings::{Attribution, attribute_point, identify};
+use chipbreaker_core::mesh::TriMesh;
+use chipbreaker_core::sweep::Motion;
+use chipbreaker_core::sweep::cut::{CutScratch, SweepMethod};
+use chipbreaker_core::tool::Profile;
+use chipbreaker_core::toolpath::Provenance;
+use clap::Args;
+use serde_json::{Value, json};
+
+use crate::mesh::Input;
+
+/// `chipbreaker verify ...`
+#[derive(Debug, Args)]
+pub struct VerifyArgs {
+    /// The cut field to judge, as `.tdx`.
+    pub file: PathBuf,
+    /// The nominal part, as a mesh.
+    #[arg(long, value_name = "FILE")]
+    pub nominal: PathBuf,
+    /// The stock the field was built from, for the tessellation floor.
+    #[arg(long, value_name = "FILE")]
+    pub stock: Option<PathBuf>,
+    /// The NC program, so findings can name the line that caused them.
+    #[arg(long, value_name = "FILE")]
+    pub path: Option<PathBuf>,
+    /// The tool library the program was cut with.
+    #[arg(long, value_name = "FILE")]
+    pub tools: Option<PathBuf>,
+    /// Which tool, by library id.
+    #[arg(long, value_name = "ID")]
+    pub tool: Option<String>,
+    /// Unit the meshes' coordinates are in.
+    #[arg(long, value_name = "UNIT")]
+    pub units: Option<String>,
+    /// The tolerance to judge against, in millimetres.
+    #[arg(long, value_name = "MM", default_value_t = 0.1)]
+    pub tol: f64,
+    /// How far apart two samples may be and still be one finding.
+    ///
+    /// Defaults to two cells, which is the smallest radius that can join
+    /// samples from different bundles — three bundles put their samples on
+    /// three interleaved lattices, and anything under one cell splits a single
+    /// physical gouge into one finding per bundle.
+    #[arg(long, value_name = "MM")]
+    pub cluster_radius: Option<f64>,
+    /// Report below the tessellation floor anyway.
+    #[arg(long)]
+    pub allow_below_floor: bool,
+    /// Where to write the report.
+    #[arg(long, value_name = "FILE")]
+    pub report: Option<PathBuf>,
+    /// Emit JSON to standard output instead of text.
+    #[arg(long)]
+    pub json: bool,
+}
+
+/// `chipbreaker report-diff ...`
+#[derive(Debug, Args)]
+pub struct ReportDiffArgs {
+    /// The earlier report.
+    pub old: PathBuf,
+    /// The later report.
+    pub new: PathBuf,
+    /// Emit JSON instead of text.
+    #[arg(long)]
+    pub json: bool,
+}
+
+fn read_field(file: &std::path::Path) -> Result<TriDexelField, String> {
+    let bytes = std::fs::read(file).map_err(|e| format!("cannot read {}: {e}", file.display()))?;
+    match dexel_io::detect(&bytes) {
+        Some(FieldFormat::Tri) => {
+            dexel_io::tri_from_bytes(&bytes).map_err(|e| format!("{}: {e}", file.display()))
+        }
+        Some(FieldFormat::Single) => Err(format!(
+            "{} is a single-bundle field; verification needs all three bundles",
+            file.display()
+        )),
+        None => Err(format!(
+            "{} is not a Chipbreaker field file",
+            file.display()
+        )),
+    }
+}
+
+fn read_mesh(path: &std::path::Path, units: Option<&str>) -> Result<TriMesh, String> {
+    let unit = match units {
+        Some(u) => Some(crate::mesh::parse_unit(u)?),
+        None => None,
+    };
+    crate::mesh::load(&Input {
+        file: path.to_path_buf(),
+        units: unit,
+        weld_tol: chipbreaker_core::eps::EPS_WELD,
+        json: false,
+    })
+    .map(|(m, _)| m)
+}
+
+fn hash_of(path: &std::path::Path) -> Result<String, String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+    Ok(digest_bytes(&bytes))
+}
+
+/// The motions and their provenance, when a program was supplied.
+fn load_program(
+    path: &std::path::Path,
+    tools: Option<&std::path::Path>,
+    tool: Option<&str>,
+) -> Result<(Vec<Motion>, Vec<Provenance>, Profile), String> {
+    let (motions, provenance, profile) = crate::run::resolve_for_attribution(path, tools, tool)?;
+    Ok((motions, provenance, profile))
+}
+
+/// Runs `chipbreaker verify`.
+///
+/// # Errors
+/// Returns a message suitable for stderr.
+#[allow(clippy::too_many_lines, reason = "one linear assembly of one artifact")]
+pub fn verify(args: &VerifyArgs) -> Result<(Value, String, bool), String> {
+    if !args.tol.is_finite() || args.tol <= 0.0 {
+        return Err(format!(
+            "--tol must be a positive number of millimetres, got {}",
+            args.tol
+        ));
+    }
+    let started = std::time::Instant::now();
+
+    let field = read_field(&args.file)?;
+    let nominal_mesh = read_mesh(&args.nominal, args.units.as_deref())?;
+    let stock_mesh = match &args.stock {
+        Some(p) => Some(read_mesh(p, args.units.as_deref())?),
+        None => None,
+    };
+
+    let d = deviation_compare(&field, &nominal_mesh, stock_mesh.as_ref());
+    if d.below_floor(args.tol) && !args.allow_below_floor {
+        return Err(format!(
+            "a tolerance of {:.4} mm is below the {:.4} mm floor these inputs support, \
+             so any finding at that scale would describe the inputs and not the part.\n\
+             \x20 stock facets   {:.4} mm\n\
+             \x20 nominal facets {:.4} mm\n\
+             \x20 lattice        {:.4} mm\n\
+             Refine the coarsest of the three, or pass --allow-below-floor.",
+            args.tol,
+            d.tolerance_floor_mm(),
+            d.stock_facet_mm,
+            d.nominal_facet_mm,
+            d.spacing_mm,
+        ));
+    }
+
+    let spacing = d.spacing_mm;
+    let params = ClusterParams {
+        radius_mm: args.cluster_radius.unwrap_or(2.0 * spacing),
+        tolerance_mm: args.tol,
+    };
+
+    let mut clusters = cluster(&d.samples, &params, spacing);
+    clusters.extend(unsampled(&nominal_mesh, &d.samples, &params));
+    chipbreaker_core::findings::cluster::sort_canonically(&mut clusters);
+    let mut findings = identify(clusters, params.radius_mm);
+
+    // Attribution, only where there is a finding to attribute. This is the
+    // choice recorded in `findings::attribute`: recompute for the rare regions
+    // that matter rather than carry four bytes per endpoint through every field
+    // the engine ever builds.
+    let mut attributed = 0usize;
+    let mut ambiguous = 0usize;
+    if let Some(program) = &args.path {
+        let (motions, provenance, profile) =
+            load_program(program, args.tools.as_deref(), args.tool.as_deref())?;
+        let bounds: Vec<_> = motions.iter().map(|m| m.swept_bounds(&profile)).collect();
+        let method = SweepMethod::Analytic {
+            tolerance: spacing / 10.0,
+        };
+        let mut scratch = CutScratch::new(&profile);
+        for f in &mut findings {
+            // Attribution answers "which segment cut this", so it applies to
+            // findings the *cut* produced. An undercut is a property of the part
+            // and no segment caused it; saying otherwise would name a line at
+            // random.
+            if !matches!(
+                f.class,
+                chipbreaker_core::findings::Classification::Gouge
+                    | chipbreaker_core::findings::Classification::ExcessStock
+            ) {
+                continue;
+            }
+            let a = attribute_point(
+                &profile,
+                &motions,
+                &bounds,
+                &provenance,
+                method,
+                &mut scratch,
+                f.at,
+            );
+            if !a.is_empty() {
+                attributed += 1;
+            }
+            if a.is_ambiguous() {
+                ambiguous += 1;
+            }
+            f.attribution = a;
+        }
+    } else {
+        for f in &mut findings {
+            f.attribution = Attribution::none();
+        }
+    }
+
+    let mut inputs = vec![
+        InputHash {
+            role: "field".to_owned(),
+            path: args.file.display().to_string(),
+            digest: hash_of(&args.file)?,
+        },
+        InputHash {
+            role: "nominal".to_owned(),
+            path: args.nominal.display().to_string(),
+            digest: hash_of(&args.nominal)?,
+        },
+    ];
+    for (role, p) in [
+        ("stock", args.stock.as_ref()),
+        ("program", args.path.as_ref()),
+        ("tools", args.tools.as_ref()),
+    ] {
+        if let Some(p) = p {
+            inputs.push(InputHash {
+                role: role.to_owned(),
+                path: p.display().to_string(),
+                digest: hash_of(p)?,
+            });
+        }
+    }
+    inputs.sort_by(|a, b| a.role.cmp(&b.role));
+
+    let selftest = {
+        let report = chipbreaker_core::selftest::run_with(chipbreaker_gcode::selftest::suites());
+        let mut h = chipbreaker_core::golden::CanonicalHash::new();
+        chipbreaker_core::golden::Hashable::hash_canonical(&report, &mut h);
+        h.finish().to_hex()
+    };
+
+    let manifest = Manifest {
+        inputs,
+        spacing_mm: [spacing, spacing, spacing],
+        tolerance_mm: args.tol,
+        cluster_radius_mm: params.radius_mm,
+        engine_version: env!("CARGO_PKG_VERSION").to_owned(),
+        engine_selftest: selftest,
+    };
+    // The sweep statistics belong to the run that produced the field, which this
+    // command did not perform. Reported as unknown rather than as zero: zero
+    // exact ray-cuts is a claim, and "we did not measure" is the truth.
+    let semantics = semantics_from(&d, manifest.spacing_mm, args.tol, 0, 0, 0.0);
+
+    let accepted = Report::decide(&findings);
+    let report = Report {
+        manifest,
+        semantics,
+        findings,
+        accepted,
+    };
+
+    if let Some(out) = &args.report {
+        let text = serde_json::to_string_pretty(&report.to_json())
+            .map_err(|e| format!("cannot render the report: {e}"))?;
+        std::fs::write(out, text + "\n")
+            .map_err(|e| format!("cannot write {}: {e}", out.display()))?;
+    }
+
+    let c = report.counts();
+    let elapsed = started.elapsed().as_secs_f64() * 1000.0;
+    let text = format!(
+        "field      {}\n\
+         nominal    {}\n\
+         manifest   {}\n\
+         \n\
+         GOUGE          {} finding(s)\n\
+         EXCESS STOCK   {} finding(s)   (expected on a roughing pass; not a defect on its own)\n\
+         UNDERCUT       {} finding(s)   (unreachable at this setup, whatever the program)\n\
+         UNREACHABLE    {} finding(s)   (no ray sampled it; absence of evidence)\n\
+         \n\
+         attributed {attributed} of {} cut findings, {ambiguous} ambiguous\n\
+         verdict    {}\n\
+         \n\
+         {}\n",
+        args.file.display(),
+        args.nominal.display(),
+        report.manifest.digest(),
+        c[0],
+        c[1],
+        c[2],
+        c[3],
+        c[0] + c[1],
+        if accepted {
+            "no gouge above tolerance"
+        } else {
+            "GOUGED above tolerance"
+        },
+        chipbreaker_core::findings::report::SCOPE_STATEMENT,
+    );
+
+    let mut value = report.to_json();
+    if let Value::Object(map) = &mut value {
+        map.insert("environment".to_owned(), environment("local", elapsed));
+        map.insert("schema".to_owned(), json!(SCHEMA));
+    }
+    Ok((value, text, accepted))
+}
+
+/// Runs `chipbreaker report-diff`.
+///
+/// # Errors
+/// Returns a message suitable for stderr.
+pub fn report_diff(args: &ReportDiffArgs) -> Result<(Value, String, bool), String> {
+    let old = crate::verify::load_report(&args.old)?;
+    let new = crate::verify::load_report(&args.new)?;
+    let d = chipbreaker_core::findings::diff::diff(&old, &new);
+    let (appeared, disappeared, changed) = d.tally();
+
+    let mut text = format!(
+        "old        {}\nnew        {}\n\n",
+        args.old.display(),
+        args.new.display()
+    );
+    if d.manifest.is_empty() {
+        text.push_str("manifest   identical\n\n");
+    } else {
+        text.push_str("manifest   DIFFERS -- this may explain every finding below\n");
+        for (k, a, b) in &d.manifest {
+            text.push_str(&format!("             {k}: {a} -> {b}\n"));
+        }
+        text.push('\n');
+    }
+    text.push_str(&format!(
+        "findings   {appeared} appeared, {disappeared} disappeared, {changed} changed\n"
+    ));
+    for c in &d.changes {
+        match c {
+            chipbreaker_core::findings::Change::Appeared(f) => text.push_str(&format!(
+                "  + {} {:<12} {:.4} mm\n",
+                f.id,
+                f.class.as_str(),
+                f.worst_depth_mm
+            )),
+            chipbreaker_core::findings::Change::Disappeared(f) => text.push_str(&format!(
+                "  - {} {:<12} {:.4} mm\n",
+                f.id,
+                f.class.as_str(),
+                f.worst_depth_mm
+            )),
+            chipbreaker_core::findings::Change::Changed { before, after } => {
+                text.push_str(&format!(
+                    "  ~ {} {:<12} {:.4} -> {:.4} mm\n",
+                    after.id,
+                    after.class.as_str(),
+                    before.worst_depth_mm,
+                    after.worst_depth_mm
+                ));
+            }
+        }
+    }
+    if d.is_empty() {
+        text.push_str("\nidentical\n");
+    }
+    Ok((
+        chipbreaker_core::findings::diff::to_json(&d),
+        text,
+        d.is_empty(),
+    ))
+}
+
+/// Reads a report back from JSON.
+///
+/// Only the fields a diff needs are reconstructed. A report is written for a
+/// reader and consumed for a comparison, and the comparison does not need the
+/// prose.
+pub fn load_report(path: &std::path::Path) -> Result<Report, String> {
+    use chipbreaker_core::findings::{Classification, Finding};
+    use chipbreaker_core::math::{Aabb3, Vec3};
+
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+    let v: Value = serde_json::from_str(&text)
+        .map_err(|e| format!("{} is not valid JSON: {e}", path.display()))?;
+    if v["schema"].as_str() != Some(SCHEMA) {
+        return Err(format!(
+            "{} is not a Chipbreaker verification report (schema is {:?})",
+            path.display(),
+            v["schema"].as_str().unwrap_or("absent")
+        ));
+    }
+
+    let num = |x: &Value| x.as_f64().unwrap_or(0.0);
+    let m = &v["manifest"];
+    let inputs = m["inputs"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .map(|i| InputHash {
+                    role: i["role"].as_str().unwrap_or_default().to_owned(),
+                    path: i["path"].as_str().unwrap_or_default().to_owned(),
+                    digest: i["digest"].as_str().unwrap_or_default().to_owned(),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let sp = m["spacing_mm"]
+        .as_array()
+        .map_or([0.0; 3], |a| [num(&a[0]), num(&a[1]), num(&a[2])]);
+
+    let mut findings = Vec::new();
+    for f in v["findings"].as_array().into_iter().flatten() {
+        let class = match f["class"].as_str().unwrap_or_default() {
+            "gouge" => Classification::Gouge,
+            "excess-stock" => Classification::ExcessStock,
+            "undercut" => Classification::Undercut,
+            _ => Classification::Unreachable,
+        };
+        let at = f["at"].as_array().map_or(Vec3::ZERO, |a| {
+            Vec3::new(num(&a[0]), num(&a[1]), num(&a[2]))
+        });
+        let seg = f["attribution"]["segments"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .map(|s| {
+                        (
+                            u32::try_from(s["segment"].as_u64().unwrap_or(0)).unwrap_or(0),
+                            Provenance {
+                                file: u32::try_from(s["file"].as_u64().unwrap_or(0)).unwrap_or(0),
+                                line: u32::try_from(s["line"].as_u64().unwrap_or(0)).unwrap_or(0),
+                                block: u32::try_from(s["block"].as_u64().unwrap_or(0)).unwrap_or(0),
+                                cycle_step: u32::try_from(s["cycle_step"].as_u64().unwrap_or(
+                                    u64::from(chipbreaker_core::toolpath::NOT_A_CYCLE_STEP),
+                                ))
+                                .unwrap_or(chipbreaker_core::toolpath::NOT_A_CYCLE_STEP),
+                            },
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        findings.push(Finding {
+            id: f["id"].as_str().unwrap_or_default().to_owned(),
+            class,
+            worst_depth_mm: num(&f["severity"]["worst_depth_mm"]),
+            mean_depth_mm: num(&f["severity"]["mean_depth_mm"]),
+            area_mm2: num(&f["severity"]["area_mm2"]),
+            volume_mm3: num(&f["severity"]["volume_mm3"]),
+            sample_count: usize::try_from(f["sample_count"].as_u64().unwrap_or(0)).unwrap_or(0),
+            at,
+            bounds: Aabb3::EMPTY,
+            attribution: Attribution {
+                segments: seg.iter().map(|(s, _)| *s).collect(),
+                provenance: seg.iter().map(|(_, p)| *p).collect(),
+            },
+        });
+    }
+
+    let semantics = semantics_from(
+        &chipbreaker_core::deviation::DeviationField::default(),
+        sp,
+        num(&m["tolerance_mm"]),
+        0,
+        0,
+        0.0,
+    );
+    Ok(Report {
+        manifest: Manifest {
+            inputs,
+            spacing_mm: sp,
+            tolerance_mm: num(&m["tolerance_mm"]),
+            cluster_radius_mm: num(&m["cluster_radius_mm"]),
+            engine_version: m["engine_version"].as_str().unwrap_or_default().to_owned(),
+            engine_selftest: m["engine_selftest"].as_str().unwrap_or_default().to_owned(),
+        },
+        semantics,
+        accepted: v["accepted"].as_bool().unwrap_or(false),
+        findings,
+    })
+}

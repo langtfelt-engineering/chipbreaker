@@ -49,9 +49,13 @@
 
 pub mod attribute;
 pub mod cluster;
+pub mod diff;
+pub mod report;
 
 pub use attribute::{Attribution, attribute_point, motion_reaches};
 pub use cluster::{Classification, Cluster, ClusterParams, cluster, unsampled};
+pub use diff::{Change, Diff};
+pub use report::{Manifest, NumericalSemantics, Report};
 
 use crate::golden::CanonicalHash;
 use crate::math::{Aabb3, Vec3};

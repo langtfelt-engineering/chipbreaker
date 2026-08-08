@@ -433,11 +433,22 @@ pub fn unsampled(
     samples: &[Deviation],
     params: &ClusterParams,
 ) -> Vec<Cluster> {
-    // Sample positions, bucketed once, so the coverage test is a lookup rather
-    // than a scan.
+    // Bucketed by **where on the nominal each sample was measured to**, not by
+    // where the sample sits.
+    //
+    // The difference decides whether this function works at all. A gouge moves
+    // the result surface away from the nominal by the gouge depth, so bucketing
+    // by sample position leaves the nominal floor of a 1 mm gouge with no sample
+    // within a 0.8 mm radius -- and the region gets reported as *unreachable*
+    // when it is in fact the best-evidenced part of the part, with a gouge
+    // finding sitting directly beneath it.
+    //
+    // That is exactly what the first version did, and the report said so:
+    // two `unreachable` findings on the floor of a channel the engine had just
+    // measured to a thousandth of a millimetre.
     let mut grid: BTreeMap<(i64, i64, i64), Vec<u32>> = BTreeMap::new();
     for (i, d) in samples.iter().enumerate() {
-        grid.entry(cell_of(d.at, params.radius_mm))
+        grid.entry(cell_of(d.nearest_on_nominal, params.radius_mm))
             .or_default()
             .push(u32::try_from(i).unwrap_or(u32::MAX));
     }
@@ -452,7 +463,7 @@ pub fn unsampled(
                     };
                     if bucket
                         .iter()
-                        .any(|&i| samples[i as usize].at.distance_squared(p) <= r2)
+                        .any(|&i| samples[i as usize].nearest_on_nominal.distance_squared(p) <= r2)
                     {
                         return true;
                     }

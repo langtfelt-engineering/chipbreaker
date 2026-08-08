@@ -99,6 +99,19 @@ pub struct Deviation {
     /// A diagnostic, never the finding. Equal to `signed_mm` wherever the two
     /// surfaces are locally parallel, and an upper bound on it everywhere.
     pub perpendicular_mm: f64,
+    /// **The point on the nominal this sample was measured to.**
+    ///
+    /// Computed anyway, by the closest-point query that produces `signed_mm`,
+    /// and kept because it answers a question nothing else can: *which part of
+    /// the nominal has evidence about it*.
+    ///
+    /// Without it, coverage has to be guessed from proximity — is there a
+    /// result sample near this nominal point — and that guess is wrong exactly
+    /// where it matters. A gouged region's result surface has moved away by the
+    /// gouge depth, so the nominal there looks unsampled when in truth it is the
+    /// best-evidenced part of the whole part. Mapping each sample back to where
+    /// it was measured *from* makes coverage a lookup rather than an inference.
+    pub nearest_on_nominal: Vec3,
     /// Which bundle's ray this endpoint came from.
     pub axis: usize,
 }
@@ -121,6 +134,7 @@ impl Hashable for Deviation {
         h.f64_slice(&self.normal.to_array());
         h.f64(self.signed_mm);
         h.f64(self.perpendicular_mm);
+        h.f64_slice(&self.nearest_on_nominal.to_array());
         h.u64(self.axis as u64);
         h.end();
     }
@@ -403,7 +417,7 @@ pub fn compare(
                         origin.z + direction.z * t,
                     );
                     let normal = code.decode();
-                    if let Some((surface, perpendicular)) =
+                    if let Some((surface, perpendicular, nearest)) =
                         signed_deviation(nominal, &bvh, at, normal, &mut stack, &mut hits)
                     {
                         samples.push(Deviation {
@@ -411,6 +425,7 @@ pub fn compare(
                             normal,
                             signed_mm: surface,
                             perpendicular_mm: perpendicular,
+                            nearest_on_nominal: nearest,
                             axis: axis.index(),
                         });
                     }
@@ -470,7 +485,8 @@ pub fn reduce(
 
 /// Signed deviation from `at` to the nominal surface, both ways of measuring it.
 ///
-/// Returns `(surface, perpendicular)`, both signed, in millimetres.
+/// Returns `(surface, perpendicular, nearest)` — the two signed magnitudes in
+/// millimetres, and the point on the nominal the measurement was taken to.
 ///
 /// # Sign from containment, not from which direction hit first
 ///
@@ -507,7 +523,7 @@ fn signed_deviation(
     normal: Vec3,
     stack: &mut Vec<u32>,
     hits: &mut Vec<crate::mesh::bvh::Hit>,
-) -> Option<(f64, f64)> {
+) -> Option<(f64, f64, Vec3)> {
     // Far enough to cross any plausible part, short enough that a stray hit on
     // the far side of the model is not mistaken for a local deviation.
     const REACH: f64 = 200.0;
@@ -541,7 +557,7 @@ fn signed_deviation(
     } else {
         1.0
     };
-    Some((sign * surface, sign * perpendicular))
+    Some((sign * surface, sign * perpendicular, nearest))
 }
 
 /// Whether `at` lies inside the nominal solid.

@@ -678,3 +678,79 @@ pub fn cut_stat(args: &CutStatArgs) -> Result<(Value, String, bool), String> {
     });
     Ok((results, text, true))
 }
+
+/// Motions, their provenance, and the cutter, for attribution.
+///
+/// `verify` needs the same three things `run` needed, but for a different
+/// purpose: not to cut, but to ask which segment reached a point. Sharing this
+/// function rather than reparsing means a finding is attributed to the same
+/// motion list that produced the field, which is the only way the answer can be
+/// right.
+///
+/// A single profile, because attribution is per point and a point was cut by
+/// whichever tool was in the spindle at the time. Where a program changes tools
+/// this takes the first, and says so: the alternative is threading a tool per
+/// motion through the attribution loop for a case that the corpus does not yet
+/// contain. It is a known limit rather than a silent one.
+///
+/// # Errors
+/// Returns a message suitable for stderr.
+pub fn resolve_for_attribution(
+    path: &std::path::Path,
+    tools: Option<&std::path::Path>,
+    tool: Option<&str>,
+) -> Result<
+    (
+        Vec<Motion>,
+        Vec<chipbreaker_core::toolpath::Provenance>,
+        Profile,
+    ),
+    String,
+> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+    let name = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("program");
+    let (toolpath, _, _) =
+        parse(&text, name, &ParseOptions::default(), None).map_err(|e| e.to_string())?;
+
+    let library_path = tools.ok_or_else(|| {
+        "--tools is required to attribute findings: a segment's swept volume \
+         depends on the cutter, and guessing one would name the wrong line"
+            .to_owned()
+    })?;
+    let library_text = std::fs::read_to_string(library_path)
+        .map_err(|e| format!("cannot read {}: {e}", library_path.display()))?;
+    let library = ToolLibrary::from_json(&library_text).map_err(|e| e.to_string())?;
+
+    let profile = if let Some(id) = tool {
+        library
+            .get(id)
+            .ok_or_else(|| format!("no tool with id {id:?} in {}", library_path.display()))?
+            .profile()
+            .clone()
+    } else {
+        let first = toolpath
+            .segments
+            .first()
+            .map(|s| s.tool)
+            .unwrap_or_default();
+        library
+            .get_by_number(first)
+            .ok_or_else(|| format!("no tool numbered {first} in {}", library_path.display()))?
+            .profile()
+            .clone()
+    };
+
+    let mut motions = Vec::with_capacity(toolpath.segments.len());
+    let mut provenance = Vec::with_capacity(toolpath.segments.len());
+    for s in &toolpath.segments {
+        if let Some(m) = segment_motion(s) {
+            motions.push(m);
+            provenance.push(s.source);
+        }
+    }
+    Ok((motions, provenance, profile))
+}
