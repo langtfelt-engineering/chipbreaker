@@ -1,21 +1,25 @@
-# ADR 0002 — Branch protection on `main`: deferred, and what guards it meanwhile
+# ADR 0002 — Branch protection on `main`
 
-- **Status:** Accepted. Deferred, blocked on the repository's GitHub plan.
-- **Date:** 2026-08-03
-- **Governs:** repository settings; to be acted on whenever the GitHub plan or
-  the repository's visibility changes
+- **Status:** accepted; deferred at first, **enabled** when the repository was
+  made public
+- **Date:** 2026-08-03, enabled 2026-08-08
+- **Governs:** repository settings on `main`
 
 ## Decision
 
-Branch protection on `main` is **not enabled**, and will not be until either the
-`spanwerk` organisation moves to a paid GitHub plan or the repository is made
-public.
+Branch protection on `main` **blocks force-pushes and branch deletion, for
+everyone including administrators**, and does **not** require pull requests.
+Direct pushes to `main` stay allowed.
 
-When it is enabled, it will require the CI checks and block force-pushes and
-branch deletion, and it will **not** require pull requests. Direct pushes to
-`main` stay allowed.
+It does **not** require status checks, and that is a change from what this ADR
+originally anticipated. The two are incompatible: GitHub enforces required
+checks on direct pushes as well as on merges, so a commit must have passing
+checks *before* it can arrive — but the checks run *on* arrival. Requiring them
+would have meant requiring pull requests too, which the section below rejects on
+its own merits. The force-push and deletion guards were always the rows that
+mattered; those are the ones taken.
 
-## Why it is deferred: it is not available to buy with effort
+## Why it was deferred at first: it was not available to buy with effort
 
 Branch protection was asked for early. The GitHub API refuses:
 
@@ -24,18 +28,21 @@ GET /repos/spanwerk/chipbreaker/branches/main/protection
 403: Upgrade to GitHub Pro or make this repository public to enable this feature.
 ```
 
-`chipbreaker` is a **private repository in an organisation**, and for those,
+`chipbreaker` was a **private repository in an organisation**, and for those,
 branch protection — and rulesets, which are the newer equivalent — are a paid
 feature. There is no configuration, no workflow, and no third-party action that
 substitutes for it: the enforcement lives in GitHub's own push path, which is
 exactly why it is worth having and exactly why it cannot be emulated.
+
+Making the repository public removed the restriction, and the protection was
+applied the same day.
 
 This is recorded rather than silently skipped because a reader who finds
 the requirement and no protection on the branch should be able to learn
 that the gap is known, deliberate, and priced, rather than assume it was
 forgotten.
 
-## What actually guards `main` today
+## What guarded `main` while it was deferred
 
 | risk | guarded? | by what |
 |---|---|---|
@@ -48,7 +55,9 @@ forgotten.
 | **force-push rewriting history on `main`** | **no** | nothing |
 | **merging while checks are still red** | **no** | nothing |
 
-The two unguarded rows are the whole content of this ADR.
+The two unguarded rows were the whole content of this ADR. The first is now
+guarded by GitHub. The second is not, and is not going to be — see the decision
+above for why requiring checks would have cost direct pushes.
 
 "After the fact" is the important qualifier throughout the guarded rows. CI runs
 *on* push, not *before* it, so a bad commit reaches `main` and is then reported.
@@ -88,12 +97,28 @@ are available without any PR requirement. If the project gains a second regular
 contributor, this paragraph is the one to revisit; the reasoning above stops
 holding the moment there is somebody to review.
 
+## What this does and does not do about pull requests
+
+The repository is public, so anybody may open a pull request. **Nobody outside
+the organisation can merge one**, and that is GitHub's permission model rather
+than anything configured here: merging needs write access, and write access is
+held by the maintainers alone.
+
+`CONTRIBUTING.md` says code contributions are not accepted, and
+`.github/pull_request_template.md` says the same thing to somebody who has
+already started, before they spend an evening on a patch that cannot be taken.
+Neither is a security control; both are courtesy.
+
+Forking is deliberately left **enabled**. Disabling it would prevent pull
+requests from existing at all, but the GPL grants the right to copy and modify
+regardless of whether GitHub's fork button works, so turning it off would buy
+nothing real and would read as hostility to people exercising a right the
+licence gives them.
+
 ## When to revisit
 
-Any of:
-
-- The organisation moves to a paid GitHub plan for any other reason.
-- The repository is made public, which the GPL-3.0-or-later half of the licence
-  makes likely eventually.
-- A second regular contributor joins, which also reopens the pull-request
-  question above.
+- A second regular contributor joins, which reopens the pull-request question
+  above: the reasoning against requiring reviews stops holding the moment there
+  is somebody to review.
+- A pre-merge check becomes genuinely wanted, at which point the honest route is
+  a merge queue rather than required checks on direct pushes.
