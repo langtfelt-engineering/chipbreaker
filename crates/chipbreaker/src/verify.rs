@@ -33,7 +33,7 @@ use chipbreaker_core::dexel::tri::TriDexelField;
 use chipbreaker_core::dexel::{FieldFormat, io as dexel_io};
 use chipbreaker_core::findings::cluster::{ClusterParams, cluster, unsampled};
 use chipbreaker_core::findings::report::{
-    InputHash, Manifest, Report, SCHEMA, digest_bytes, environment, semantics_from,
+    InputHash, Manifest, Report, SCHEMA, SweptSplit, digest_bytes, environment, semantics_from,
 };
 use chipbreaker_core::findings::{Attribution, attribute_finding, identify};
 use chipbreaker_core::mesh::TriMesh;
@@ -83,6 +83,13 @@ pub struct VerifyArgs {
     /// Report below the tessellation floor anyway.
     #[arg(long)]
     pub allow_below_floor: bool,
+    /// The JSON report from `chipbreaker run`, for the swept-volume split.
+    ///
+    /// A field does not carry the statistics of the run that cut it, so without
+    /// this the report says the split is unavailable rather than inventing
+    /// zeros for it.
+    #[arg(long, value_name = "FILE")]
+    pub run_report: Option<PathBuf>,
     /// Where to write the report.
     #[arg(long, value_name = "FILE")]
     pub report: Option<PathBuf>,
@@ -293,10 +300,11 @@ pub fn verify(args: &VerifyArgs) -> Result<(Value, String, bool), String> {
         engine_version: env!("CARGO_PKG_VERSION").to_owned(),
         engine_selftest: selftest,
     };
-    // The sweep statistics belong to the run that produced the field, which this
-    // command did not perform. Reported as unknown rather than as zero: zero
-    // exact ray-cuts is a claim, and "we did not measure" is the truth.
-    let semantics = semantics_from(&d, manifest.spacing_mm, args.tol, 0, 0, 0.0);
+    let sweep = match &args.run_report {
+        Some(p) => Some(read_sweep_split(p)?),
+        None => None,
+    };
+    let semantics = semantics_from(&d, manifest.spacing_mm, args.tol, sweep);
 
     let accepted = Report::decide(&findings);
     let report = Report {
@@ -415,6 +423,26 @@ pub fn report_diff(args: &ReportDiffArgs) -> Result<(Value, String, bool), Strin
     ))
 }
 
+/// Reads the swept-volume split out of a `chipbreaker run --json` report.
+fn read_sweep_split(path: &std::path::Path) -> Result<SweptSplit, String> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+    let v: Value = serde_json::from_str(&text)
+        .map_err(|e| format!("{} is not valid JSON: {e}", path.display()))?;
+    let s = &v["results"]["sweep"];
+    if s.is_null() {
+        return Err(format!(
+            "{} has no `results.sweep` section, so it is not a report from              `chipbreaker run --json`",
+            path.display()
+        ));
+    }
+    Ok(SweptSplit {
+        ray_cuts_exact: s["rays_exact"].as_u64().unwrap_or(0),
+        ray_cuts_bounded: s["rays_substepped"].as_u64().unwrap_or(0),
+        worst_bound_mm: s["worst_bound_mm"].as_f64().unwrap_or(0.0),
+    })
+}
+
 /// Reads a report back from JSON.
 ///
 /// Only the fields a diff needs are reconstructed. A report is written for a
@@ -516,9 +544,7 @@ pub fn load_report(path: &std::path::Path) -> Result<Report, String> {
         &chipbreaker_core::deviation::DeviationField::default(),
         sp,
         num(&m["tolerance_mm"]),
-        0,
-        0,
-        0.0,
+        None,
     );
     Ok(Report {
         manifest: Manifest {

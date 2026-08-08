@@ -15,11 +15,93 @@ cargo bench --bench mesh       -- --warm-up-time 1 --measurement-time 3
 cargo bench --bench tool       -- --warm-up-time 1 --measurement-time 3
 cargo bench --bench gcode      -- --warm-up-time 1 --measurement-time 3
 cargo bench --bench deviation  -- --warm-up-time 1 --measurement-time 3
+cargo bench --bench findings   -- --warm-up-time 1 --measurement-time 3
 ```
 
 CI compiles the benchmarks (`cargo bench --no-run`) but does not time them.
 Timing on shared CI runners produces numbers with more variance than the
 regressions we would be looking for.
+
+---
+
+## 2026-08-08 — findings: clustering, attribution, and diffing
+
+- **Commit:** `HEAD`
+- **Machine:** Intel Core Ultra 7 270K Plus, 24 physical / 24 logical cores,
+  31.5 GB RAM
+- **OS:** Windows 11 Pro 10.0.26200
+- **Toolchain:** the pinned `rust-toolchain.toml`
+- **Command:** `cargo bench --bench findings`
+
+### Clustering scales with what is wrong, not with the part
+
+A 40 x 30 x 12 mm block, raster-faced, compared against its own nominal at three
+depths:
+
+| cut | samples | above tolerance | findings | time |
+|---|---|---|---|---|
+| correct | 28,960 | 666 | 1 | 129 µs |
+| 0.5 mm deep | 29,306 | 6,035 | 1 | 1.63 ms |
+| 2.0 mm deep | 30,690 | 7,419 | 1 | 2.15 ms |
+
+Throughput holds at 3.4–5.2 M samples/second. The field barely changes size and
+the work changes by 17x, which is the shape wanted: a clean part costs almost
+nothing to cluster however large it is, and the expensive case is a part
+somebody was about to spend a long time on anyway.
+
+> **These figures carry more variance than earlier entries in this file.**
+> Repeat runs on the same binary moved by up to 30% — criterion reported the
+> shifts as significant, and they are, of the machine rather than of the code.
+> This measurement was taken with other work running. Treat the numbers as
+> order-of-magnitude and the *ratios* as the finding; a regression baseline
+> wants a quiet machine, and this one was not.
+
+**One finding, not thousands**, because a raster gouged uniformly *is* one
+connected region. That is the correct answer and a useless benchmark, so the
+scale case below builds the pathological one directly.
+
+### At scale: one finding per sample
+
+Isolated samples a millimetre apart with a 0.05 mm radius, so nothing merges and
+the finding count equals the sample count:
+
+| findings | cluster | cluster + identify |
+|---|---|---|
+| 1,000 | 0.66–0.80 ms | 1.7–2.2 ms |
+| 10,000 | 8.2–9.8 ms | 19.6–21.9 ms |
+
+Linear in findings — 10x the input for roughly 12x the time — and **about 20 ms
+for the ten-thousand-finding case**, which is the number that matters: a report
+that large is one nobody should be machining, but the generator has to survive
+it.
+
+`identify` costs about as much again as clustering, which is the hashing. That
+is a fair price for identities that make two reports diffable.
+
+### Attribution, and diffing
+
+| | |
+|---|---|
+| attribute 1 finding against 5 segments | 2.7–3.7 µs |
+| diff two reports | 0.9–1.2 µs per finding |
+
+Attribution is measured **with the box rejection in place**, because that is how
+it runs: the rejection is what stops the segment count mattering, and measuring
+without it would price an implementation nobody ships.
+
+Diffing at a microsecond per thousand findings is the number that lets
+`report-diff` sit in somebody's CI on every push. A diff slower than the
+verification it compares would be a strange thing to ship.
+
+### What this priced, and what it decided
+
+The choice between storing a segment index per span endpoint and recomputing
+attribution for findings alone. Recomputing costs a few microseconds per finding
+and nothing in steady state; storing would have cost **eight bytes on every span
+in every field the engine builds** — a third more memory, spent on regions that
+are overwhelmingly not findings. The variance above is 30% and the decision
+turns on a factor of thousands, so it is not close and does not need a quiet
+machine to settle.
 
 ---
 

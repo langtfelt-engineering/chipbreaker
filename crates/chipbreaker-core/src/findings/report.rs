@@ -133,17 +133,15 @@ pub struct NumericalSemantics {
     pub spacing_mm: [f64; 3],
     /// The tolerance applied.
     pub tolerance_mm: f64,
-    /// Ray-cuts whose swept volume was computed in closed form.
-    pub ray_cuts_exact: u64,
-    /// Ray-cuts that were sub-stepped.
-    pub ray_cuts_bounded: u64,
-    /// Worst deviation bound among the **bounded** ray-cuts only.
+    /// How the swept volumes were computed, when the run that produced the field
+    /// reported it.
     ///
-    /// Reported beside the split rather than as a single figure for the run: a
-    /// mixed program's worst bound belongs to the segments that earned it, and
-    /// quoting it for the whole job would be a claim about work that carried no
-    /// sweep error at all.
-    pub worst_swept_bound_mm: f64,
+    /// **`None` is not zero, and the difference matters.** `verify` reads a
+    /// field; the split belongs to the run that cut it, and a field does not
+    /// carry it. Emitting zeros would put two numbers in an audited artifact
+    /// that no measurement produced — and "no ray-cut was bounded" is a strong
+    /// claim to make by accident. Absent says absent, and says how to get it.
+    pub sweep: Option<SweptSplit>,
     /// Estimated chord error of the stock mesh.
     pub stock_facet_mm: f64,
     /// Estimated chord error of the nominal mesh.
@@ -155,6 +153,22 @@ pub struct NumericalSemantics {
     pub below_floor: bool,
     /// How far the perpendicular reading overstated the metric at worst.
     pub worst_projection_gap_mm: f64,
+}
+
+/// How a run's swept volumes were computed.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SweptSplit {
+    /// Ray-cuts whose swept volume was computed in closed form.
+    pub ray_cuts_exact: u64,
+    /// Ray-cuts that were sub-stepped.
+    pub ray_cuts_bounded: u64,
+    /// Worst deviation bound among the **bounded** ray-cuts only.
+    ///
+    /// Reported beside the split rather than as a single figure for the run: a
+    /// mixed program's worst bound belongs to the segments that earned it, and
+    /// quoting it for the whole job would be a claim about work that carried no
+    /// sweep error at all.
+    pub worst_bound_mm: f64,
 }
 
 /// What a deviation bound does **not** cover.
@@ -252,10 +266,21 @@ impl Report {
             "numerical_semantics": {
                 "spacing_mm": self.semantics.spacing_mm,
                 "tolerance_mm": self.semantics.tolerance_mm,
-                "ray_cuts_exact": self.semantics.ray_cuts_exact,
-                "ray_cuts_bounded": self.semantics.ray_cuts_bounded,
-                "worst_swept_bound_mm": self.semantics.worst_swept_bound_mm,
-                "worst_swept_bound_applies_to": "the sub-stepped ray-cuts only",
+                "swept_volumes": self.semantics.sweep.map_or_else(
+                    || json!({
+                        "available": false,
+                        "why": "a field does not carry the statistics of the run that cut it; \
+                                pass --run-report from `chipbreaker run --json` to include them",
+                    }),
+                    |s| json!({
+                        "available": true,
+                        "ray_cuts_exact": s.ray_cuts_exact,
+                        "ray_cuts_bounded": s.ray_cuts_bounded,
+                        "worst_bound_mm": s.worst_bound_mm,
+                        "worst_bound_applies_to": "the sub-stepped ray-cuts only, never the \
+                                                   whole run",
+                    }),
+                ),
                 "stock_facet_mm": self.semantics.stock_facet_mm,
                 "nominal_facet_mm": self.semantics.nominal_facet_mm,
                 "tolerance_floor_mm": self.semantics.tolerance_floor_mm,
@@ -372,16 +397,12 @@ pub fn semantics_from(
     d: &DeviationField,
     spacing_mm: [f64; 3],
     tolerance_mm: f64,
-    ray_cuts_exact: u64,
-    ray_cuts_bounded: u64,
-    worst_swept_bound_mm: f64,
+    sweep: Option<SweptSplit>,
 ) -> NumericalSemantics {
     NumericalSemantics {
         spacing_mm,
         tolerance_mm,
-        ray_cuts_exact,
-        ray_cuts_bounded,
-        worst_swept_bound_mm,
+        sweep,
         stock_facet_mm: d.stock_facet_mm,
         nominal_facet_mm: d.nominal_facet_mm,
         tolerance_floor_mm: d.tolerance_floor_mm(),

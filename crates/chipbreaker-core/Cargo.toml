@@ -34,6 +34,10 @@ name = "deviation"
 harness = false
 
 [[bench]]
+name = "findings"
+harness = false
+
+[[bench]]
 name = "predicates"
 harness = false
 

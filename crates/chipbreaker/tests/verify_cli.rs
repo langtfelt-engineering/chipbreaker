@@ -419,14 +419,27 @@ fn every_report_carries_its_semantics_and_its_exclusions() {
         "nominal_facet_mm",
         "tolerance_floor_mm",
         "below_floor",
-        "ray_cuts_exact",
-        "ray_cuts_bounded",
-        "worst_swept_bound_mm",
+        "swept_volumes",
         "worst_projection_gap_mm",
         "detection_floor",
     ] {
         assert!(!n[key].is_null(), "numerical_semantics is missing {key}");
     }
+
+    // Without a run report the split is genuinely unknown, and the artifact
+    // must say so rather than emit zeros. "No ray-cut was bounded" is a strong
+    // claim to make by accident in a document somebody audits.
+    assert_eq!(
+        n["swept_volumes"]["available"],
+        Value::Bool(false),
+        "with no --run-report the swept split must be marked unavailable, not          reported as zero"
+    );
+    assert!(
+        n["swept_volumes"]["why"]
+            .as_str()
+            .is_some_and(|w| w.contains("--run-report")),
+        "an unavailable section must say how to make it available"
+    );
 
     let ex = r["exclusions"].as_array().expect("exclusions");
     let joined = ex
@@ -452,6 +465,51 @@ fn every_report_carries_its_semantics_and_its_exclusions() {
             .as_str()
             .is_some_and(|s| s.contains("not the machine")),
         "the report must say what it verified, in the artifact"
+    );
+}
+
+#[test]
+fn a_run_report_supplies_the_swept_volume_split() {
+    // The mutation check for the assertion above: with the run's own statistics
+    // supplied, the section must become available and carry real counts. If it
+    // stayed unavailable, "unavailable when absent" would be trivially true.
+    let f = Fixture::new("swept");
+    write_program(&f.path("deep.nc"), FLOOR - 1.0);
+    let (code, out, err) = run(&[
+        "run",
+        "--stock",
+        &f.s("stock.tdx"),
+        "--path",
+        &f.s("deep.nc"),
+        "--tools",
+        &tool_library(),
+        "--tool",
+        "flat-6",
+        "--out",
+        &f.s("deep.tdx"),
+        "--json",
+    ]);
+    assert_eq!(code, 0, "the run failed: {err}");
+    std::fs::write(f.path("run.json"), &out).expect("writes");
+
+    let field = f.s("deep.tdx");
+    let run_report = f.s("run.json");
+    let (_, r) = f.verify("deep", &field, &["--run-report", &run_report]);
+    let sw = &r["numerical_semantics"]["swept_volumes"];
+    println!("swept split: {sw}");
+
+    assert_eq!(sw["available"], Value::Bool(true));
+    let exact = sw["ray_cuts_exact"].as_u64().expect("a count");
+    let bounded = sw["ray_cuts_bounded"].as_u64().expect("a count");
+    assert!(
+        exact + bounded > 0,
+        "the split is available but empty, so it carries no information"
+    );
+    assert!(
+        sw["worst_bound_applies_to"]
+            .as_str()
+            .is_some_and(|s| s.contains("sub-stepped")),
+        "the worst bound must say it belongs to the bounded ray-cuts alone"
     );
 }
 
