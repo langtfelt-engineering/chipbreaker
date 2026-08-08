@@ -130,12 +130,52 @@ pub fn holder_present(profile: &Profile) -> bool {
     profile.top_of_role(ElementRole::Holder).is_some()
 }
 
-/// One overlap found on one ray.
+/// The grouping key: motion, role severity, element, contact kind, obstacle.
+type GroupKey = (usize, u8, u32, bool, u8, u32);
+
+/// One overlap or near miss found on one ray.
 struct Hit {
     at: Vec3,
     length_mm: f64,
     role: ElementRole,
     element_index: u32,
+    obstacle: Obstacle,
+    contact: Contact,
+}
+
+/// The smallest gap between two span sets, measured **along the ray**.
+///
+/// `None` when either set is empty.
+///
+/// This is a one-dimensional gap and therefore an **upper bound** on the true
+/// distance: a ray running nearly parallel to both surfaces crosses a long
+/// stretch of air between two points that are in fact close together. The bound
+/// falls the right way — the reported gap is never smaller than the real one, so
+/// a near miss is never invented, though a shallow-angle one can be missed.
+///
+/// That asymmetry is deliberate. A near miss is a warning about the next edit,
+/// and a warning that fires on geometry which is not actually close would be
+/// switched off within a week, taking the real ones with it.
+fn closest_gap(a: &Spans, b: &Spans) -> Option<f64> {
+    if a.is_empty() || b.is_empty() {
+        return None;
+    }
+    let mut best = f64::INFINITY;
+    for x in a.iter() {
+        for y in b.iter() {
+            // Zero when they touch or overlap; otherwise the distance between
+            // the facing endpoints.
+            let gap = if x.t1 < y.t0 {
+                y.t0 - x.t1
+            } else if y.t1 < x.t0 {
+                x.t0 - y.t1
+            } else {
+                0.0
+            };
+            best = best.min(gap);
+        }
+    }
+    best.is_finite().then_some(best)
 }
 
 /// The role and profile index of whatever non-cutting element sits at height
@@ -183,6 +223,7 @@ pub fn collide_with_stock(
     kinds: &[MotionKind],
     provenance: &[Provenance],
     unmodelled_retracts: u32,
+    fixtures: &[(String, TriDexelField)],
     params: &CollideParams,
     scratch: &mut CutScratch,
 ) -> Result<Vec<Collision>, Unchecked> {
@@ -201,8 +242,29 @@ pub fn collide_with_stock(
 
     let mut raw: Vec<(usize, Hit)> = Vec::new();
     for (k, motion) in motions.iter().enumerate() {
-        for hit in hits_for_motion(stock, profile, &cutting, motion, params, scratch) {
+        for hit in hits_for_motion(
+            stock,
+            &Obstacle::Stock,
+            profile,
+            &cutting,
+            motion,
+            params,
+            scratch,
+        ) {
             raw.push((k, hit));
+        }
+        // Fixtures are checked against the same motion and never cut. A clamp
+        // does not get out of the way, which is the entire reason it is
+        // dangerous.
+        for (index, (name, field)) in fixtures.iter().enumerate() {
+            let obstacle = Obstacle::Fixture {
+                index: u32::try_from(index).unwrap_or(u32::MAX),
+                name: name.clone(),
+            };
+            for hit in hits_for_motion(field, &obstacle, profile, &cutting, motion, params, scratch)
+            {
+                raw.push((k, hit));
+            }
         }
         // Then, and only then, remove what this motion cuts.
         cut_tri_motion(stock, profile, motion, params.method, scratch);
@@ -211,9 +273,14 @@ pub fn collide_with_stock(
     Ok(assemble(raw, kinds, provenance, params))
 }
 
-/// Every overlap this motion's non-cutting geometry has with present material.
+/// Every overlap this motion's non-cutting geometry has with one obstacle.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the inner loop, shared by stock and fixtures"
+)]
 fn hits_for_motion(
     field: &TriDexelField,
+    obstacle: &Obstacle,
     profile: &Profile,
     cutting: &Profile,
     motion: &Motion,
@@ -221,7 +288,10 @@ fn hits_for_motion(
     scratch: &mut CutScratch,
 ) -> Vec<Hit> {
     let mut out = Vec::new();
-    let bounds = motion.swept_bounds(profile);
+    // Widened by the clearance when near misses are wanted, so a ray that passes
+    // close without touching is still visited. Without this the rejection would
+    // discard exactly the rays a near miss lives on.
+    let bounds = motion.swept_bounds(profile).expand(params.clearance_mm);
     for axis in [Axis::X, Axis::Y, Axis::Z] {
         let Some(bundle) = field.bundle(axis) else {
             continue;
@@ -272,7 +342,35 @@ fn hits_for_motion(
                     length_mm: length,
                     role,
                     element_index,
+                    obstacle: obstacle.clone(),
+                    contact: Contact::Collision {
+                        penetration_mm: length,
+                    },
                 });
+            }
+
+            // A near miss, only where there was no contact at all on this ray:
+            // a ray that already collides has nothing to warn about.
+            if params.clearance_mm > 0.0
+                && overlap.is_empty()
+                && let Some(gap) = closest_gap(&non_cutting, &material)
+                && gap < params.clearance_mm
+            {
+                {
+                    let at = non_cutting
+                        .hull()
+                        .map_or(origin, |h| origin + axis.direction() * h.midpoint());
+                    let z = height_above_tip(motion, at);
+                    let (role, element_index) = element_at(profile, z);
+                    out.push(Hit {
+                        at,
+                        length_mm: gap,
+                        role,
+                        element_index,
+                        obstacle: obstacle.clone(),
+                        contact: Contact::NearMiss { clearance_mm: gap },
+                    });
+                }
             }
         }
     }
@@ -331,21 +429,39 @@ fn assemble(
             c as i64
         }
     };
-    let mut groups: BTreeMap<(usize, u8, u32), Vec<Hit>> = BTreeMap::new();
+    let mut groups: BTreeMap<GroupKey, Vec<Hit>> = BTreeMap::new();
     for (k, hit) in raw {
+        let (class, index) = hit.obstacle.order();
         groups
-            .entry((k, hit.role.severity(), hit.element_index))
+            .entry((
+                k,
+                hit.role.severity(),
+                hit.element_index,
+                // Contact and near miss never merge: one is a crash and the
+                // other is a warning, and a group containing both would have to
+                // report one number for two different quantities.
+                hit.contact.is_collision(),
+                class,
+                index,
+            ))
             .or_default()
             .push(hit);
     }
 
     let mut out = Vec::new();
     let mut seen: BTreeMap<(i64, i64, i64), u32> = BTreeMap::new();
-    for ((k, _, element_index), hits) in groups {
-        let worst = hits
-            .iter()
-            .max_by(|a, b| a.length_mm.total_cmp(&b.length_mm))
-            .expect("a group is never empty");
+    for ((k, _, element_index, is_collision, _, _), hits) in groups {
+        // Worst means deepest for a collision and **closest** for a near miss.
+        // Taking the maximum of both would report the least alarming near miss
+        // in the group, which is the one nobody needs to know about.
+        let worst = if is_collision {
+            hits.iter()
+                .max_by(|a, b| a.length_mm.total_cmp(&b.length_mm))
+        } else {
+            hits.iter()
+                .min_by(|a, b| a.length_mm.total_cmp(&b.length_mm))
+        }
+        .expect("a group is never empty");
         let motion = kinds.get(k).copied().unwrap_or(MotionKind::Linear);
         let mut bounds = Aabb3::EMPTY;
         for h in &hits {
@@ -355,7 +471,7 @@ fn assemble(
         let slot = seen.entry(cell).or_insert(0);
         let id = collision_id(
             worst.role,
-            &Obstacle::Stock,
+            &worst.obstacle,
             motion,
             worst.at,
             params.grid_mm,
@@ -370,12 +486,10 @@ fn assemble(
             });
         out.push(Collision {
             id,
-            contact: Contact::Collision {
-                penetration_mm: worst.length_mm,
-            },
+            contact: worst.contact,
             role: worst.role,
             element_index,
-            obstacle: Obstacle::Stock,
+            obstacle: worst.obstacle.clone(),
             at: worst.at,
             bounds,
             motion,

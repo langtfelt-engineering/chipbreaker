@@ -754,3 +754,91 @@ pub fn resolve_for_attribution(
     }
     Ok((motions, provenance, profile))
 }
+
+/// Everything collision checking needs from a program.
+pub struct Replay {
+    /// The motions, in order.
+    pub motions: Vec<Motion>,
+    /// What each one is, so a rapid collision can be ranked above a feed one.
+    pub kinds: Vec<chipbreaker_core::toolpath::MotionKind>,
+    /// Where each came from.
+    pub provenance: Vec<chipbreaker_core::toolpath::Provenance>,
+    /// The tool, holder and all.
+    pub profile: Profile,
+    /// How rapids were represented, from the IR header.
+    pub rapid_path: chipbreaker_core::toolpath::RapidPath,
+    /// Retracts the expansion could not model.
+    ///
+    /// Carried rather than dropped: a program missing motion the machine makes
+    /// cannot be certified collision-clean, however clean the motion we do have.
+    pub unmodelled_retracts: u32,
+}
+
+/// Resolves a program for collision checking.
+///
+/// Differs from [`resolve_for_attribution`] in keeping the motion kinds and the
+/// two header fields that decide whether the answer can be trusted at all.
+///
+/// # Errors
+/// Returns a message suitable for stderr.
+pub fn resolve_for_collision(
+    path: &std::path::Path,
+    tools: Option<&std::path::Path>,
+    tool: Option<&str>,
+) -> Result<Replay, String> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+    let name = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("program");
+    let (toolpath, _, _) =
+        parse(&text, name, &ParseOptions::default(), None).map_err(|e| e.to_string())?;
+
+    let library_path = tools.ok_or_else(|| {
+        "--tools is required to check collisions: the holder is what collides, \
+         and a program does not carry one"
+            .to_owned()
+    })?;
+    let library_text = std::fs::read_to_string(library_path)
+        .map_err(|e| format!("cannot read {}: {e}", library_path.display()))?;
+    let library = ToolLibrary::from_json(&library_text).map_err(|e| e.to_string())?;
+
+    let profile = if let Some(id) = tool {
+        library
+            .get(id)
+            .ok_or_else(|| format!("no tool with id {id:?} in {}", library_path.display()))?
+            .profile()
+            .clone()
+    } else {
+        let first = toolpath
+            .segments
+            .first()
+            .map(|s| s.tool)
+            .unwrap_or_default();
+        library
+            .get_by_number(first)
+            .ok_or_else(|| format!("no tool numbered {first} in {}", library_path.display()))?
+            .profile()
+            .clone()
+    };
+
+    let mut motions = Vec::with_capacity(toolpath.segments.len());
+    let mut kinds = Vec::with_capacity(toolpath.segments.len());
+    let mut provenance = Vec::with_capacity(toolpath.segments.len());
+    for s in &toolpath.segments {
+        if let Some(m) = segment_motion(s) {
+            motions.push(m);
+            kinds.push(s.kind);
+            provenance.push(s.source);
+        }
+    }
+    Ok(Replay {
+        motions,
+        kinds,
+        provenance,
+        profile,
+        rapid_path: toolpath.header.rapid_path,
+        unmodelled_retracts: toolpath.header.unmodelled_retracts,
+    })
+}

@@ -9,6 +9,7 @@
 //! the core and there will not be one; the eventual browser demo is a consumer
 //! of the library, never a part of it.
 
+mod collide;
 mod compare;
 mod dexel;
 mod extract;
@@ -107,6 +108,12 @@ enum Command {
     Verify(verify::VerifyArgs),
     /// Compare two verification reports.
     ReportDiff(verify::ReportDiffArgs),
+    /// Check the tool's non-cutting geometry against the stock and any fixtures.
+    ///
+    /// Takes the **stock** field and replays the program, because a collision is
+    /// a property of the trajectory: the material in a move's way is the stock
+    /// as it stood then, not as it stands once later passes have cleared it.
+    Collide(collide::CollideArgs),
     /// Predict what a job will cost in memory, without allocating any of it.
     MemEstimate(memest::MemEstimateArgs),
     /// Print version information.
@@ -183,6 +190,11 @@ fn main() -> ExitCode {
         Command::ReportDiff(args) => {
             let as_json = args.json;
             let (outcome, elapsed) = mesh::timed(|| verify::report_diff(&args));
+            emit(outcome, elapsed, as_json)
+        }
+        Command::Collide(args) => {
+            let as_json = args.json;
+            let (outcome, elapsed) = mesh::timed(|| collide::collide(&args));
             emit(outcome, elapsed, as_json)
         }
         Command::MemEstimate(args) => {

@@ -135,6 +135,7 @@ fn run(profile: &Profile, z: f64) -> Vec<chipbreaker_core::findings::Collision> 
         &kinds,
         &provenance,
         0,
+        &[],
         &params(),
         &mut scratch,
     )
@@ -302,6 +303,7 @@ fn a_tool_without_a_holder_is_unchecked_rather_than_clear() {
         &kinds,
         &provenance,
         0,
+        &[],
         &params(),
         &mut scratch,
     )
@@ -328,6 +330,7 @@ fn unmodelled_retracts_make_the_answer_unchecked() {
         &kinds,
         &provenance,
         3,
+        &[],
         &params(),
         &mut scratch,
     )
@@ -345,6 +348,7 @@ fn unmodelled_retracts_make_the_answer_unchecked() {
         &kinds,
         &provenance,
         0,
+        &[],
         &params(),
         &mut scratch,
     )
@@ -368,5 +372,195 @@ fn the_cutting_only_profile_is_the_tool_without_its_shank() {
     assert!(
         (top - 10.0).abs() < 1e-9,
         "the cutting geometry ends at the flute top, got {top}"
+    );
+}
+
+/// A clamp standing beside the block, as its own field.
+///
+/// A fixture is a field like any other and is simply never cut: a clamp does not
+/// get out of the way, which is exactly what makes it dangerous.
+///
+/// Tall on purpose. The tool feeds at z = 38 with its flutes below z = 48, so a
+/// clamp that stopped at the height of the stock would sit entirely under the
+/// shank and be hit by nothing -- which is a fixture the test would pass against
+/// without exercising anything.
+fn clamp_at(x: f64) -> (String, TriDexelField) {
+    let mesh = shapes::box_solid(Vec3::new(x, 14.0, 0.0), Vec3::new(x + 12.0, 26.0, 60.0));
+    let f = TriDexelField::build(
+        &mesh,
+        &TriBuildOptions {
+            spacing: SPACING,
+            ..TriBuildOptions::default()
+        },
+    )
+    .expect("builds")
+    .0;
+    ("clamp".to_owned(), f)
+}
+
+fn run_with(
+    profile: &Profile,
+    z: f64,
+    fixtures: &[(String, TriDexelField)],
+    clearance_mm: f64,
+) -> Vec<chipbreaker_core::findings::Collision> {
+    let (motions, kinds, provenance) = plunge_and_cut(z);
+    let mut f = field();
+    let mut scratch = CutScratch::new(profile);
+    let p = CollideParams {
+        clearance_mm,
+        ..params()
+    };
+    collide_with_stock(
+        &mut f,
+        profile,
+        &motions,
+        &kinds,
+        &provenance,
+        0,
+        fixtures,
+        &p,
+        &mut scratch,
+    )
+    .expect("checkable")
+}
+
+#[test]
+fn a_holder_that_hits_a_clamp_is_reported_against_that_clamp() {
+    // The feed runs to x = 45 with a 50.8 mm chuck, so a clamp at x = 48 is in
+    // its path even though the stock there is untouched.
+    let found = run_with(&long_reach_in_chuck(), 38.0, &[clamp_at(44.0)], 0.0);
+    eprintln!("with a clamp at x=48: {} contacts", found.len());
+    for c in &found {
+        eprintln!(
+            "  {} {} vs {} {:.3} mm",
+            c.id,
+            c.role.as_str(),
+            c.obstacle.kind(),
+            c.contact.magnitude()
+        );
+    }
+    let against_clamp: Vec<_> = found
+        .iter()
+        .filter(|c| {
+            matches!(
+                &c.obstacle,
+                chipbreaker_core::findings::Obstacle::Fixture { .. }
+            )
+        })
+        .collect();
+    assert!(
+        !against_clamp.is_empty(),
+        "a shank sweeping to x=48 must be reported against a clamp at x=44"
+    );
+    assert!(
+        against_clamp.iter().all(|c| c.is_defect()),
+        "contact with a clamp is a collision"
+    );
+    // The obstacle has to be named, not merely counted: "something was hit" does
+    // not tell anybody which fixture to move.
+    match &against_clamp[0].obstacle {
+        chipbreaker_core::findings::Obstacle::Fixture { name, index } => {
+            assert_eq!(name, "clamp");
+            assert_eq!(*index, 0);
+        }
+        other => panic!("expected a fixture, got {other:?}"),
+    }
+}
+
+#[test]
+fn the_same_program_without_the_clamp_is_clean() {
+    // The mutation check: the collision above must come from the clamp and not
+    // from the program, which is fine on its own.
+    let found = run_with(&long_reach_in_chuck(), 38.0, &[], 0.0);
+    assert!(
+        found.is_empty(),
+        "a 2 mm deep cut with a long-reach tool and no fixtures must be clean: {:?}",
+        found
+            .iter()
+            .map(|c| (c.role.as_str(), c.obstacle.kind()))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn clearance_reports_a_near_miss_and_only_within_the_threshold() {
+    // The shank's envelope reaches x = 45 + 3 = 48, so a clamp at 49.6 clears
+    // it by 1.6 mm: too far to be a collision, close enough to be worth saying.
+    let far = clamp_at(49.6);
+
+    let none = run_with(
+        &long_reach_in_chuck(),
+        38.0,
+        std::slice::from_ref(&far),
+        0.0,
+    );
+    assert!(
+        none.is_empty(),
+        "with clearance reporting off, a gap must produce nothing: {:?}",
+        none.iter().map(|c| c.contact.as_str()).collect::<Vec<_>>()
+    );
+
+    let wide = run_with(
+        &long_reach_in_chuck(),
+        38.0,
+        std::slice::from_ref(&far),
+        5.0,
+    );
+    let misses: Vec<_> = wide.iter().filter(|c| !c.is_defect()).collect();
+    eprintln!("clearance 5.0: {} near miss(es)", misses.len());
+    for c in &misses {
+        eprintln!("  {} gap {:.4} mm", c.id, c.contact.magnitude());
+    }
+    assert!(
+        !misses.is_empty(),
+        "a clamp 1.6 mm outside the envelope must be reported at a 5 mm threshold"
+    );
+    assert!(
+        misses.iter().all(|c| !c.is_defect()),
+        "a near miss is not a defect and must not fail the gate"
+    );
+
+    // And the threshold has to bite: below the actual gap, nothing fires.
+    let narrow = run_with(&long_reach_in_chuck(), 38.0, &[far], 0.5);
+    assert!(
+        narrow.iter().all(|c| c.is_defect()),
+        "a 0.5 mm threshold must not report a gap wider than that: {:?}",
+        narrow
+            .iter()
+            .map(|c| (c.contact.as_str(), c.contact.magnitude()))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn collisions_are_independent_of_fixture_order() {
+    // Two clamps, presented both ways round. The result is a property of the
+    // geometry, so the list must match -- including the identities, which is
+    // what a diff between two runs depends on.
+    let a = clamp_at(44.0);
+    let b = clamp_at(-14.0);
+    let one = run_with(&long_reach_in_chuck(), 38.0, &[a.clone(), b.clone()], 0.0);
+    let two = run_with(&long_reach_in_chuck(), 38.0, &[b, a], 0.0);
+    assert!(!one.is_empty(), "the fixture must produce contacts");
+    let key = |v: &[chipbreaker_core::findings::Collision]| {
+        let mut k: Vec<String> = v
+            .iter()
+            .map(|c| {
+                format!(
+                    "{} {} {:.6}",
+                    c.role.as_str(),
+                    c.obstacle.kind(),
+                    c.contact.magnitude()
+                )
+            })
+            .collect();
+        k.sort();
+        k
+    };
+    assert_eq!(
+        key(&one),
+        key(&two),
+        "swapping the order the fixtures were listed changed the collisions found"
     );
 }
