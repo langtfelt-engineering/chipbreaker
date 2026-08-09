@@ -1,6 +1,21 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Langtfelt
 
+// ALLOW-UNSAFE-ABI-BOUNDARY
+//
+// **The one crate in this workspace that cannot forbid unsafe.** Handing a raw
+// pointer across a language edge is unsafe by construction, and a crate that
+// wrote `#![forbid(unsafe_code)]` over the top of an `extern "C"` surface would
+// be making a claim it cannot keep. Saying so is better than a rule that holds
+// only because nobody looked.
+//
+// What still holds: `unsafe_op_in_unsafe_fn` is denied, so every unsafe
+// operation is written out inside its own block rather than inherited from the
+// function signature; the engine itself — every crate that computes anything —
+// still forbids unsafe entirely; and the unsafe here is confined to four
+// functions that move bytes in and out, none of which does arithmetic.
+#![deny(unsafe_op_in_unsafe_fn)]
+
 //! The browser build of the engine.
 //!
 //! # This is not an API

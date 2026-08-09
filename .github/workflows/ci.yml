@@ -230,10 +230,26 @@ jobs:
             exit 1
           fi
           for lib in $roots; do
-            if ! grep -q '#!\[forbid(unsafe_code)\]' "$lib"; then
-              echo "::error file=$lib::missing #![forbid(unsafe_code)]; CONTRIBUTING.md rule 7."
-              fail=1
+            if grep -q '#!\[forbid(unsafe_code)\]' "$lib"; then
+              continue
             fi
+            # An ABI boundary is the one place the rule cannot hold: handing a
+            # raw pointer across a language edge *is* unsafe, and a crate that
+            # claimed otherwise would be lying rather than safe. Such a crate
+            # marks itself and must still deny implicit unsafe inside unsafe
+            # functions, so every unsafe operation is written out.
+            #
+            # Same shape as ALLOW-f32-WIRE-FORMAT: an exception that has to name
+            # itself is reviewable; a widened rule is not.
+            if grep -q 'ALLOW-UNSAFE-ABI-BOUNDARY' "$lib"; then
+              if ! grep -q '#!\[deny(unsafe_op_in_unsafe_fn)\]' "$lib"; then
+                echo "::error file=$lib::an ABI-boundary crate must still deny unsafe_op_in_unsafe_fn"
+                fail=1
+              fi
+              continue
+            fi
+            echo "::error file=$lib::missing #![forbid(unsafe_code)]; CONTRIBUTING.md rule 7."
+            fail=1
           done
           exit $fail
 

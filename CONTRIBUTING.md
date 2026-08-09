@@ -205,6 +205,27 @@ units. A bare `1e-9` at a call site will be rejected in review: it carries no
 units, no justification, and no way to audit what happens when the workspace scale
 changes.
 
+## Unsafe is forbidden, except at an ABI boundary that says so
+
+Every crate carries `#![forbid(unsafe_code)]`. That is rule 7 and CI checks it
+on every crate root, globbed rather than listed so a new crate cannot escape by
+being new.
+
+**An ABI boundary is the one place it cannot hold.** Handing a raw pointer
+across a language edge is unsafe by construction; a crate that wrote
+`forbid(unsafe_code)` over an `extern "C"` surface would be making a claim it
+cannot keep. The browser build hit this first and the C ABI will hit it again.
+
+So such a crate marks itself with `ALLOW-UNSAFE-ABI-BOUNDARY` near the top,
+explains in the same comment why it must, and **still** carries
+`#![deny(unsafe_op_in_unsafe_fn)]` — so every unsafe operation is written out in
+its own block rather than inherited from a function signature.
+
+This is the same shape as the `ALLOW-f32-WIRE-FORMAT` exception: a rule with a
+marked, justified exception stays reviewable, and a rule quietly widened to fit
+does not. Keep the unsafe confined to functions that move bytes; **nothing that
+computes a geometric answer may live in such a crate.**
+
 ## A subsystem joins the self-test in the commit that introduces it
 
 `chipbreaker selftest` produces one digest, and every verification report carries

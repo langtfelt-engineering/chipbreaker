@@ -85,6 +85,13 @@ allow = ["GPL-3.0-or-later"]
 name = "chipbreaker-gcode"
 allow = ["GPL-3.0-or-later"]
 
+# The browser build. First-party, same reasoning again: it is the engine
+# compiled for `wasm32-unknown-unknown` and links nothing the other three do
+# not.
+[[licenses.exceptions]]
+name = "chipbreaker-wasm"
+allow = ["GPL-3.0-or-later"]
+
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
