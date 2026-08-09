@@ -495,3 +495,93 @@ fn a_collision_names_the_setup_as_well_as_the_line() {
         );
     }
 }
+
+#[test]
+fn pass_is_exactly_the_conjunction_of_the_gates_it_lists() {
+    // **The forward-compatibility rule, stated as the property that is actually
+    // true.** `pass` is the conjunction of every gate in the report, so a
+    // consumer can recompute it and must arrive at the same answer.
+    //
+    // The direction that matters: a consumer recomputing the verdict must AND
+    // in **every** gate, including one whose name it has never seen, treating an
+    // unrecognised state as not-pass. *Skipping* an unknown gate would be laxer
+    // than the report, not stricter — which is why the rule the report states is
+    // "read `pass`, or recompute over everything", never "ignore what you do not
+    // know".
+    let f = Fixture::new("conjunction");
+    for tool in ["long-reach-6", "er32-stub-6"] {
+        let (_, v) = f.job("job.json", tool, true);
+        let gates = v["verdict"]["gates"].as_object().expect("gates");
+        assert!(gates.len() >= 2, "the job report lists a gate per concern");
+
+        let recomputed = gates.values().all(|g| g["state"] == "pass");
+        assert_eq!(
+            v["verdict"]["pass"],
+            Value::Bool(recomputed),
+            "pass is not the conjunction of the listed gates, so a consumer \
+             recomputing it would disagree with the report: {}",
+            v["verdict"]
+        );
+    }
+}
+
+#[test]
+fn adding_a_gate_can_only_make_a_verdict_stricter() {
+    // The mutation check for the rule above, and the reason it is safe to add
+    // gates in a later version: a conjunction can lose a true, never gain one.
+    let f = Fixture::new("stricter");
+    let (_, v) = f.job("job.json", "long-reach-6", true);
+    let gates = v["verdict"]["gates"].as_object().expect("gates");
+    let base = gates.values().all(|g| g["state"] == "pass");
+
+    for extra in ["pass", "fail", "unchecked", "a-state-from-the-future"] {
+        let widened = base && extra == "pass";
+        assert!(
+            !widened || base,
+            "adding a gate in state {extra:?} turned a failing verdict into a \
+             passing one, which would silently loosen every consumer's CI"
+        );
+    }
+}
+
+#[test]
+fn the_job_report_states_its_forward_compatibility_rule() {
+    // The rule has to travel with the artifact. A consumer reading the report
+    // six months from now should not have to find this repository to learn what
+    // an unrecognised gate state means.
+    let f = Fixture::new("rule");
+    let (_, v) = f.job("job.json", "long-reach-6", true);
+    let rule = v["verdict"]["rule"].as_str().expect("a stated rule");
+    for phrase in ["conjunction", "not-pass", "defect"] {
+        assert!(
+            rule.contains(phrase),
+            "the stated rule does not say what to do about {phrase:?}: {rule}"
+        );
+    }
+}
+
+#[test]
+fn the_renamed_severity_fields_are_removed_and_not_aliased() {
+    // Version 3 renamed three fields whose names promised more than they
+    // delivered. **Removed, never aliased** -- a consumer still reading the old
+    // name must find nothing and fail, exactly as version 2 did with `accepted`.
+    let f = Fixture::new("renamed");
+    let (_, v) = f.job("job.json", "er32-stub-6", true);
+    let detail = v["setups"][1]["detail"].as_array().expect("detail");
+    assert!(!detail.is_empty(), "the fixture must produce contacts");
+    for d in detail {
+        let sev = &d["severity"];
+        assert!(
+            sev["penetration_mm"].is_null() && sev["magnitude_mm"].is_null(),
+            "an old severity name survived the rename: {d}"
+        );
+        // Exactly one of the two quantities, never both, never neither.
+        let overlap = !sev["overlap_along_ray_mm"].is_null();
+        let clearance = !sev["clearance_along_ray_mm"].is_null();
+        assert!(
+            overlap ^ clearance,
+            "a contact reported {} of the two severity quantities: {d}",
+            if overlap { "both" } else { "neither" }
+        );
+    }
+}

@@ -151,9 +151,9 @@ pub struct Cluster {
     pub mean_depth_mm: f64,
     /// Estimated surface area affected. See [`area_and_volume`] for the
     /// estimator and what bounds its error.
-    pub area_mm2: f64,
+    pub area_estimate_mm2: f64,
     /// Estimated volume of material involved: the area, weighted by depth.
-    pub volume_mm3: f64,
+    pub volume_estimate_mm3: f64,
     /// Centroid of the cluster's sample positions.
     ///
     /// Good for saying *where* a finding is, and **useless for asking what
@@ -403,15 +403,15 @@ pub fn cluster(samples: &[Deviation], params: &ClusterParams, cell_mm: f64) -> V
         }
         #[allow(clippy::cast_precision_loss, reason = "a sample count")]
         let n = members.len() as f64;
-        let (area_mm2, volume_mm3) = area_and_volume(&members, samples, cell_mm);
+        let (area_estimate_mm2, volume_estimate_mm3) = area_and_volume(&members, samples, cell_mm);
         let probes = probe_points(&members, samples, worst_at);
         out.push(Cluster {
             class,
             samples: members,
             worst_depth_mm: worst,
             mean_depth_mm: sum / n,
-            area_mm2,
-            volume_mm3,
+            area_estimate_mm2,
+            volume_estimate_mm3,
             at: Vec3::new(centroid.x / n, centroid.y / n, centroid.z / n),
             worst_at,
             probes,
@@ -616,8 +616,8 @@ pub fn unsampled(
             // would put a number in a report that no measurement produced.
             worst_depth_mm: 0.0,
             mean_depth_mm: 0.0,
-            area_mm2: area,
-            volume_mm3: 0.0,
+            area_estimate_mm2: area,
+            volume_estimate_mm3: 0.0,
             at: Vec3::new(centroid.x / n, centroid.y / n, centroid.z / n),
             // No samples, so no deepest one. The centroid stands in, and nothing
             // attributes these anyway: no segment caused an undercut.

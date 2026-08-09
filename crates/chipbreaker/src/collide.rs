@@ -22,6 +22,7 @@
 //! |---|---|
 //! | 0 | checked, and no collision |
 //! | 1 | a collision, or the check could not run |
+//! | 2 | the command itself could not run: bad input, a refusal, an I/O error |
 //!
 //! **Unchecked exits non-zero.** A gate that could not run has not passed, and a
 //! CI job that treats "I could not look" as "nothing there" is worse than one
@@ -215,10 +216,17 @@ pub fn collide(args: &CollideArgs) -> Result<(Value, String, bool), String> {
 
     let value = json!({
         "schema": "chipbreaker.collision-report",
+        // Versioned so a future reader can refuse rather than guess. It had
+        // no version at all, which made it the one published artifact a
+        // consumer could not check before parsing.
+        "schema_version": 1,
         "checked": unchecked.is_none(),
         "unchecked_because": unchecked.as_ref().map(std::string::ToString::to_string),
         "rapid_path": replay.rapid_path.as_str(),
-        "clearance_mm": args.clearance,
+        // The *threshold* the caller set, echoed so a reader knows what a
+        // near miss meant for this run. A setting, not a measurement, so it
+        // keeps the plain name.
+        "clearance_threshold_mm": args.clearance,
         "summary": {
             "collisions": hard,
             "near_misses": near,
@@ -233,11 +241,24 @@ fn collision_json(c: &chipbreaker_core::findings::Collision) -> Value {
     use chipbreaker_core::findings::{Contact, Obstacle};
     let mut severity = serde_json::Map::new();
     match c.contact {
-        Contact::Collision { penetration_mm } | Contact::CutterIntoFixture { penetration_mm } => {
-            severity.insert("penetration_mm".to_owned(), json!(penetration_mm));
+        Contact::Collision {
+            overlap_along_ray_mm,
         }
-        Contact::NearMiss { clearance_mm } => {
-            severity.insert("clearance_mm".to_owned(), json!(clearance_mm));
+        | Contact::CutterIntoFixture {
+            overlap_along_ray_mm,
+        } => {
+            severity.insert(
+                "overlap_along_ray_mm".to_owned(),
+                json!(overlap_along_ray_mm),
+            );
+        }
+        Contact::NearMiss {
+            clearance_along_ray_mm,
+        } => {
+            severity.insert(
+                "clearance_along_ray_mm".to_owned(),
+                json!(clearance_along_ray_mm),
+            );
         }
     }
     let mut obstacle = serde_json::Map::new();
@@ -254,7 +275,7 @@ fn collision_json(c: &chipbreaker_core::findings::Collision) -> Value {
         "element": { "role": c.role.as_str(), "index": c.element_index },
         "obstacle": Value::Object(obstacle),
         "motion": c.motion.as_str(),
-        "at": [c.at.x, c.at.y, c.at.z],
+        "at_mm": [c.at.x, c.at.y, c.at.z],
         "attribution": {
             "segments": c.attribution.segments,
             "lines": c.attribution.provenance.iter().map(|p| p.line).collect::<Vec<_>>(),

@@ -752,7 +752,7 @@ fn run_slice(
     }
 
     let results = json!({
-        "at": plane_at,
+        "at_mm": plane_at,
         "axis": want.as_str(),
         "cells_with_material": cells.len(),
         "command": "slice",

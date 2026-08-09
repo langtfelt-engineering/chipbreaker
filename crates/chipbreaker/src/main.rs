@@ -299,7 +299,13 @@ fn emit(
         }
         Err(message) => {
             eprintln!("chipbreaker: {message}");
-            ExitCode::FAILURE
+            // **Two is not one.** A run that completed and answered "no" and a
+            // run that could not be completed at all are different outcomes,
+            // and a CI gate wants to tell them apart: the first means fix the
+            // program, the second means fix the invocation. They shared an exit
+            // code until this was separated, which made "the part is bad"
+            // indistinguishable from "I could not look".
+            ExitCode::from(2)
         }
     }
 }

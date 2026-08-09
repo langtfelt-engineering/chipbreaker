@@ -87,7 +87,7 @@ pub enum Contact {
     /// The element entered the obstacle. **Always a defect.**
     Collision {
         /// How far in, at the deepest point. Strictly positive.
-        penetration_mm: f64,
+        overlap_along_ray_mm: f64,
     },
     /// A **cutting** element entered a fixture. **Always a defect.**
     ///
@@ -102,7 +102,7 @@ pub enum Contact {
     /// the two they had without going back to the element role.
     CutterIntoFixture {
         /// How far in, at the deepest point. Strictly positive.
-        penetration_mm: f64,
+        overlap_along_ray_mm: f64,
     },
     /// The element passed within the clearance threshold without touching.
     ///
@@ -110,7 +110,7 @@ pub enum Contact {
     /// after a small edit, which is often more useful than the crash itself.
     NearMiss {
         /// Closest approach. Non-negative, and below the configured threshold.
-        clearance_mm: f64,
+        clearance_along_ray_mm: f64,
     },
 }
 
@@ -139,10 +139,15 @@ impl Contact {
     #[must_use]
     pub const fn magnitude(self) -> f64 {
         match self {
-            Self::Collision { penetration_mm } | Self::CutterIntoFixture { penetration_mm } => {
-                penetration_mm
+            Self::Collision {
+                overlap_along_ray_mm,
             }
-            Self::NearMiss { clearance_mm } => clearance_mm,
+            | Self::CutterIntoFixture {
+                overlap_along_ray_mm,
+            } => overlap_along_ray_mm,
+            Self::NearMiss {
+                clearance_along_ray_mm,
+            } => clearance_along_ray_mm,
         }
     }
 }

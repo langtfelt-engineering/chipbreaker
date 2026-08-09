@@ -114,7 +114,7 @@ fn a_gouged_part_produces_gouge_findings_and_no_excess() {
             x.id,
             x.class.as_str(),
             x.worst_depth_mm,
-            x.area_mm2,
+            x.area_estimate_mm2,
             x.sample_count,
             x.at.x,
             x.at.y,

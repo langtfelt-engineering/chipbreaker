@@ -345,12 +345,18 @@ pub fn to_json(d: &Diff) -> Value {
         })
         .collect();
     let sev = |c: &Collision| match c.contact {
-        crate::findings::Contact::Collision { penetration_mm }
-        | crate::findings::Contact::CutterIntoFixture { penetration_mm } => {
-            json!({ "penetration_mm": penetration_mm })
+        crate::findings::Contact::Collision {
+            overlap_along_ray_mm,
         }
-        crate::findings::Contact::NearMiss { clearance_mm } => {
-            json!({ "clearance_mm": clearance_mm })
+        | crate::findings::Contact::CutterIntoFixture {
+            overlap_along_ray_mm,
+        } => {
+            json!({ "overlap_along_ray_mm": overlap_along_ray_mm })
+        }
+        crate::findings::Contact::NearMiss {
+            clearance_along_ray_mm,
+        } => {
+            json!({ "clearance_along_ray_mm": clearance_along_ray_mm })
         }
     };
     let collisions: Vec<Value> = d
@@ -384,6 +390,11 @@ pub fn to_json(d: &Diff) -> Value {
         .collect();
     let (appeared, disappeared, changed) = d.tally();
     json!({
+        // Named and versioned like every other published artifact. A diff had
+        // neither, so a consumer could not tell one from arbitrary JSON, nor a
+        // future shape from this one.
+        "schema": "chipbreaker.report-diff",
+        "schema_version": 1,
         "identical": d.is_empty(),
         "manifest_differences": manifest,
         "gate_differences": gates,

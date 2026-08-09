@@ -470,7 +470,7 @@ fn deviation_stat_localises_the_defect_and_publishes_both_rulers() {
             (signed + 1.0).abs() < 1.0e-9,
             "the worst samples should all be the 1 mm floor, got {signed:.9}"
         );
-        let z = s["at"].as_array().expect("a point")[2]
+        let z = s["at_mm"].as_array().expect("a point")[2]
             .as_f64()
             .expect("a number");
         assert!(

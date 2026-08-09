@@ -387,7 +387,7 @@ pub fn deviation_stat(args: &DeviationStatArgs) -> Result<(Value, String, bool),
             json!({
                 "signed_mm": s.signed_mm,
                 "perpendicular_mm": s.perpendicular_mm,
-                "at": [s.at.x, s.at.y, s.at.z],
+                "at_mm": [s.at.x, s.at.y, s.at.z],
                 "normal": [s.normal.x, s.normal.y, s.normal.z],
                 "axis": s.axis,
             })

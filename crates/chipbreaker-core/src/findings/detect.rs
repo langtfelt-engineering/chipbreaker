@@ -329,8 +329,13 @@ pub fn collide_with_stock(
                 {
                     // The sweep does not know which profile it was handed, so
                     // the classification is applied here where it is known.
-                    if let Contact::Collision { penetration_mm } = hit.contact {
-                        hit.contact = Contact::CutterIntoFixture { penetration_mm };
+                    if let Contact::Collision {
+                        overlap_along_ray_mm,
+                    } = hit.contact
+                    {
+                        hit.contact = Contact::CutterIntoFixture {
+                            overlap_along_ray_mm,
+                        };
                         hit.role = ElementRole::Cutting;
                     }
                     raw.push((k, hit));
@@ -414,7 +419,7 @@ fn hits_for_motion(
                     element_index,
                     obstacle: obstacle.clone(),
                     contact: Contact::Collision {
-                        penetration_mm: length,
+                        overlap_along_ray_mm: length,
                     },
                 });
             }
@@ -438,7 +443,9 @@ fn hits_for_motion(
                         role,
                         element_index,
                         obstacle: obstacle.clone(),
-                        contact: Contact::NearMiss { clearance_mm: gap },
+                        contact: Contact::NearMiss {
+                            clearance_along_ray_mm: gap,
+                        },
                     });
                 }
             }

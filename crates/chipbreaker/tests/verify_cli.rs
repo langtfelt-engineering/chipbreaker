@@ -405,7 +405,12 @@ fn severity_reports_depth_and_extent_separately() {
     let field = f.cut("deep", FLOOR - 1.0);
     let (_, r) = f.verify("deep", &field, &[]);
     let s = &r["findings"].as_array().expect("findings")[0]["severity"];
-    for key in ["worst_depth_mm", "mean_depth_mm", "area_mm2", "volume_mm3"] {
+    for key in [
+        "worst_depth_mm",
+        "mean_depth_mm",
+        "area_estimate_mm2",
+        "volume_estimate_mm3",
+    ] {
         assert!(
             s[key].is_number(),
             "severity is missing {key}, so depth and extent are not both reported"
@@ -626,10 +631,11 @@ fn report_diff_refuses_a_file_that_is_not_a_report() {
 fn a_version_1_report_is_refused_rather_than_misread() {
     // **The reason the field was renamed rather than widened.**
     //
-    // Version 1 carried `accepted`, a bit that meant "no gouge" and knew nothing
-    // about collisions. Version 2 removed it. A reader that accepted a version-1
-    // file would find no verdict and report one it invented -- which is exactly
-    // the silent misreading the rename exists to make impossible.
+    // Every version of this schema has *removed* what it replaced rather than
+    // aliasing it: version 2 dropped `accepted`, version 3 renamed three
+    // severity fields. A reader that accepted an older file would find those
+    // keys absent and report values it invented -- which is exactly the silent
+    // misreading that removing rather than aliasing exists to make impossible.
     //
     // So this asserts the loud failure, not merely that the new shape works.
     let f = Fixture::new("v1");
@@ -658,9 +664,9 @@ fn a_version_1_report_is_refused_rather_than_misread() {
         "a version-1 report must be refused, not read with version-2 code"
     );
     assert!(
-        err.contains("schema version 1") && err.contains("accepted"),
-        "the refusal must name the version and the removed field, so the reader \
-         knows what to regenerate rather than merely that something went wrong: {err}"
+        err.contains("schema version 1") && err.contains("Regenerate"),
+        "the refusal must name the version it was handed and say what to do, \
+         rather than merely reporting that something went wrong: {err}"
     );
     assert!(
         !out.contains("identical"),

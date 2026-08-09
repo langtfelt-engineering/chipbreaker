@@ -18,13 +18,23 @@
 //!
 //! # The exit code contract
 //!
+//! One contract across every verb, so a script does not have to remember which
+//! command it called:
+//!
 //! | code | means |
 //! |---|---|
-//! | 0 | no gouge above tolerance |
-//! | 1 | a gouge above tolerance, or the run could not be completed |
+//! | 0 | the run completed and every gate passed |
+//! | 1 | the run completed and the verdict does not pass — a gate failed, or a gate could not run |
+//! | 2 | the run could not be completed: bad input, a refusal, an I/O error |
 //!
-//! `report-diff` uses the same two codes for "identical" and "differs", which
-//! is what makes it usable as a CI gate without parsing anything.
+//! **One and two are different answers.** A failing verdict says fix the
+//! program; a refusal says fix the invocation. They shared a code until the
+//! schema review separated them, which made "the part is bad" indistinguishable
+//! from "I could not look" — the same conflation the three-state verdict exists
+//! to avoid, leaking out through the exit status.
+//!
+//! `report-diff` uses 0 for "identical" and 1 for "differs", which is what makes
+//! it usable as a CI gate without parsing anything.
 
 use std::path::PathBuf;
 
@@ -661,14 +671,14 @@ pub fn load_report(path: &std::path::Path) -> Result<Report, String> {
     }
 
     // The version check is not politeness. Version 1 carried `accepted`, which
-    // version 2 removed; reading a version-1 file with version-2 code would find
-    // no verdict and quietly report one it invented. Refusing is the entire
-    // point of having renamed the field -- a consumer that cannot read a report
-    // must say so, not guess.
+    // version 2 removed, and version 3 renamed three severity fields. Reading an
+    // older file with a newer reader would find the missing keys absent and
+    // quietly report zeros it invented. Refusing is the entire point of removing
+    // rather than aliasing -- a consumer that cannot read a report must say so.
     let version = v["schema_version"].as_u64();
     if version != Some(u64::from(SCHEMA_VERSION)) {
         return Err(format!(
-            "{} is a schema version {} report and this build reads version {}.              Version 1 carried `accepted`, which version 2 replaced with `verdict.gates`;              regenerate the report rather than reading it with the wrong reader.",
+            "{} is a schema version {} report and this build reads version {}.              Every version of this schema has removed what it replaced rather than              aliasing it, so an older report cannot be read as a newer one and the              reader will not guess. Regenerate it.",
             path.display(),
             version.map_or_else(|| "absent".to_owned(), |n| n.to_string()),
             SCHEMA_VERSION,
@@ -701,7 +711,7 @@ pub fn load_report(path: &std::path::Path) -> Result<Report, String> {
             "undercut" => Classification::Undercut,
             _ => Classification::Unreachable,
         };
-        let at = f["at"].as_array().map_or(Vec3::ZERO, |a| {
+        let at = f["at_mm"].as_array().map_or(Vec3::ZERO, |a| {
             Vec3::new(num(&a[0]), num(&a[1]), num(&a[2]))
         });
         let seg = f["attribution"]["segments"]
@@ -725,7 +735,7 @@ pub fn load_report(path: &std::path::Path) -> Result<Report, String> {
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
-        let worst_at = f["worst_at"]
+        let worst_at = f["worst_at_mm"]
             .as_array()
             .map_or(at, |a| Vec3::new(num(&a[0]), num(&a[1]), num(&a[2])));
         findings.push(Finding {
@@ -733,8 +743,8 @@ pub fn load_report(path: &std::path::Path) -> Result<Report, String> {
             class,
             worst_depth_mm: num(&f["severity"]["worst_depth_mm"]),
             mean_depth_mm: num(&f["severity"]["mean_depth_mm"]),
-            area_mm2: num(&f["severity"]["area_mm2"]),
-            volume_mm3: num(&f["severity"]["volume_mm3"]),
+            area_estimate_mm2: num(&f["severity"]["area_estimate_mm2"]),
+            volume_estimate_mm3: num(&f["severity"]["volume_estimate_mm3"]),
             sample_count: usize::try_from(f["sample_count"].as_u64().unwrap_or(0)).unwrap_or(0),
             at,
             worst_at,
@@ -785,16 +795,16 @@ pub fn load_report(path: &std::path::Path) -> Result<Report, String> {
         let sev = &c["severity"];
         // The two quantities live under different keys precisely so that a
         // reader cannot mistake one for the other, and this is the reader.
-        let contact = if sev["penetration_mm"].is_null() {
+        let contact = if sev["overlap_along_ray_mm"].is_null() {
             Contact::NearMiss {
-                clearance_mm: num(&sev["clearance_mm"]),
+                clearance_along_ray_mm: num(&sev["clearance_along_ray_mm"]),
             }
         } else {
             Contact::Collision {
-                penetration_mm: num(&sev["penetration_mm"]),
+                overlap_along_ray_mm: num(&sev["overlap_along_ray_mm"]),
             }
         };
-        let at = c["at"].as_array().map_or(Vec3::ZERO, |a| {
+        let at = c["at_mm"].as_array().map_or(Vec3::ZERO, |a| {
             Vec3::new(num(&a[0]), num(&a[1]), num(&a[2]))
         });
         let (segments, provenance) = parse_segments(&c["attribution"]["segments"]);

@@ -78,9 +78,9 @@ pub struct Finding {
     /// **Exact.** Mean depth over the finding's samples.
     pub mean_depth_mm: f64,
     /// **Estimated.** Surface area affected. See [`cluster`] for the estimator.
-    pub area_mm2: f64,
+    pub area_estimate_mm2: f64,
     /// **Estimated.** Volume of material involved, area weighted by depth.
-    pub volume_mm3: f64,
+    pub volume_estimate_mm3: f64,
     /// **Exact.** How many samples the finding was built from. Zero for classes
     /// derived from the nominal rather than from the deviation field.
     pub sample_count: usize,
@@ -164,8 +164,8 @@ pub fn identify(clusters: Vec<Cluster>, grid_mm: f64) -> Vec<Finding> {
             class: c.class,
             worst_depth_mm: c.worst_depth_mm,
             mean_depth_mm: c.mean_depth_mm,
-            area_mm2: c.area_mm2,
-            volume_mm3: c.volume_mm3,
+            area_estimate_mm2: c.area_estimate_mm2,
+            volume_estimate_mm3: c.volume_estimate_mm3,
             sample_count: c.samples.len(),
             at: c.at,
             worst_at: c.worst_at,

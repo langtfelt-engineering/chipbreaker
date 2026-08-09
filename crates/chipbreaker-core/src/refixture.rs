@@ -186,7 +186,16 @@ pub fn resample_bound(spacing_mm: f64) -> f64 {
 /// independent are independent.
 #[must_use]
 pub fn accumulated_bound(regimes: &[Regime]) -> f64 {
-    regimes.iter().map(Regime::bound_mm).sum()
+    // **Folded from `0.0`, not summed.** The standard library's `Sum` for `f64`
+    // uses `-0.0` as its identity, deliberately, so that adding it preserves the
+    // sign of every term. The consequence is that an empty sum is **negative
+    // zero**, and `-0.0` reached the published JSON as
+    // `"accumulated_transform_bound_mm": -0.0` for every single-setup job.
+    //
+    // It compares equal to zero in most languages and is a different value in
+    // this engine's own canonical hashing, which covers signed zero explicitly.
+    // A published field must not depend on a reader knowing that.
+    regimes.iter().map(Regime::bound_mm).fold(0.0, |a, b| a + b)
 }
 
 /// The workspace a lattice covers, recovered from its stored parts.
@@ -472,6 +481,31 @@ mod tests {
             [0.0, 0.0, 0.0, 1.0],
         ]);
         assert!(classify(&m, 0.5).is_none());
+    }
+
+    #[test]
+    fn an_accumulated_bound_of_zero_is_positive_zero() {
+        // **`Sum` for f64 uses -0.0 as its identity**, so an empty sum is
+        // negative zero -- and it reached the published JSON as
+        // `"accumulated_transform_bound_mm": -0.0` on every single-setup job.
+        //
+        // It compares equal to zero in most languages and is a *different
+        // value* to this engine's canonical hashing, which covers signed zero
+        // deliberately. A published field must not depend on a reader knowing
+        // that, so the fold starts from positive zero.
+        let exact = Regime::Exact {
+            from: [Axis::X, Axis::Y, Axis::Z],
+            flipped: [false; 3],
+        };
+        for regimes in [&[][..], &[exact][..], &[exact, exact][..]] {
+            let b = accumulated_bound(regimes);
+            assert_eq!(b, 0.0);
+            assert!(
+                b.is_sign_positive(),
+                "an accumulated bound of zero came out negative for {} boundary(ies),                  which serialises as -0.0",
+                regimes.len()
+            );
+        }
     }
 
     #[test]

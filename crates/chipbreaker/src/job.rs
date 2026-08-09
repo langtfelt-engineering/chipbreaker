@@ -531,7 +531,12 @@ pub fn job(args: &JobArgs) -> Result<(Value, String, bool), String> {
         .map(|o| collision_count(&o.collisions))
         .sum();
     let any_unchecked = outcomes.iter().any(|o| o.unchecked.is_some());
-    let accumulated: f64 = crossings.iter().map(|c| c.regime.bound_mm()).sum();
+    // Folded from 0.0: an empty `Sum` for f64 is -0.0, which would reach the
+    // report as a negative zero for every single-setup job.
+    let accumulated: f64 = crossings
+        .iter()
+        .map(|c| c.regime.bound_mm())
+        .fold(0.0, |a, b| a + b);
     // A conjunction over gates *and* over setups. A part is not acceptable
     // because two of its three setups were, and an unchecked gate has certified
     // nothing -- including the gouge gate, which is unchecked when no nominal
@@ -594,7 +599,7 @@ pub fn job(args: &JobArgs) -> Result<(Value, String, bool), String> {
     };
     let value = serde_json::json!({
         "schema": "chipbreaker.job-report",
-        "schema_version": 1,
+        "schema_version": 2,
         "setups": outcomes.iter().map(|o| serde_json::json!({
             "index": o.index,
             "name": o.name,
@@ -609,7 +614,20 @@ pub fn job(args: &JobArgs) -> Result<(Value, String, bool), String> {
                 "role": c.role.as_str(),
                 "obstacle": c.obstacle.kind(),
                 "motion": c.motion.as_str(),
-                "magnitude_mm": c.contact.magnitude(),
+                // Split by kind rather than one polymorphic number. A gap and
+                // an overlap are different physical quantities, and a consumer
+                // sorting on a single field would rank a safe pass beside a
+                // crash -- the same objection that keeps collisions out of the
+                // finding classes, one level down.
+                "severity": match c.contact {
+                    chipbreaker_core::findings::Contact::Collision { overlap_along_ray_mm }
+                    | chipbreaker_core::findings::Contact::CutterIntoFixture {
+                        overlap_along_ray_mm,
+                    } => serde_json::json!({ "overlap_along_ray_mm": overlap_along_ray_mm }),
+                    chipbreaker_core::findings::Contact::NearMiss {
+                        clearance_along_ray_mm,
+                    } => serde_json::json!({ "clearance_along_ray_mm": clearance_along_ray_mm }),
+                },
                 "setup": c.attribution.setup,
                 "lines": c.attribution.provenance.iter().map(|p| p.line).collect::<Vec<_>>(),
             })).collect::<Vec<_>>(),
@@ -643,7 +661,11 @@ pub fn job(args: &JobArgs) -> Result<(Value, String, bool), String> {
                 },
             },
             "rule": "a gate that fails in any setup fails the job, and an unchecked \
-                     setup certifies nothing",
+                     setup certifies nothing. `pass` is a conjunction over every gate \
+                     and every setup, so a consumer that ignores gates, setups or \
+                     contact kinds it does not recognise still computes a correct \
+                     answer and never a laxer one. An unrecognised gate state must be \
+                     read as not-pass, and an unrecognised contact kind as a defect.",
         },
         "environment": chipbreaker_core::findings::report::environment("local", elapsed),
     });

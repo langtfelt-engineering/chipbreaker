@@ -64,6 +64,31 @@
 //!
 //! A schema page that explains a break honestly argues for the contract's
 //! seriousness; one that quietly widens a field argues against it.
+//!
+//! # The version 3 break
+//!
+//! Three renames, all of the same kind: a field whose **name promised more than
+//! its value delivers**.
+//!
+//! | was | is | why |
+//! |---|---|---|
+//! | `penetration_mm` | `overlap_along_ray_mm` | it is the overlap measured along a dexel ray, so for a holder wider than the stock it reports the stock's extent rather than any chuck dimension |
+//! | `clearance_mm` (measured) | `clearance_along_ray_mm` | a one-dimensional gap, and an upper bound on the true separation |
+//! | `area_mm2`, `volume_mm3` | `area_estimate_mm2`, `volume_estimate_mm3` | estimates, as the accompanying note always said |
+//!
+//! Each carried a `note` in the same object explaining the caveat, and that was
+//! not enough. A consumer extracts `severity.penetration_mm` into a field of
+//! their own called `penetration` and the note stays behind. **In a
+//! machine-readable contract an ugly name that resists misreading beats an
+//! elegant one that invites it**, because the name is the part that travels.
+//!
+//! The *threshold* a caller sets keeps its plain name — `clearance_mm` on the
+//! command line and in a job file — because it is a setting rather than a
+//! measurement, and nothing about it is measured along anything.
+//!
+//! Removed and replaced, never aliased. A consumer reading `penetration_mm` now
+//! finds nothing and fails, rather than silently reading a field that is no
+//! longer there.
 
 use std::collections::BTreeMap;
 
@@ -84,7 +109,10 @@ use crate::toolpath::RapidPath;
 ///
 /// `2` removed `accepted` in favour of `verdict.gates`; see the module header
 /// for why that was the safest of the three options rather than the tidiest.
-pub const SCHEMA_VERSION: u32 = 2;
+///
+/// `3` renamed three severity fields so that none of them promises more than it
+/// delivers. See the module header.
+pub const SCHEMA_VERSION: u32 = 3;
 
 /// The schema's stable name, so a consumer can tell a Chipbreaker report from
 /// any other JSON it may be handed.
@@ -391,8 +419,11 @@ impl Report {
                         "bound_mm": b.bound_mm,
                     })).collect())
                 },
+                // Folded from 0.0 rather than summed: `Sum` for f64 uses -0.0
+                // as its identity, so an empty sum is negative zero and that
+                // reached the published JSON.
                 "accumulated_transform_bound_mm": self.manifest.boundaries
-                    .iter().map(|b| b.bound_mm).sum::<f64>(),
+                    .iter().map(|b| b.bound_mm).fold(0.0, |a, b| a + b),
             },
             "numerical_semantics": {
                 "spacing_mm": self.semantics.spacing_mm,
@@ -439,10 +470,10 @@ impl Report {
                 "collisions": collide::collision_count(&self.collisions),
                 "near_misses": self.collisions.len()
                     - collide::collision_count(&self.collisions),
-                "worst_penetration_mm": self.collisions.iter()
+                "worst_overlap_along_ray_mm": self.collisions.iter()
                     .filter_map(|c| match c.contact {
-                        Contact::Collision { penetration_mm }
-                        | Contact::CutterIntoFixture { penetration_mm } => Some(penetration_mm),
+                        Contact::Collision { overlap_along_ray_mm }
+                        | Contact::CutterIntoFixture { overlap_along_ray_mm } => Some(overlap_along_ray_mm),
                         Contact::NearMiss { .. } => None,
                     })
                     .fold(0.0f64, f64::max),
@@ -493,8 +524,8 @@ impl Report {
             h.str(f.class.as_str());
             h.f64(f.worst_depth_mm);
             h.f64(f.mean_depth_mm);
-            h.f64(f.area_mm2);
-            h.f64(f.volume_mm3);
+            h.f64(f.area_estimate_mm2);
+            h.f64(f.volume_estimate_mm3);
             h.u64(f.sample_count as u64);
             h.f64_slice(&f.at.to_array());
             h.f64_slice(&f.worst_at.to_array());
@@ -536,17 +567,20 @@ fn finding_json(f: &Finding) -> Value {
         "severity": {
             "worst_depth_mm": f.worst_depth_mm,
             "mean_depth_mm": f.mean_depth_mm,
-            "area_mm2": f.area_mm2,
-            "volume_mm3": f.volume_mm3,
+            "area_estimate_mm2": f.area_estimate_mm2,
+            "volume_estimate_mm3": f.volume_estimate_mm3,
             "note": "depth and area are reported separately and deliberately not \
                      combined: a deep narrow gouge and a shallow broad one are \
                      different problems, and one number cannot say which this is. \
                      Depth and sample count are exact; area and volume are estimates.",
         },
         "sample_count": f.sample_count,
-        "at": [f.at.x, f.at.y, f.at.z],
-        "worst_at": [f.worst_at.x, f.worst_at.y, f.worst_at.z],
-        "bounds": {
+        // Positions carry the unit like every other length. Every sibling field
+        // says `_mm` and these did not, which left a reader to infer it -- and
+        // inferring is what this contract is meant to remove.
+        "at_mm": [f.at.x, f.at.y, f.at.z],
+        "worst_at_mm": [f.worst_at.x, f.worst_at.y, f.worst_at.z],
+        "bounds_mm": {
             "min": [f.bounds.min.x, f.bounds.min.y, f.bounds.min.z],
             "max": [f.bounds.max.x, f.bounds.max.y, f.bounds.max.z],
         },
@@ -595,11 +629,24 @@ fn collision_json(c: &Collision) -> Value {
     // number would rank a safe pass beside a crash.
     let mut severity = serde_json::Map::new();
     match c.contact {
-        Contact::Collision { penetration_mm } | Contact::CutterIntoFixture { penetration_mm } => {
-            severity.insert("penetration_mm".to_owned(), json!(penetration_mm));
+        Contact::Collision {
+            overlap_along_ray_mm,
         }
-        Contact::NearMiss { clearance_mm } => {
-            severity.insert("clearance_mm".to_owned(), json!(clearance_mm));
+        | Contact::CutterIntoFixture {
+            overlap_along_ray_mm,
+        } => {
+            severity.insert(
+                "overlap_along_ray_mm".to_owned(),
+                json!(overlap_along_ray_mm),
+            );
+        }
+        Contact::NearMiss {
+            clearance_along_ray_mm,
+        } => {
+            severity.insert(
+                "clearance_along_ray_mm".to_owned(),
+                json!(clearance_along_ray_mm),
+            );
         }
     }
     severity.insert(
@@ -623,8 +670,8 @@ fn collision_json(c: &Collision) -> Value {
         },
         "obstacle": Value::Object(obstacle),
         "motion": c.motion.as_str(),
-        "at": [c.at.x, c.at.y, c.at.z],
-        "bounds": {
+        "at_mm": [c.at.x, c.at.y, c.at.z],
+        "bounds_mm": {
             "min": [c.bounds.min.x, c.bounds.min.y, c.bounds.min.z],
             "max": [c.bounds.max.x, c.bounds.max.y, c.bounds.max.z],
         },

@@ -1,6 +1,6 @@
 # The verification report schema
 
-**Version 2.**
+**Version 3.**
 
 `chipbreaker verify --report r.json` writes this. It is a **public interface**:
 integrators build against it, and later work extends it rather than reshaping
@@ -45,6 +45,54 @@ the same reason instead of reading it with version-2 code.
 The cost was worth paying now: the schema had no installed base, so the price of
 a break was zero and will never be this low again.
 
+## The version 3 break: three names that promised too much
+
+Three renames, all of one kind — a field whose **name promised more than its
+value delivers**. Removed and replaced, never aliased.
+
+| was | is | why |
+|---|---|---|
+| `penetration_mm` | `overlap_along_ray_mm` | it is the overlap measured **along a dexel ray**. For a holder wider than the stock it reports the stock's extent, not any chuck dimension. |
+| `clearance_mm` *(measured)* | `clearance_along_ray_mm` | a one-dimensional gap, and an **upper bound** on the true separation |
+| `area_mm2`, `volume_mm3` | `area_estimate_mm2`, `volume_estimate_mm3` | estimates, as the accompanying `note` always said |
+| `at`, `worst_at`, `bounds` | `at_mm`, `worst_at_mm`, `bounds_mm` | positions, with no unit stated, beside a dozen siblings that all said `_mm` |
+
+Each already carried a `note` in the same object explaining the caveat, and that
+was not enough. A consumer extracts `severity.penetration_mm` into a field of
+their own called `penetration`, and the note stays behind. **In a
+machine-readable contract, an ugly name that resists misreading beats an elegant
+one that invites it** — because the name is the part that travels.
+
+The **threshold** a caller sets keeps its plain name: `--clearance`,
+`clearance_mm` in a job file, `clearance_threshold_mm` echoed in a collision
+report. It is a setting, not a measurement, and nothing about it is measured
+along anything.
+
+**No identity moved.** Finding and collision IDs hash class, position, role,
+obstacle and motion — never a JSON key name — so reports written before this
+change still diff against reports written after it. Only `schema_version` and
+the three key names differ.
+
+## What a consumer must do with something it has not seen
+
+Every enumeration in this schema may grow. The rules are part of the contract:
+
+| it meets | it must treat it as |
+|---|---|
+| an unknown **gate name** | a gate like any other — `pass` is a conjunction, so include it |
+| an unknown **gate state** | **not-pass** |
+| an unknown **contact kind** | a **defect**, unless `is_defect` says otherwise |
+| an unknown **finding class** | not a defect, unless `is_defect` says otherwise |
+| an unknown **key** anywhere | ignore it |
+
+`is_defect` exists precisely so a consumer never has to enumerate the classes to
+answer the only question that matters. Read it rather than switching on the name.
+
+**Do not skip an unrecognised gate.** `pass` is a conjunction, so ignoring a gate
+makes a consumer's own answer *laxer* than the report's — the one direction the
+contract does not permit. Either read `pass` directly, or recompute over every
+gate including ones you do not recognise.
+
 ## `verdict`
 
 ```json
@@ -83,17 +131,29 @@ started from, and `chipbreaker collide` takes it as its only positional
 argument.
 
 **Forward compatibility, which integrators may rely on:** every future gate is a
-new key under `gates`. Because `pass` is a conjunction, a consumer that computes
-its own answer while ignoring keys it does not recognise still gets a correct
-answer — and never a laxer one. Adding a gate can only ever make a verdict
-stricter.
+new key under `gates`, and adding one can only ever make a verdict *stricter* —
+a conjunction can lose a true, never gain one.
+
+That guarantee is about the **report**, not about a consumer who discards part of
+it. Version 2 said "a consumer that ignores keys it does not recognise still gets
+a correct answer", which reads two ways and is only true on one of them. Stated
+precisely:
+
+- Ignoring an unrecognised **key inside** a gate — a `why`, a future `detail` —
+  is safe.
+- Ignoring an unrecognised **gate** is *not*. If that gate failed, a consumer
+  skipping it computes `pass` where the report says otherwise, which is laxer
+  than the report and the one direction the contract forbids.
+
+So: read `pass`, or recompute over **every** gate, treating an unrecognised state
+as not-pass.
 
 ## Top level
 
 | key | type | meaning |
 |---|---|---|
 | `schema` | string | always `chipbreaker.verification-report` |
-| `schema_version` | integer | `2` |
+| `schema_version` | integer | `3` |
 | `verdict` | object | `pass`, and one entry per gate — see above |
 | `verdict_rule` | string | what `pass` means, in the artifact |
 | `manifest` | object | which inputs, at what settings |
@@ -175,11 +235,11 @@ claim, and an audited artifact should not make one by accident. Pass
 | `id` | string | content-derived, sixteen hex characters |
 | `class` | string | `gouge`, `excess-stock`, `undercut`, `unreachable` |
 | `is_defect` | bool | true for `gouge` alone |
-| `severity` | object | `worst_depth_mm`, `mean_depth_mm`, `area_mm2`, `volume_mm3`, `note` |
+| `severity` | object | `worst_depth_mm`, `mean_depth_mm`, `area_estimate_mm2`, `volume_estimate_mm3`, `note` |
 | `sample_count` | integer | exact |
-| `at` | `[f64; 3]` | centroid |
-| `worst_at` | `[f64; 3]` | position of the deepest sample |
-| `bounds` | object | `{min, max}` |
+| `at_mm` | `[f64; 3]` | centroid |
+| `worst_at_mm` | `[f64; 3]` | position of the deepest sample |
+| `bounds_mm` | object | `{min, max}` |
 | `attribution` | object | `{ambiguous, segments}` |
 
 `attribution` carries a **`setup`** index beside its segments. A line number
@@ -213,8 +273,9 @@ Depth and extent are reported **separately and never combined**. A 2 mm gouge
 over one cell and a 0.2 mm gouge over a whole face are different problems, and
 one number cannot say which this is.
 
-`worst_depth_mm`, `mean_depth_mm` and `sample_count` are **exact**. `area_mm2`
-and `volume_mm3` are **estimates**: each surface patch is counted once, from
+`worst_depth_mm`, `mean_depth_mm` and `sample_count` are **exact**.
+`area_estimate_mm2` and `volume_estimate_mm3` are **estimates**, and now say so
+in their names: each surface patch is counted once, from
 whichever bundle sees it most squarely, which bounds the weight by `sqrt(3)`.
 
 ### Classification
@@ -238,13 +299,13 @@ A collision is **not** a `class` of finding, and the separation is deliberate.
 | key | type | meaning |
 |---|---|---|
 | `id` | string | content-derived, sixteen hex characters |
-| `contact` | string | `collision` or `near-miss` |
-| `is_defect` | bool | true for `collision` alone |
-| `severity` | object | `penetration_mm` **or** `clearance_mm`, never both |
+| `contact` | string | `collision`, `cutter-into-fixture`, or `near-miss` |
+| `is_defect` | bool | true for `collision` and `cutter-into-fixture`; false for `near-miss` |
+| `severity` | object | `overlap_along_ray_mm` **or** `clearance_along_ray_mm`, never both |
 | `element` | object | `{role, index}` — which part of the tool stack |
 | `obstacle` | object | `{kind}`, plus `{index, name}` for a fixture |
 | `motion` | string | `rapid`, `linear`, `arc`, `helix` |
-| `at`, `bounds`, `attribution` | | as for a finding |
+| `at_mm`, `bounds_mm`, `attribution` | | as for a finding |
 
 A finding's severity is a depth into the **nominal surface**, with an area and a
 volume measured over that surface. A collision's is penetration of a non-cutting
@@ -263,16 +324,32 @@ consumer sorting on one number would rank a safe pass beside a crash. A near mis
 is reported but is not a defect: it names the thing that will collide after a
 small edit, which is often more useful than the crash itself.
 
+## Exit codes
+
+One contract across every verb, so a script does not have to remember which
+command it called.
+
+| code | means | what to do |
+|---|---|---|
+| 0 | the run completed and every gate passed | nothing |
+| 1 | the run completed and the verdict does not pass — a gate failed, **or a gate could not run** | fix the program, or supply what the unchecked gate needed |
+| 2 | the run could not be completed: bad input, a refusal, an I/O error | fix the invocation |
+
+**One and two are different answers**, and they shared a code until this review
+separated them. A CI gate wants to distinguish "the part is bad" from "I could
+not look" — which is the same distinction the three-state verdict exists to make,
+and it was being thrown away at the process boundary.
+
+`report-diff` uses 0 for identical and 1 for differs, so it works as a gate
+without parsing anything. A file that is not a report exits 2.
+
 ## `report-diff`
 
 ```
 chipbreaker report-diff old.json new.json [--json]
 ```
 
-| exit | means |
-|---|---|
-| 0 | identical |
-| non-zero | differs, or a file is not a report |
+Emits `chipbreaker.report-diff` version 1.
 
 A file that is not a Chipbreaker report is **refused**, not read as an empty one.
 Treating arbitrary JSON as "no findings" would exit zero and say "identical",
