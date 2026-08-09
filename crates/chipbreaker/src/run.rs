@@ -37,13 +37,12 @@ use chipbreaker_core::budget::Budget;
 use chipbreaker_core::dexel::tri::TriDexelField;
 use chipbreaker_core::dexel::{FieldFormat, io as dexel_io};
 use chipbreaker_core::golden::CanonicalHash;
-use chipbreaker_core::sweep::arc::ArcMove;
 use chipbreaker_core::sweep::batch::{DEFAULT_BATCH, cut_batch_per_motion, split_runs};
 use chipbreaker_core::sweep::cut::{CutScratch, CutStats, SweepMethod, distribution};
 use chipbreaker_core::sweep::parallel::{Schedule, cut_all_parallel};
-use chipbreaker_core::sweep::{LinearMove, Motion, SweepCase};
+use chipbreaker_core::sweep::{Motion, SweepCase};
 use chipbreaker_core::tool::{Profile, ToolLibrary};
-use chipbreaker_core::toolpath::{MotionKind, Toolpath};
+use chipbreaker_core::toolpath::Toolpath;
 use chipbreaker_gcode::resolve::{ParseOptions, parse};
 use clap::Args;
 use serde_json::{Value, json};
@@ -589,33 +588,7 @@ pub fn run(args: &RunArgs) -> Result<(Value, String, bool), String> {
 /// `None` only when an arc segment carries no arc data, which the parser should
 /// never produce -- but the caller counts and reports it rather than assuming,
 /// because silently treating an arc as its chord deletes a full circle entirely.
-fn segment_motion(segment: &chipbreaker_core::toolpath::MotionSegment) -> Option<Motion> {
-    if !matches!(segment.kind, MotionKind::Arc | MotionKind::Helix) {
-        return Some(Motion::Linear(LinearMove {
-            start: segment.start,
-            end: segment.end,
-        }));
-    }
-    let data = segment.arc.as_ref()?;
-    let [u, v, w] = data.plane.axes();
-    let centre = data.center.to_array();
-    let start = segment.start.to_array();
-    let end = segment.end.to_array();
-    Some(Motion::Arc(ArcMove {
-        center: data.center,
-        radius: data.radius,
-        // The bearing of the start about the arc's own axis, in that plane's
-        // own axis order -- which for `G18` is Z then X, not X then Z.
-        start_angle: chipbreaker_core::transcendental::atan2(
-            start[v] - centre[v],
-            start[u] - centre[u],
-        ),
-        sweep: data.sweep,
-        z: start[w],
-        rise: end[w] - start[w],
-        plane: data.plane,
-    }))
-}
+use chipbreaker_core::toolpath::segment_motion;
 
 const fn case_index(case: SweepCase) -> usize {
     match case {

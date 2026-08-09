@@ -4,6 +4,7 @@ members = [
     "crates/chipbreaker-core",
     "crates/chipbreaker-gcode",
     "crates/chipbreaker",
+    "crates/chipbreaker-wasm",
 ]
 
 [workspace.package]

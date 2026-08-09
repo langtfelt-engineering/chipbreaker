@@ -193,6 +193,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "chipbreaker-wasm"
+version = "0.1.1"
+dependencies = [
+ "chipbreaker-core",
+ "chipbreaker-gcode",
+ "serde_json",
+]
+
+[[package]]
 name = "ciborium"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

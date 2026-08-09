@@ -443,3 +443,39 @@ impl Hashable for Toolpath {
         h.end();
     }
 }
+
+/// The swept [`Motion`] a segment describes, if it is one that cuts.
+///
+/// Lives here because two crates need it: the CLI replays a program and so does
+/// the browser build. It was private to the CLI until the second caller
+/// appeared, and duplicating it would have meant two implementations of "what
+/// does this segment sweep" that could disagree about an arc.
+///
+/// [`Motion`]: crate::sweep::Motion
+#[must_use]
+pub fn segment_motion(segment: &MotionSegment) -> Option<crate::sweep::Motion> {
+    use crate::sweep::{LinearMove, Motion, arc::ArcMove};
+
+    if !matches!(segment.kind, MotionKind::Arc | MotionKind::Helix) {
+        return Some(Motion::Linear(LinearMove {
+            start: segment.start,
+            end: segment.end,
+        }));
+    }
+    let data = segment.arc.as_ref()?;
+    let [u, v, w] = data.plane.axes();
+    let centre = data.center.to_array();
+    let start = segment.start.to_array();
+    let end = segment.end.to_array();
+    Some(Motion::Arc(ArcMove {
+        center: data.center,
+        radius: data.radius,
+        // The bearing of the start about the arc's own axis, in that plane's
+        // own axis order -- which for `G18` is Z then X, not X then Z.
+        start_angle: crate::transcendental::atan2(start[v] - centre[v], start[u] - centre[u]),
+        sweep: data.sweep,
+        z: start[w],
+        rise: end[w] - start[w],
+        plane: data.plane,
+    }))
+}

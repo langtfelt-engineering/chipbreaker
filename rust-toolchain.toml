@@ -5,5 +5,5 @@
 # supported target (see CONTRIBUTING.md).
 channel = "1.96.0"
 components = ["rustfmt", "clippy"]
-targets = ["wasm32-wasip1"]
+targets = ["wasm32-wasip1", "wasm32-unknown-unknown"]
 profile = "minimal"

@@ -346,6 +346,7 @@ jobs:
         run: |
           cargo build --release -p chipbreaker
           cargo build --release --target wasm32-wasip1 -p chipbreaker
+          cargo build --release --target wasm32-unknown-unknown -p chipbreaker-wasm
 
       - name: Run both self-tests
         run: |
@@ -378,6 +379,20 @@ jobs:
           print("::error::WASM parity broken: the same input produced different output on wasm32-wasip1.")
           sys.exit(1)
           PY
+
+      # The *browser* target, in a browser engine. `wasm32-unknown-unknown` is
+      # not `wasm32-wasip1`: no WASI, a different allocator path, and V8 rather
+      # than wasmtime. The demo makes a parity claim on the page, and a claim a
+      # visitor could disprove by opening the console is worse than no claim, so
+      # it is gated here rather than checked by hand.
+      #
+      # The harness is deliberately crude -- four calls returning integers, no
+      # memory marshalling -- so agreement cannot be an artifact of it.
+      - name: The browser build agrees with the published digest
+        run: |
+          DIGEST=$(python3 -c "import json;print(json.load(open('native.json'))['results']['hash'])")
+          echo "published: $DIGEST"
+          CHIPBREAKER_EXPECTED_DIGEST="$DIGEST"             node scripts/wasm_parity.mjs             target/wasm32-unknown-unknown/release/chipbreaker_wasm.wasm
 
   nightly-fuzz:
     name: nightly fuzz
