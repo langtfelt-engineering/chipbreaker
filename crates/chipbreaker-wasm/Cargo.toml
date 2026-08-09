@@ -14,6 +14,6 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-chipbreaker-core = { path = "../chipbreaker-core" }
-chipbreaker-gcode = { path = "../chipbreaker-gcode" }
+chipbreaker-core.workspace = true
+chipbreaker-gcode.workspace = true
 serde_json = { workspace = true }
