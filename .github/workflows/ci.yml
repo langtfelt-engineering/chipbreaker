@@ -410,6 +410,107 @@ jobs:
           echo "published: $DIGEST"
           CHIPBREAKER_EXPECTED_DIGEST="$DIGEST"             node scripts/wasm_parity.mjs             target/wasm32-unknown-unknown/release/chipbreaker_wasm.wasm
 
+  integration-surface:
+    name: integration surface
+    runs-on: ubuntu-latest
+    # The C ABI, its header, the reference host, the Python bindings and the
+    # evaluation corpus. Everything an integrator touches in their first
+    # afternoon, built and run the way the quick-start says to build and run it.
+    #
+    # A documented example that does not compile is worse than no example: it
+    # costs an evaluator an hour before they conclude the fault is theirs.
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build the C ABI
+        run: cargo build --release -p chipbreaker-abi
+
+      # The header is generated, committed, and must match. Drift here compiles
+      # cleanly and then disagrees about layout at run time, which is the worst
+      # class of bug this project can ship.
+      - name: The committed header matches the Rust source
+        run: |
+          cargo install cbindgen --locked --version 0.29.0 || true
+          cbindgen --config crates/chipbreaker-abi/cbindgen.toml \
+                   --crate chipbreaker-abi --output /tmp/generated.h
+          if ! diff -u include/chipbreaker.h /tmp/generated.h; then
+            echo
+            echo "include/chipbreaker.h is out of date. Regenerate it with:"
+            echo "  cbindgen --config crates/chipbreaker-abi/cbindgen.toml \\"
+            echo "           --crate chipbreaker-abi --output include/chipbreaker.h"
+            exit 1
+          fi
+
+      - name: The reference host compiles
+        run: |
+          cmake -S examples/c -B target/example-c -DCHIPBREAKER_ROOT=.
+          cmake --build target/example-c
+
+      # Run it, not merely build it. A host that compiles and then segfaults on
+      # its first job has taught the evaluator something worse than nothing.
+      - name: The reference host runs, and a refusal is a success
+        run: |
+          set -e
+          ./target/example-c/host \
+              tests/corpus/eval/faced.nc \
+              tests/corpus/tool/standard-library.json \
+              tests/corpus/eval/stock.stl \
+              tests/corpus/eval/nominal-faced.stl
+
+          # G41 is refused, and the host must exit 0 for it: a refusal is an
+          # answer. If this ever exits non-zero the example is teaching the
+          # opposite of the design.
+          ./target/example-c/host \
+              tests/corpus/eval/g41.nc \
+              tests/corpus/tool/standard-library.json \
+              tests/corpus/eval/stock.stl | tee /tmp/refusal.txt
+          grep -q "REFUSED" /tmp/refusal.txt
+          grep -q "G40" /tmp/refusal.txt
+
+      - name: The evaluation corpus matches its own expectations
+        run: cargo test --release -p chipbreaker-abi
+
+      - name: Documentation examples compile and run
+        run: cargo test --doc --workspace
+
+      - name: The Python bindings build from source and keep the sentence
+        run: |
+          python3 -m pip install --upgrade pip maturin
+          cd crates/chipbreaker-python
+          maturin build --release --out ../../target/wheels
+          cd ../..
+          python3 -m pip install --force-reinstall --no-deps target/wheels/chipbreaker-*.whl
+          python3 - <<'PY'
+          import chipbreaker
+          d = "tests/corpus/eval/"
+          T = "tests/corpus/tool/standard-library.json"
+
+          # The digest must be the same number the native build publishes. A
+          # binding that computes different answers is not a binding.
+          print("digest", chipbreaker.selftest_digest())
+          assert chipbreaker.selftest_passed()
+
+          r = chipbreaker.verify(program=d + "faced-gouge.nc", tools=T,
+                                 stock=d + "stock.stl", nominal=d + "nominal-faced.stl",
+                                 resolution_mm=0.5)
+          assert r["schema"] == "chipbreaker.verification-report", r["schema"]
+          assert r["verdict"]["gates"]["gouge"]["state"] == "fail"
+          assert abs(r["summary"]["worst_gouge_mm"] - 1.0) < 0.02
+          # Attribution, which is the half of a finding a machinist acts on.
+          assert r["findings"][0]["attribution"]["segments"], "no NC line named"
+
+          # The sentence has to survive into the exception, unmodified.
+          try:
+              chipbreaker.verify(program=d + "siemens.mpf", tools=T, stock=d + "stock.stl")
+              raise SystemExit("a Siemens program must be refused")
+          except chipbreaker.Refused as e:
+              assert "Siemens" in str(e), e
+              assert "DEF REAL" in str(e), e
+          print("python bindings ok")
+          PY
+
   nightly-fuzz:
     name: nightly fuzz
     runs-on: ubuntu-latest

@@ -197,6 +197,30 @@ impl Verdict {
     /// answer stricter. An empty verdict does not pass, because a report that
     /// checked nothing has certified nothing.
     #[must_use]
+    /// # Examples
+    ///
+    /// A verdict passes only when every gate does, and an unchecked gate is
+    /// not a pass:
+    ///
+    /// ```
+    /// use chipbreaker_core::findings::{GateOutcome, Verdict};
+    /// use chipbreaker_core::findings::verdict::{GATE_COLLISION, GATE_GOUGE};
+    ///
+    /// let clear = Verdict::new()
+    ///     .with(GATE_GOUGE, GateOutcome::pass())
+    ///     .with(GATE_COLLISION, GateOutcome::pass());
+    /// assert!(clear.pass());
+    ///
+    /// // No nominal was supplied, so the gouge gate never ran. This is the
+    /// // case an integration is most likely to misread as success.
+    /// let partial = Verdict::new()
+    ///     .with(GATE_GOUGE, GateOutcome::unchecked("no nominal was supplied"))
+    ///     .with(GATE_COLLISION, GateOutcome::pass());
+    /// assert!(!partial.pass());
+    ///
+    /// // An empty verdict has certified nothing, so it does not pass either.
+    /// assert!(!Verdict::new().pass());
+    /// ```
     pub fn pass(&self) -> bool {
         !self.gates.is_empty() && self.gates.values().all(|g| g.state.is_pass())
     }

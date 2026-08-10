@@ -57,3 +57,15 @@ if(APPLE)
     set_target_properties(host PROPERTIES
         BUILD_RPATH "${CHIPBREAKER_TARGET_DIR}")
 endif()
+
+# Windows has no rpath, so the DLL has to sit beside the executable. Copying it
+# here rather than explaining it in the quick-start: the first run of the
+# reference host otherwise fails with "cannot open shared object file", which
+# reads as a broken example rather than as a missing search path.
+if(WIN32)
+    add_custom_command(TARGET host POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CHIPBREAKER_TARGET_DIR}/chipbreaker.dll"
+                "$<TARGET_FILE_DIR:host>"
+        COMMENT "copying chipbreaker.dll beside the host")
+endif()

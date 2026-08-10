@@ -58,6 +58,37 @@ pub const SCHEMA: &str = "chipbreaker.refusal";
 pub const SCHEMA_VERSION: u32 = 1;
 
 /// A job the engine declined, and why.
+///
+/// # Examples
+///
+/// A refusal carries its sentence and does not pass:
+///
+/// ```
+/// use chipbreaker_core::findings::Refusal;
+///
+/// let refusal = Refusal::new("G41 arms cutter radius compensation");
+/// let doc = refusal.to_json();
+///
+/// assert_eq!(doc["schema"], "chipbreaker.refusal");
+/// assert_eq!(doc["message"], "G41 arms cutter radius compensation");
+///
+/// // The gate a caller reads first. `false`, because an unchecked gate does
+/// // not pass -- the engine declined, so nothing was certified.
+/// assert_eq!(doc["verdict"]["pass"], false);
+/// assert_eq!(doc["verdict"]["gates"]["gouge"]["state"], "unchecked");
+/// ```
+///
+/// Both documents carry the same four keys, so a consumer can read the verdict
+/// before it knows which one it has:
+///
+/// ```
+/// use chipbreaker_core::findings::Refusal;
+///
+/// let doc = Refusal::new("this file is Siemens 840D").to_json();
+/// for key in ["schema", "schema_version", "verdict", "verdict_rule"] {
+///     assert!(doc.get(key).is_some(), "{key} is part of the shared contract");
+/// }
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Refusal {
     /// What to tell the person who ran it. A sentence, not a code.
