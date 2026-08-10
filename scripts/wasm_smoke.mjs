@@ -30,9 +30,22 @@ function put(text) {
 /** Runs one request and returns the parsed result. */
 function run(request) {
   const [ptr, len] = put(JSON.stringify(request));
+  // Read before and after. If the counter did not advance by exactly one, the
+  // bytes at result_ptr() belong to some other call and reading them would
+  // present as a stale result rather than as an error -- the worst failure
+  // this surface has, because it looks like an answer.
+  const before = wasm.result_generation();
   const started = performance.now();
   const ok = wasm.run(ptr, len);
   const ms = performance.now() - started;
+  const after = wasm.result_generation();
+  if (after !== before + 1) {
+    throw new Error(
+      `result generation went ${before} -> ${after}; the buffer is not ours`,
+    );
+  }
+  // The view is constructed after the call, never cached: a growing linear
+  // memory detaches every ArrayBuffer taken before it grew.
   const out = new Uint8Array(
     wasm.memory.buffer,
     wasm.result_ptr(),
@@ -72,6 +85,7 @@ function box(lo, hi) {
   return Buffer.from(new Uint8Array(buf)).toString('base64');
 }
 
+const NL = String.fromCharCode(10);
 const tools = await readFile('tests/corpus/tool/standard-library.json', 'utf8');
 const stock = box([0, 0, 0], [60, 40, 25]);
 
@@ -120,15 +134,51 @@ const cases = [
   },
 ];
 
+cases.push({
+  name: 'a stub tool in a bulky chuck, cutting a 25 mm deep slot',
+  request: {
+    stock_stl: stock,
+    tools,
+    // 10 mm of flute under a 50.8 mm ER32 chuck body. Reaching the bottom of
+    // a 25 mm block puts the chuck into the material, which is the whole
+    // point: the collision gate has to be able to *fail*, not only to report
+    // `unchecked` because no tool in the library carries a holder.
+    tool: 'er32-stub-6',
+    resolution_mm: 0.6,
+    program:
+      'G21 G90' + NL + 'G0 Z50.' + NL + 'G0 X30. Y20.' + NL +
+      'G1 Z-1. F200.' + NL + 'G1 X50. F600.' + NL + 'G0 Z50.' + NL + 'M30' + NL,
+  },
+});
+
 cases.push({ name: 'clean pass (warm)', request: cases[0].request });
 
 for (const { name, request } of cases) {
   const { ok, ms, value } = run(request);
   console.log(`--- ${name} --- ${ms.toFixed(0)} ms`);
+  console.log(`    ${value.schema} v${value.schema_version}`);
   if (ok) {
-    console.log(`    ran: ${value.segments} segments, ${value.volume_mm3.toFixed(0)} mm3 left`);
+    const gates = Object.entries(value.verdict.gates)
+      .map(([g, o]) => `${g}=${o.state}`)
+      .join(' ');
+    const cmp = value.numerical_semantics.comparison;
+    console.log(`    verdict pass=${value.verdict.pass}  ${gates}`);
+    console.log(
+      `    ${value.summary.total} finding(s), ${value.summary.collisions} collision(s), ` +
+        `${value.summary.near_misses} near miss(es)`,
+    );
+    console.log(
+      `    error budget: ${value.numerical_semantics.swept_volumes.ray_cuts_exact} exact / ` +
+        `${value.numerical_semantics.swept_volumes.ray_cuts_bounded} bounded ray-cuts, ` +
+        `worst ${value.numerical_semantics.swept_volumes.worst_bound_mm} mm`,
+    );
+    console.log(
+      `    comparison: ${cmp.available ? 'ran' : 'unavailable -- ' + cmp.why.slice(0, 60) + '...'}`,
+    );
+    console.log(`    manifest ${value.manifest.digest.slice(0, 16)}...`);
   } else {
-    console.log(`    REFUSED: ${value.message.replace(/\s+/g, ' ').slice(0, 220)}`);
+    console.log(`    verdict pass=${value.verdict.pass}`);
+    console.log(`    REFUSED: ${value.message.replace(/\s+/g, ' ').slice(0, 200)}`);
   }
   console.log();
 }

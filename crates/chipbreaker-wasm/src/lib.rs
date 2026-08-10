@@ -155,6 +155,9 @@ pub unsafe extern "C" fn dealloc(ptr: *mut u8, len: u32) {
 /// and two integer reads are simpler than agreeing on one.
 static mut RESULT: (usize, usize) = (0, 0);
 
+/// How many results have been published. See [`result_generation`].
+static mut GENERATION: usize = 0;
+
 /// Pointer to the last result produced by [`run`].
 #[unsafe(no_mangle)]
 pub extern "C" fn result_ptr() -> *const u8 {
@@ -172,7 +175,16 @@ fn publish(text: String) {
     let len = bytes.len();
     let ptr = Box::into_raw(bytes).cast::<u8>();
     unsafe {
+        // The previous result is released before the new one replaces it.
+        // Leaking looked harmless for a demo -- one report is a few kilobytes
+        // -- but a visitor cycling through presets pays for every one of them,
+        // and a tab that grows without bound as somebody explores is exactly
+        // the failure the memory ceiling exists to prevent.
+        if RESULT.0 != 0 {
+            drop(Vec::from_raw_parts(RESULT.0 as *mut u8, RESULT.1, RESULT.1));
+        }
         RESULT = (ptr as usize, len);
+        GENERATION = GENERATION.wrapping_add(1);
     }
 }
 
@@ -193,26 +205,40 @@ fn publish(text: String) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn run(ptr: *const u8, len: u32) -> u32 {
     let input = unsafe { core::slice::from_raw_parts(ptr, len as usize) };
-    match run_inner(input) {
-        Ok(text) => {
-            publish(text);
-            1
-        }
-        Err(refusal) => {
-            // A refusal is shaped like a report so the page never has to guess
-            // which of two things it received.
-            publish(
-                serde_json::json!({
-                    "schema": "chipbreaker.browser-refusal",
-                    "schema_version": 1,
-                    "refused": true,
-                    "message": refusal,
-                })
+    let (text, ok) = match run_inner(input) {
+        Ok(report) => (report.to_json().to_string(), 1),
+        // A refusal is a document of the same family, carrying the same
+        // `verdict` at the same key, so a page that only wants the gate reads
+        // it without branching and gets `false`.
+        Err(why) => (
+            chipbreaker_core::findings::Refusal::new(why)
+                .to_json()
                 .to_string(),
-            );
-            0
-        }
-    }
+            0,
+        ),
+    };
+    publish(text);
+    ok
+}
+
+/// How many results this module has published, counting from one.
+///
+/// A page reads its result through [`result_ptr`] and [`result_len`], which
+/// describe **the last** result and nothing else. Two jobs in flight, or a
+/// render that outlives the run that produced it, and a caller can read a
+/// buffer belonging to a different request while believing it read its own —
+/// which presents as stale output rather than as an error, and a silent wrong
+/// answer is the worst failure this surface can have.
+///
+/// So the counter is exported. Read it before the call and after, and if it did
+/// not advance by exactly one, the bytes are not yours.
+///
+/// The real fix is one job at a time in a worker, which is what the page does.
+/// This is how the page can *prove* it, and how anything else finds out cheaply
+/// that it has not.
+#[unsafe(no_mangle)]
+pub extern "C" fn result_generation() -> u32 {
+    u32::try_from(unsafe { GENERATION }).unwrap_or(u32::MAX)
 }
 
 /// The largest job this build will accept, so a page can say so before running.
@@ -225,21 +251,6 @@ pub extern "C" fn segment_cap() -> u32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn memory_ceiling_bytes() -> u64 {
     BROWSER_CEILING_BYTES
-}
-
-/// Reads an STL, binary or ASCII, in millimetres.
-///
-/// The demo accepts whatever a visitor drags in, and "binary or ASCII" is not a
-/// question they should have to answer about their own file.
-fn read_stl(bytes: &[u8]) -> Result<chipbreaker_core::mesh::TriMesh, String> {
-    use chipbreaker_core::mesh::io::stl;
-    use chipbreaker_core::mesh::units::Unit;
-    if stl::looks_binary(bytes) {
-        stl::read_binary(bytes, Unit::Millimetre).map_err(|e| e.to_string())
-    } else {
-        let text = core::str::from_utf8(bytes).map_err(|e| format!("not UTF-8: {e}"))?;
-        stl::read_ascii(text, Unit::Millimetre).map_err(|e| e.to_string())
-    }
 }
 
 /// Decodes standard base64, ignoring whitespace.
@@ -289,17 +300,25 @@ fn base64(text: &str) -> Result<Vec<u8>, String> {
 /// Every early return here is a **refusal with a reason**, not an error code.
 /// The engine already writes these to be read by a person; this function's job
 /// is to carry them out intact rather than flattening them into "failed".
-#[allow(clippy::too_many_lines, reason = "one linear assembly of one job")]
-fn run_inner(input: &[u8]) -> Result<String, String> {
-    use chipbreaker_core::budget::{Budget, Spacing};
-    use chipbreaker_core::deviation::compare;
-    use chipbreaker_core::dexel::tri::{TriBuildOptions, TriDexelField};
-    use chipbreaker_core::findings::cluster::{ClusterParams, cluster};
-    use chipbreaker_core::findings::identify;
-    use chipbreaker_core::sweep::batch::{DEFAULT_BATCH, cut_all};
-    use chipbreaker_core::sweep::cut::{CutScratch, SweepMethod};
-    use chipbreaker_core::tool::ToolLibrary;
-
+///
+/// # The report is the real one
+///
+/// This emits `chipbreaker.verification-report` — the same schema, at the same
+/// version, as `chipbreaker verify` writes. It briefly did not: an earlier
+/// version of this file invented a `chipbreaker.browser-result` with eight
+/// fields, no manifest, no numerical semantics and no verdict.
+///
+/// That was a mistake worth naming. The page this demo sits on argues that a
+/// finding is worth what its error budget says it is worth. A reduced schema is
+/// not a smaller version of that argument; it is a different artifact that
+/// happens to share a name, and a reader who downloads one and finds a stub has
+/// been handed a reason to disbelieve the rest of the page.
+///
+/// Where a browser run genuinely cannot fill a field it is marked absent with a
+/// reason — the pattern `numerical_semantics.comparison` and `sweep` already
+/// use. An honest report with stated gaps is the product; a second schema is a
+/// second product.
+fn run_inner(input: &[u8]) -> Result<chipbreaker_core::findings::Report, String> {
     let text = core::str::from_utf8(input).map_err(|e| format!("the request is not UTF-8: {e}"))?;
     let v: serde_json::Value =
         serde_json::from_str(text).map_err(|e| format!("the request is not valid JSON: {e}"))?;
@@ -309,146 +328,36 @@ fn run_inner(input: &[u8]) -> Result<String, String> {
             .map(str::to_owned)
             .ok_or_else(|| format!("the request has no {k}"))
     };
-    let resolution = v["resolution_mm"].as_f64().unwrap_or(0.6);
-    let tolerance = v["tolerance_mm"].as_f64().unwrap_or(0.1);
-    if !resolution.is_finite() || resolution <= 0.0 {
-        return Err(format!(
-            "resolution must be a positive length, got {resolution}"
-        ));
-    }
 
-    // --- the stock mesh ---------------------------------------------------
-    let stock_bytes = base64(&get_str("stock_stl")?)?;
-    let stock =
-        read_stl(&stock_bytes).map_err(|e| format!("the stock mesh could not be read: {e}"))?;
-
-    // --- the ceiling, before anything is allocated ------------------------
-    //
-    // A tab that runs out of memory dies with no message. The refusal has to
-    // happen here, and it has to name a resolution that would fit.
-    let extents = stock.bounds().extent().to_array();
-    let budget = Budget::bytes(BROWSER_CEILING_BYTES);
-    if let Err(e) = budget.check(
-        extents,
-        Spacing::uniform(resolution),
-        u64::try_from(BROWSER_SEGMENT_CAP).unwrap_or(u64::MAX),
-        false,
-    ) {
-        return Err(e.to_string());
-    }
-
-    // --- the program ------------------------------------------------------
-    let program = get_str("program")?;
-    let library = ToolLibrary::from_json(&get_str("tools")?)
-        .map_err(|e| format!("the tool library could not be read: {e}"))?;
-    let (toolpath, _, _) = chipbreaker_gcode::resolve::parse(
-        &program,
-        "program",
-        &chipbreaker_gcode::resolve::ParseOptions::default(),
-        None,
-    )
-    .map_err(|e| e.to_string())?;
-
-    if toolpath.segments.len() > BROWSER_SEGMENT_CAP {
-        return Err(format!(
-            "this program has {} segments and the browser build is capped at {}. \
-             The cap is a property of running in a tab, not of the engine: the \
-             native build has no such limit and is several times faster. Run it \
-             locally, or try one of the bundled examples.",
-            toolpath.segments.len(),
-            BROWSER_SEGMENT_CAP
-        ));
-    }
-
-    let tool_id = v["tool"].as_str();
-    let profile = match tool_id {
-        Some(id) => library
-            .get(id)
-            .ok_or_else(|| format!("no tool with id {id:?} in the library"))?
-            .profile()
-            .clone(),
-        None => {
-            let first = toolpath.segments.first().map_or(0, |s| s.tool);
-            library
-                .get_by_number(first)
-                .ok_or_else(|| format!("no tool numbered {first} in the library"))?
-                .profile()
-                .clone()
-        }
-    };
-
-    // --- cut --------------------------------------------------------------
-    let (mut field, _) = TriDexelField::build(
-        &stock,
-        &TriBuildOptions {
-            spacing: resolution,
-            ..TriBuildOptions::default()
-        },
-    )
-    .map_err(|e| format!("the stock field could not be built: {e}"))?;
-
-    let motions: Vec<_> = toolpath
-        .segments
-        .iter()
-        .filter_map(chipbreaker_core::toolpath::segment_motion)
-        .collect();
-    let mut scratch = CutScratch::new(&profile);
-    cut_all(
-        &mut field,
-        &profile,
-        &motions,
-        SweepMethod::Analytic {
-            tolerance: resolution / 10.0,
-        },
-        &mut scratch,
-        DEFAULT_BATCH,
-    );
-
-    // --- compare, when a nominal was supplied -----------------------------
-    let nominal = match v["nominal_stl"].as_str() {
-        Some(b64) => {
-            let bytes = base64(b64)?;
-            Some(read_stl(&bytes).map_err(|e| format!("the nominal mesh could not be read: {e}"))?)
-        }
+    let stock_stl = base64(&get_str("stock_stl")?)?;
+    let nominal_stl = match v["nominal_stl"].as_str() {
+        Some(b64) => Some(base64(b64)?),
         None => None,
     };
+    let program = get_str("program")?;
+    let tools = get_str("tools")?;
 
-    let report = match &nominal {
-        Some(n) => {
-            let d = compare(&field, n, Some(&stock));
-            let params = ClusterParams::for_spacing(resolution, tolerance);
-            let findings = identify(cluster(&d.samples, &params, resolution), params.radius_mm);
-            serde_json::json!({
-                "schema": "chipbreaker.browser-result",
-                "schema_version": 1,
-                "refused": false,
-                "engine_selftest": report().digest.to_hex(),
-                "resolution_mm": resolution,
-                "tolerance_mm": tolerance,
-                "segments": toolpath.segments.len(),
-                "volume_mm3": field.volume(),
-                "findings": findings.iter().map(|f| serde_json::json!({
-                    "id": f.id,
-                    "class": f.class.as_str(),
-                    "is_defect": f.is_defect(),
-                    "worst_depth_mm": f.worst_depth_mm,
-                    "sample_count": f.sample_count,
-                    "at_mm": [f.at.x, f.at.y, f.at.z],
-                })).collect::<Vec<_>>(),
-            })
-        }
-        None => serde_json::json!({
-            "schema": "chipbreaker.browser-result",
-            "schema_version": 1,
-            "refused": false,
-            "engine_selftest": report().digest.to_hex(),
-            "resolution_mm": resolution,
-            "segments": toolpath.segments.len(),
-            "volume_mm3": field.volume(),
-            "findings": serde_json::Value::Null,
-        }),
-    };
-    Ok(report.to_string())
+    // Everything above this line is browser-specific: base64 in, a JSON
+    // envelope, and the two limits a tab imposes. Everything below is the
+    // *shared* assembly, which is the point -- the C ABI runs the identical
+    // code, so the two cannot drift into answering the same question
+    // differently while every determinism test still passes.
+    chipbreaker_gcode::pipeline::run(&chipbreaker_gcode::pipeline::JobRequest {
+        program: &program,
+        tools: &tools,
+        stock_stl: &stock_stl,
+        nominal_stl: nominal_stl.as_deref(),
+        tool_id: v["tool"].as_str(),
+        source: v["source"].as_str(),
+        resolution_mm: v["resolution_mm"].as_f64().unwrap_or(0.6),
+        tolerance_mm: v["tolerance_mm"].as_f64().unwrap_or(0.1),
+        clearance_mm: v["clearance_mm"].as_f64().unwrap_or(0.0),
+        // Mandatory here, unlike the CLI: a tab that runs out of memory dies
+        // with no message, so the refusal has to happen before anything is
+        // allocated and has to name a resolution that would fit.
+        memory_ceiling_bytes: Some(BROWSER_CEILING_BYTES),
+        segment_cap: Some(BROWSER_SEGMENT_CAP),
+    })
 }
 
 #[cfg(test)]

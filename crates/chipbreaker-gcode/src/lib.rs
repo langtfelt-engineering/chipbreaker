@@ -41,6 +41,7 @@ pub mod cycles;
 pub mod diag;
 pub mod lex;
 pub mod modal;
+pub mod pipeline;
 pub mod resolve;
 pub mod selftest;
 
