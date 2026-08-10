@@ -83,8 +83,11 @@ use std::sync::OnceLock;
 mod job;
 mod result;
 
-pub use job::CbJob;
-pub use result::CbResult;
+// Re-exported at the root so the crate's own tests can call the ABI as
+// ordinary Rust. An ABI whose tests all have to go through `dlopen` is an ABI
+// that gets tested once, by hand, on the day it is written.
+pub use job::*;
+pub use result::*;
 
 /// The outcome of a call.
 ///
