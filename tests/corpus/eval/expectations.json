@@ -1,0 +1,73 @@
+{
+  "schema": "chipbreaker.eval-corpus",
+  "version": 1,
+  "note": "Five jobs an integrator can run to prove their integration is correct rather than merely running. Every expectation here is a property of the answer, not of the formatting: gate states, finding counts, and the depth of an error that was injected at a known place. An integration that produces these has understood the refusal path, the unchecked-gate rule and the attribution, which are the three things that get integrations wrong.",
+  "settings": {
+    "resolution_mm": 0.5,
+    "tolerance_mm": 0.1,
+    "tools": "tests/corpus/tool/standard-library.json",
+    "stock": "stock.stl"
+  },
+  "geometry_note": "The block is at x 10..70, y 8..48, z 0..25 rather than at the origin. Both reasons are real: a program begins with the tool at (0,0,0), and a block covering that has the shank inside it before the first line runs; and a mesh whose minimum corner lands exactly on the field's grid origin trips a corner artefact in the comparison, recorded in docs/known-issues.md.",
+  "cases": [
+    {
+      "id": "faced",
+      "program": "faced.nc",
+      "nominal": "nominal-faced.stl",
+      "expect": {
+        "outcome": "ran",
+        "gates": { "gouge": "pass", "collision": "unchecked" },
+        "findings": 0,
+        "collisions": 0,
+        "worst_gouge_mm": 0.0,
+        "why": "A correct facing pass. The gouge gate passes because nothing was found; the collision gate is unchecked because flat-6 carries no holder geometry, and the engine says so rather than reporting a clear. The overall verdict is therefore false -- this case exists to make that rule concrete, because an integration that expects `pass` here has misread the gate design."
+      }
+    },
+    {
+      "id": "faced-gouge",
+      "program": "faced-gouge.nc",
+      "nominal": "nominal-faced.stl",
+      "expect": {
+        "outcome": "ran",
+        "gates": { "gouge": "fail", "collision": "unchecked" },
+        "findings": 1,
+        "collisions": 0,
+        "worst_gouge_mm": 1.0,
+        "worst_gouge_tolerance_mm": 0.02,
+        "why": "The same program with one lane driven 1 mm too deep. The engine recovers the injected depth, and the finding is attributed to the NC line that caused it. If your integration reports the finding but loses the attribution, the report is half as useful as it should be."
+      }
+    },
+    {
+      "id": "holder-crash",
+      "program": "holder-crash.nc",
+      "nominal": null,
+      "expect": {
+        "outcome": "ran",
+        "gates": { "gouge": "unchecked", "collision": "fail" },
+        "findings": 0,
+        "collisions": 2,
+        "why": "A stub tool in a bulky ER32 chuck, reaching far enough below the stock top that the chuck enters the material. No nominal is supplied, so the gouge gate is unchecked -- which does not pass. Two gates, two different states, neither of them a clear."
+      }
+    },
+    {
+      "id": "g41",
+      "program": "g41.nc",
+      "nominal": null,
+      "expect": {
+        "outcome": "refused",
+        "message_contains": ["G41", "G40"],
+        "why": "Cutter radius compensation. The control decides the offset path, so simulating the uncompensated one would be wrong by the tool radius everywhere. The refusal names the construct and says what to do instead. Your integration must treat this as an answer to show, not an error to log."
+      }
+    },
+    {
+      "id": "siemens",
+      "program": "siemens.mpf",
+      "nominal": null,
+      "expect": {
+        "outcome": "refused",
+        "message_contains": ["Siemens", "DEF REAL"],
+        "why": "A Siemens 840D program whose third line is also a syntax error under RS-274. The engine names the language rather than complaining about the line, because naming the language is the actionable answer. If you see a message about line 3 instead, you are running a build from before that was fixed."
+      }
+    }
+  ]
+}

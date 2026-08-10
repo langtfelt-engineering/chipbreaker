@@ -33,11 +33,11 @@ use chipbreaker_core::deviation::compare;
 use chipbreaker_core::dexel::tri::{TriBuildOptions, TriDexelField};
 use chipbreaker_core::findings::cluster::{ClusterParams, cluster};
 use chipbreaker_core::findings::detect::{CollideParams, collide_with_stock};
-use chipbreaker_core::findings::identify;
 use chipbreaker_core::findings::report::{
     InputHash, Manifest, Report, SweptSplit, digest_bytes, semantics_from, semantics_uncompared,
 };
 use chipbreaker_core::findings::verdict::{self, GateOutcome, Verdict};
+use chipbreaker_core::findings::{attribute_finding, identify};
 use chipbreaker_core::mesh::TriMesh;
 use chipbreaker_core::mesh::units::Unit;
 use chipbreaker_core::sweep::batch::{DEFAULT_BATCH, cut_all};
@@ -259,10 +259,38 @@ pub fn run(req: &JobRequest<'_>) -> Result<Report, String> {
     let (findings, semantics, gouge_gate) = match &nominal {
         Some(n) => {
             let d = compare(&field, n, Some(&stock));
-            let found = identify(
+            let mut found = identify(
                 cluster(&d.samples, &params, req.resolution_mm),
                 params.radius_mm,
             );
+
+            // Which segment cut this. Without it a report says a gouge exists
+            // and not where to go and look, which is half a result -- and this
+            // assembly shipped without it until the evaluation corpus asked
+            // the question directly.
+            //
+            // Only for findings the *cut* produced. An undercut is a property
+            // of the part and no segment caused it; naming a line there would
+            // be naming one at random.
+            let bounds: Vec<_> = motions.iter().map(|m| m.swept_bounds(&profile)).collect();
+            for f in &mut found {
+                if matches!(
+                    f.class,
+                    chipbreaker_core::findings::Classification::Gouge
+                        | chipbreaker_core::findings::Classification::ExcessStock
+                ) {
+                    f.attribution = attribute_finding(
+                        &profile,
+                        &motions,
+                        &bounds,
+                        &provenance,
+                        method,
+                        &mut scratch,
+                        &f.probes,
+                    );
+                }
+            }
+
             let gate = Report::gouge_gate(&found);
             (
                 found,
