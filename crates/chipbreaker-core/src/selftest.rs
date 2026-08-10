@@ -1972,7 +1972,12 @@ fn collision_suite() -> SuiteResult {
             },
             &mut scratch,
         ) {
-            Ok(found) => {
+            // The cut statistics come back beside the collisions and are
+            // deliberately not hashed: they count rays and sub-steps, which are
+            // properties of how the work was scheduled rather than of the
+            // answer, and folding them into the build identity would make the
+            // digest move for a pure optimisation.
+            Ok((found, _)) => {
                 h.begin(&case.id);
                 h.usize(found.len());
                 for c in &found {

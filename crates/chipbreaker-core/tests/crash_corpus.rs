@@ -110,6 +110,7 @@ fn run(case: &CrashCase) -> Vec<Collision> {
         &mut scratch,
     )
     .expect("every corpus tool has a chuck, so every case is checkable")
+    .0
 }
 
 struct Score {

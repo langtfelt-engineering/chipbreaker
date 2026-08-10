@@ -177,7 +177,7 @@ fn overhead(c: &mut Criterion) {
                 &mut scratch,
             )
             .expect("the tool has a chuck");
-            black_box(found.len())
+            black_box(found.0.len())
         });
     });
     group.finish();
@@ -212,7 +212,7 @@ fn clearance(c: &mut Criterion) {
                     &mut scratch,
                 )
                 .expect("the tool has a chuck");
-                black_box(found.len())
+                black_box(found.0.len())
             });
         });
     }
@@ -248,7 +248,7 @@ fn fixture_count(c: &mut Criterion) {
                     &mut scratch,
                 )
                 .expect("the tool has a chuck");
-                black_box(found.len())
+                black_box(found.0.len())
             });
         });
     }

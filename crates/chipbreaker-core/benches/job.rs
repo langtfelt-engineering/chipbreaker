@@ -137,7 +137,7 @@ fn check(tools: usize, passes: usize) -> usize {
             &mut scratch,
         )
         .expect("every tool here has a chuck");
-        found += c.len();
+        found += c.0.len();
     }
     found
 }

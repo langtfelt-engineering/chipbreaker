@@ -448,7 +448,7 @@ pub fn job(args: &JobArgs) -> Result<(Value, String, bool), String> {
             &mut scratch,
         );
         let (mut collisions, unchecked) = match outcome {
-            Ok(c) => (c, None),
+            Ok((c, _)) => (c, None),
             Err(u) => (Vec::new(), Some(u.to_string())),
         };
         // Stamp which setup named these lines. A line number alone is

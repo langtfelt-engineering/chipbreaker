@@ -170,7 +170,7 @@ pub fn collide(args: &CollideArgs) -> Result<(Value, String, bool), String> {
     let elapsed = started.elapsed().as_secs_f64() * 1000.0;
 
     let (collisions, unchecked) = match outcome {
-        Ok(c) => (c, None),
+        Ok((c, _)) => (c, None),
         Err(u) => (Vec::new(), Some(u)),
     };
     let hard = collision_count(&collisions);

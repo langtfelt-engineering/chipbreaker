@@ -612,7 +612,12 @@ fn collision_gate(
         },
         &mut scratch,
     ) {
-        Ok(c) => {
+        // The cut statistics are discarded here and not elsewhere, and the
+        // asymmetry is deliberate. `verify` reads a field somebody else cut;
+        // these statistics describe the *replay* this check just performed, and
+        // quoting them as the field's sweep budget would attribute one cut's
+        // error to another. `--run-report` remains the honest source.
+        Ok((c, _)) => {
             let gate = Report::collision_gate(&c);
             Ok((c, gate, Some(rapid)))
         }

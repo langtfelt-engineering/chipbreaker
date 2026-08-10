@@ -141,6 +141,7 @@ fn run(profile: &Profile, z: f64) -> Vec<chipbreaker_core::findings::Collision> 
         &mut scratch,
     )
     .expect("the tool has a holder, so the check runs")
+    .0
 }
 
 #[test]
@@ -424,6 +425,7 @@ fn run_with(
         &mut scratch,
     )
     .expect("checkable")
+    .0
 }
 
 #[test]

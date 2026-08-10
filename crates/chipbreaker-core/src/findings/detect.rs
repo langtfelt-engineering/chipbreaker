@@ -49,7 +49,7 @@ use crate::math::{Aabb3, Axis, Ray, Vec2, Vec3};
 use crate::spans::Spans;
 use crate::sweep::Motion;
 use crate::sweep::cut::{
-    CutScratch, SweepMethod, cut_tri_motion, swept_spans_for, transverse_overlaps,
+    CutScratch, CutStats, SweepMethod, cut_tri_motion, swept_spans_for, transverse_overlaps,
 };
 use crate::tool::Profile;
 use crate::tool::profile::{ElementRole, ProfileElement, RoledElement};
@@ -268,7 +268,7 @@ pub fn collide_with_stock(
     fixtures: &[(String, TriDexelField)],
     params: &CollideParams,
     scratch: &mut CutScratch,
-) -> Result<Vec<Collision>, Unchecked> {
+) -> Result<(Vec<Collision>, CutStats), Unchecked> {
     if !holder_present(profile) {
         return Err(Unchecked::NoHolder);
     }
@@ -282,10 +282,31 @@ pub fn collide_with_stock(
         // Entirely cutting geometry: nothing above the flutes exists, so there
         // is nothing that could collide. An empty list is the right answer here
         // and is not the same as `unchecked`.
-        return Ok(Vec::new());
+        //
+        // The cut still has to happen, and its statistics still have to come
+        // back: a caller that asked for a collision-checked run and got no
+        // collisions has still cut material, and still owes its report an
+        // error budget for the cutting.
+        let mut stats = CutStats::default();
+        for motion in motions {
+            stats.merge(&cut_tri_motion(
+                stock,
+                profile,
+                motion,
+                params.method,
+                scratch,
+            ));
+        }
+        return Ok((Vec::new(), stats));
     };
 
     let mut raw: Vec<(usize, Hit)> = Vec::new();
+    // The cutting statistics are returned alongside the collisions because this
+    // function *is* the cut for any caller that checks. Without them a
+    // collision-checked report could not state its own sweep error budget, and
+    // would have to either omit it or quote one from a second cut that never
+    // happened.
+    let mut stats = CutStats::default();
     for (k, motion) in motions.iter().enumerate() {
         for hit in hits_for_motion(
             stock,
@@ -343,10 +364,16 @@ pub fn collide_with_stock(
             }
         }
         // Then, and only then, remove what this motion cuts.
-        cut_tri_motion(stock, profile, motion, params.method, scratch);
+        stats.merge(&cut_tri_motion(
+            stock,
+            profile,
+            motion,
+            params.method,
+            scratch,
+        ));
     }
 
-    Ok(assemble(raw, kinds, provenance, params))
+    Ok((assemble(raw, kinds, provenance, params), stats))
 }
 
 /// Every overlap this motion's non-cutting geometry has with one obstacle.
