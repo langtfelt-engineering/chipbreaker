@@ -1,6 +1,7 @@
 {
   "schema": "chipbreaker.eval-corpus",
   "version": 1,
+  "provenance": "HAND-WRITTEN. Each case states what a person decided it should prove, which is not something a generator can produce. The inputs beside it are generated; these expectations are the intent. crates/chipbreaker-abi/tests/eval_corpus.rs checks every one of them against the engine on every build, so this file cannot drift from reality without failing.",
   "note": "Five jobs an integrator can run to prove their integration is correct rather than merely running. Every expectation here is a property of the answer, not of the formatting: gate states, finding counts, and the depth of an error that was injected at a known place. An integration that produces these has understood the refusal path, the unchecked-gate rule and the attribution, which are the three things that get integrations wrong.",
   "settings": {
     "resolution_mm": 0.5,

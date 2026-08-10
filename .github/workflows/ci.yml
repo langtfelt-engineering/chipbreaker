@@ -432,7 +432,7 @@ jobs:
       # class of bug this project can ship.
       - name: The committed header matches the Rust source
         run: |
-          cargo install cbindgen --locked --version 0.29.0 || true
+          cargo install cbindgen --locked --version 0.29.4
           cbindgen --config crates/chipbreaker-abi/cbindgen.toml \
                    --crate chipbreaker-abi --output /tmp/generated.h
           if ! diff -u include/chipbreaker.h /tmp/generated.h; then

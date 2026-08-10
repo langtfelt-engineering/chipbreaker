@@ -27,6 +27,7 @@ use chipbreaker::{CbStatus, cb_job_free, cb_job_new, cb_job_run};
 /// A binary STL box, built here rather than read, so the test has no fixture
 /// file whose line endings could become the very thing under test.
 fn box_stl(lo: [f32; 3], hi: [f32; 3]) -> Vec<u8> {
+    // ALLOW-f32-WIRE-FORMAT
     let v = [
         [lo[0], lo[1], lo[2]],
         [hi[0], lo[1], lo[2]],
