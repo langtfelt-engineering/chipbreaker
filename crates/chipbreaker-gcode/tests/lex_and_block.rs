@@ -122,6 +122,51 @@ fn siemens_and_heidenhain_are_refused_by_name() {
 }
 
 #[test]
+fn a_foreign_file_is_named_even_when_a_syntax_error_comes_first() {
+    // The behaviour that made this worth fixing: a real Siemens program whose
+    // first *unparseable* line arrives before its first *recognisable* one.
+    //
+    // `DEF REAL DEPTH` is the giveaway, and it is on line 5. Line 3 is a
+    // Siemens frame assignment that lexes as an `A` word with no number, so
+    // interleaved detection reported a syntax error on line 3 and the file was
+    // never identified. The visitor sees "this is not the language I read"
+    // instead of a complaint about a line they cannot fix.
+    let text = "\
+;SIEMENS 840D
+N10 G17 G54
+N20 TRANS X=A
+N30 G0 X0 Y0
+N40 DEF REAL DEPTH
+N50 CYCLE81(10,0,2,-15)
+";
+    match lex_err(text) {
+        GcodeError::ForeignLanguage {
+            dialect, evidence, ..
+        } => {
+            assert_eq!(dialect, ForeignDialect::Siemens840d);
+            assert_eq!(evidence, "DEF REAL");
+        }
+        other => panic!("a Siemens file must be named as one, got {other:?}"),
+    }
+}
+
+#[test]
+fn the_first_marker_in_the_file_wins_rather_than_the_first_that_lexes() {
+    // Two markers, and the earlier one is the evidence. A file identified by
+    // its last line would report evidence a reader cannot easily find.
+    let text = "N10 TOOL CALL 5 Z S2000\nN20 CYCL DEF 200\n";
+    match lex_err(text) {
+        GcodeError::ForeignLanguage {
+            dialect, evidence, ..
+        } => {
+            assert_eq!(dialect, ForeignDialect::HeidenhainKlartext);
+            assert_eq!(evidence, "TOOL CALL");
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
 fn a_bare_r_word_is_still_an_arc_radius_not_a_siemens_parameter() {
     // The `=` is what distinguishes them, and getting this wrong would refuse
     // every arc written in R form.

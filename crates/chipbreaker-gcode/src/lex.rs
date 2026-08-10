@@ -18,7 +18,10 @@
 //! early gives a much better message than letting them fall through:
 //!
 //! * **Foreign languages.** Siemens and Heidenhain are not dialects, and their
-//!   giveaways are visible at the character level.
+//!   giveaways are visible at the character level. Scanned for over the **whole
+//!   file before lexing begins**, so that a foreign file is named as such rather
+//!   than reported as a syntax error on whichever of its lines happens to be
+//!   unparseable first.
 //! * **Macro programming.** `#100`, `IF`, `WHILE`, `GOTO`.
 //! * **`o`-words.** LinuxCNC's procedural extension.
 //!
@@ -172,6 +175,24 @@ pub fn lex(
     file: u32,
     diagnostics: &mut crate::diag::Diagnostics,
 ) -> Result<Vec<RawBlock>, GcodeError> {
+    // The whole file is scanned for another language before any of it is lexed.
+    //
+    // Interleaving the two reads the file as RS-274 until the first offending
+    // line, and a foreign program usually offends syntactically before it
+    // offends recognisably: a Siemens file whose second line is `N20 R1=5` used
+    // to fail on line 2 with "R1 is not a finite number", which reads as a
+    // broken parser rather than as a tool that knows what it was handed. The
+    // marker on line 40 was the answer, and lexing never reached it.
+    //
+    // Scanning first costs one extra pass over the text and changes which
+    // diagnostic wins whenever a file contains both. That is the right
+    // precedence: naming the language is actionable, and a syntax error inside
+    // a language this engine does not parse is noise.
+    for (index, raw_line) in text.lines().enumerate() {
+        let line = u32::try_from(index + 1).unwrap_or(u32::MAX);
+        detect_foreign(raw_line, Site::line_only(file, line))?;
+    }
+
     let mut blocks = Vec::new();
     // A comment opened with `(` may, in badly-written files, run past the end of
     // its line. Tracking it across lines is what lets that be a warning rather
@@ -185,8 +206,6 @@ pub fn lex(
             file,
             ..RawBlock::default()
         };
-
-        detect_foreign(raw_line, Site::line_only(file, line))?;
 
         let chars: Vec<char> = raw_line.chars().collect();
         let mut i = 0usize;
