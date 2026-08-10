@@ -1,0 +1,25 @@
+[package]
+name = "chipbreaker-abi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "The C ABI for the Chipbreaker material-removal simulation engine"
+
+[lib]
+# `cdylib` is what a C or C++ host links against; `staticlib` is for a host that
+# would rather not ship a second file. `rlib` is here so the crate's own tests
+# can call it as ordinary Rust -- an ABI whose tests all have to go through
+# `dlopen` is an ABI nobody tests.
+crate-type = ["cdylib", "staticlib", "rlib"]
+name = "chipbreaker"
+
+[dependencies]
+chipbreaker-core.workspace = true
+chipbreaker-gcode.workspace = true
+serde_json.workspace = true
+
+[build-dependencies]

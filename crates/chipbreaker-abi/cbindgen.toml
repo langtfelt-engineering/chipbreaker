@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Langtfelt
+#
+# The header is generated, committed, and checked in CI. A header that has
+# drifted from the library it describes is worse than no header at all: it
+# compiles, and then the struct layouts disagree at run time.
+
+language = "C"
+header = """/* SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Langtfelt
+ *
+ * GENERATED FILE -- do not edit by hand.
+ *
+ * Regenerate with:
+ *     cbindgen --config crates/chipbreaker-abi/cbindgen.toml \\
+ *              --crate chipbreaker-abi --output include/chipbreaker.h
+ *
+ * CI fails if this file differs from what the Rust source generates, so an
+ * edit here is reverted rather than kept.
+ *
+ * ---------------------------------------------------------------------------
+ * READ THIS FIRST: CB_REFUSED IS NOT AN ERROR
+ * ---------------------------------------------------------------------------
+ *
+ * This engine declines jobs it cannot answer for, by name and with a reason
+ * written for a person to read. A refusal means the engine did its job. Treat
+ * CB_REFUSED as a result to show the user, never as a failure to log and
+ * retry -- the sentence in cb_result_message() is the most valuable thing this
+ * library produces.
+ *
+ * Ownership, one rule everywhere: this library allocates, you release with the
+ * matching _free. Strings returned by getters are borrowed from their handle
+ * and are invalid once that handle is freed.
+ *
+ * Threads: distinct handles may be used concurrently; a single handle may not.
+ */"""
+include_guard = "CHIPBREAKER_H"
+documentation = true
+documentation_style = "doxy"
+line_length = 88
+tab_width = 4
+cpp_compat = true
+usize_is_size_t = true
+
+[parse]
+parse_deps = false
+
+[export]
+include = ["CbStatus"]
+prefix = ""
+
+[export.rename]
+"CbStatus" = "cb_status"
+
+[enum]
+prefix_with_name = true
+rename_variants = "ScreamingSnakeCase"

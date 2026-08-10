@@ -164,6 +164,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "chipbreaker-abi"
+version = "0.1.1"
+dependencies = [
+ "chipbreaker-core",
+ "chipbreaker-gcode",
+ "serde_json",
+]
+
+[[package]]
 name = "chipbreaker-core"
 version = "0.1.1"
 dependencies = [
