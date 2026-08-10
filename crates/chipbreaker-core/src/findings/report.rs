@@ -112,6 +112,14 @@ use crate::toolpath::RapidPath;
 ///
 /// `3` renamed three severity fields so that none of them promises more than it
 /// delivers. See the module header.
+///
+/// **Not bumped for `numerical_semantics.comparison`**, which is an addition:
+/// every report that had the five comparison figures still has them, in the
+/// same place, with the same values. A report that never had them — one with no
+/// nominal, which no earlier version could produce at all — omits them and says
+/// why. Nothing that existed changed meaning, so nothing breaks, so the version
+/// holds. Bumping for an addition would spend the one signal a consumer has for
+/// "stop and read the changelog" on a release where they need not.
 pub const SCHEMA_VERSION: u32 = 3;
 
 /// The schema's stable name, so a consumer can tell a Chipbreaker report from
@@ -241,6 +249,26 @@ pub struct NumericalSemantics {
     /// that no measurement produced — and "no ray-cut was bounded" is a strong
     /// claim to make by accident. Absent says absent, and says how to get it.
     pub sweep: Option<SweptSplit>,
+    /// What comparing against a nominal established, when one was supplied.
+    ///
+    /// **`None` when no nominal was given**, for the same reason [`sweep`] is
+    /// optional: every number in [`Comparison`] is a property of a comparison
+    /// that did not happen. `nominal_facet_mm` for a run with no nominal is not
+    /// zero, and a report claiming a `tolerance_floor_mm` derived from a mesh
+    /// nobody supplied would be inventing the one figure a reader uses to
+    /// decide whether the tolerance means anything.
+    ///
+    /// [`sweep`]: Self::sweep
+    pub comparison: Option<Comparison>,
+}
+
+/// What comparing the stock against a nominal established about the inputs.
+///
+/// Grouped rather than left loose in [`NumericalSemantics`] so that "no nominal
+/// was supplied" is one absent object with one reason, rather than five fields
+/// that each have to invent a value.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Comparison {
     /// Estimated chord error of the stock mesh.
     pub stock_facet_mm: f64,
     /// Estimated chord error of the nominal mesh.
@@ -392,7 +420,47 @@ impl Report {
         }
         let collisions: Vec<Value> = self.collisions.iter().map(collision_json).collect();
 
-        json!({
+        // The comparison figures, and whether there was a comparison at all.
+        //
+        // Present: the five keys sit at the top of `numerical_semantics` where
+        // they always have, and `comparison.available` is true beside them.
+        // Absent: the five keys are gone entirely and `comparison` says why.
+        // A consumer reading `stock_facet_mm` off a report with no nominal
+        // finds nothing and fails, which is the only honest outcome -- the
+        // alternative is a zero that reads as a measurement.
+        let mut comparison = serde_json::Map::new();
+        let mut flat = serde_json::Map::new();
+        match self.semantics.comparison {
+            Some(cmp) => {
+                comparison.insert("available".to_owned(), json!(true));
+                flat.insert("stock_facet_mm".to_owned(), json!(cmp.stock_facet_mm));
+                flat.insert("nominal_facet_mm".to_owned(), json!(cmp.nominal_facet_mm));
+                flat.insert(
+                    "tolerance_floor_mm".to_owned(),
+                    json!(cmp.tolerance_floor_mm),
+                );
+                flat.insert("below_floor".to_owned(), json!(cmp.below_floor));
+                flat.insert(
+                    "worst_projection_gap_mm".to_owned(),
+                    json!(cmp.worst_projection_gap_mm),
+                );
+            }
+            None => {
+                comparison.insert("available".to_owned(), json!(false));
+                comparison.insert(
+                    "why".to_owned(),
+                    json!(
+                        "no nominal part was supplied, so the stock was never compared against \
+                         anything; facet error, tolerance floor and projection gap are all \
+                         properties of a comparison that did not happen. The gouge gate is \
+                         `unchecked` for the same reason."
+                    ),
+                );
+            }
+        }
+        let comparison = Value::Object(comparison);
+
+        let mut value = json!({
             "schema": SCHEMA,
             "schema_version": SCHEMA_VERSION,
             "verdict": {
@@ -443,11 +511,12 @@ impl Report {
                                                    whole run",
                     }),
                 ),
-                "stock_facet_mm": self.semantics.stock_facet_mm,
-                "nominal_facet_mm": self.semantics.nominal_facet_mm,
-                "tolerance_floor_mm": self.semantics.tolerance_floor_mm,
-                "below_floor": self.semantics.below_floor,
-                "worst_projection_gap_mm": self.semantics.worst_projection_gap_mm,
+                // The five comparison figures stay exactly where they have
+                // always been when a comparison ran, so no consumer of a
+                // `verify` report moves. `comparison` is an addition beside
+                // them, and it is what a report with no nominal has instead of
+                // five invented numbers.
+                "comparison": comparison,
                 "detection_floor": {
                     "note": "recall measured against 295 injected defects at 0.4 mm; \
                              100% at and above half a cell, 80% below it, and no gouges \
@@ -488,7 +557,19 @@ impl Report {
             },
             "findings": findings,
             "collisions": collisions,
-        })
+        });
+
+        // Merged in rather than written inline so that the with-nominal report
+        // is byte-for-byte what it was before `comparison` existed.
+        if let Some(ns) = value
+            .get_mut("numerical_semantics")
+            .and_then(Value::as_object_mut)
+        {
+            for (k, v) in flat {
+                ns.insert(k, v);
+            }
+        }
+        value
     }
 
     /// The digest of everything in the report that is not the clock or the host.
@@ -696,11 +777,32 @@ pub fn semantics_from(
         spacing_mm,
         tolerance_mm,
         sweep,
-        stock_facet_mm: d.stock_facet_mm,
-        nominal_facet_mm: d.nominal_facet_mm,
-        tolerance_floor_mm: d.tolerance_floor_mm(),
-        below_floor: d.below_floor(tolerance_mm),
-        worst_projection_gap_mm: d.worst_projection_gap_mm,
+        comparison: Some(Comparison {
+            stock_facet_mm: d.stock_facet_mm,
+            nominal_facet_mm: d.nominal_facet_mm,
+            tolerance_floor_mm: d.tolerance_floor_mm(),
+            below_floor: d.below_floor(tolerance_mm),
+            worst_projection_gap_mm: d.worst_projection_gap_mm,
+        }),
+    }
+}
+
+/// The semantics of a run that cut stock but compared it against nothing.
+///
+/// The browser build and any collision-only check need this: the spacing and
+/// the tolerance are real, and every figure that comes from a nominal is
+/// absent with a reason rather than zero.
+#[must_use]
+pub fn semantics_uncompared(
+    spacing_mm: [f64; 3],
+    tolerance_mm: f64,
+    sweep: Option<SweptSplit>,
+) -> NumericalSemantics {
+    NumericalSemantics {
+        spacing_mm,
+        tolerance_mm,
+        sweep,
+        comparison: None,
     }
 }
 

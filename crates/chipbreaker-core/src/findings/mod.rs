@@ -52,6 +52,7 @@ pub mod cluster;
 pub mod collide;
 pub mod detect;
 pub mod diff;
+pub mod refusal;
 pub mod report;
 pub mod verdict;
 
@@ -59,7 +60,8 @@ pub use attribute::{Attribution, attribute_finding, attribute_point, motion_reac
 pub use cluster::{Classification, Cluster, ClusterParams, cluster, unsampled};
 pub use collide::{Collision, Contact, Obstacle, collision_id};
 pub use diff::{Change, Diff};
-pub use report::{Manifest, NumericalSemantics, Report};
+pub use refusal::Refusal;
+pub use report::{Comparison, Manifest, NumericalSemantics, Report};
 pub use verdict::{Gate, GateOutcome, Verdict};
 
 use crate::golden::CanonicalHash;
