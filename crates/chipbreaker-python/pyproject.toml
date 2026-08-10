@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Langtfelt
+
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "chipbreaker"
+requires-python = ">=3.9"
+description = "Material-removal simulation and machining verification"
+readme = "README.md"
+license = { text = "GPL-3.0-or-later" }
+authors = [{ name = "Langtfelt" }]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Manufacturing",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Programming Language :: Rust",
+    "Topic :: Scientific/Engineering",
+]
+dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://github.com/langtfelt-engineering/chipbreaker"
+Source = "https://github.com/langtfelt-engineering/chipbreaker"
+
+[tool.maturin]
+# `abi3` means one built artifact serves every Python from 3.9 upward, rather
+# than one per minor version. For a library this size that is the difference
+# between a build matrix of one and a build matrix of six.
+features = ["pyo3/abi3-py39", "extension-module"]
+module-name = "chipbreaker._chipbreaker"
+python-source = "python"
+manifest-path = "Cargo.toml"

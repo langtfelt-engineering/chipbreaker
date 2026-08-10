@@ -6,6 +6,7 @@ members = [
     "crates/chipbreaker",
     "crates/chipbreaker-wasm",
     "crates/chipbreaker-abi",
+    "crates/chipbreaker-python",
 ]
 
 [workspace.package]

@@ -1,0 +1,36 @@
+[package]
+name = "chipbreaker-python"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Python bindings for the Chipbreaker material-removal simulation engine"
+
+[lib]
+# `_chipbreaker` rather than `chipbreaker`: the importable package is a thin
+# Python wrapper around this extension module, so the two must not collide.
+name = "_chipbreaker"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+chipbreaker-core.workspace = true
+chipbreaker-gcode.workspace = true
+serde_json.workspace = true
+
+[dependencies.pyo3]
+version = "0.27"
+# `extension-module` tells PyO3 not to link libpython, which is what a wheel
+# needs and what an ordinary `cargo build` must not have -- linking it is how
+# `cargo test` ends up failing to resolve Python symbols on a machine that has
+# no shared libpython. Enabled through a feature so the test build can omit it.
+features = ["abi3-py39", "macros"]
+default-features = false
+
+[features]
+# Off by default so `cargo build --workspace` works everywhere. Turned on by
+# maturin, which is the only thing that should be producing an importable
+# module.
+extension-module = ["pyo3/extension-module"]
